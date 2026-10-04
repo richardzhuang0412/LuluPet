@@ -12,6 +12,11 @@ final class WhatsNewModel: ObservableObject {
     @Published var todos: [SetupTodo]
     /// The partner-upgrade explanation is unfolded.
     @Published var showUpgradeHelp = false
+    /// v0.15.5 「📣 叫 TA 升级」 on the partner-upgrade row.
+    enum PingStatus { case unavailable, ready, sent }
+    @Published var pingStatus: PingStatus = .unavailable
+    var pingStatusProvider: () -> PingStatus = { .unavailable }
+    var ping: () -> Void = {}
 
     let entries: [ChangelogEntry]
     /// `whatsNewSeen` when the window opened: versions newer than this carry the 「新」 badge.
@@ -46,6 +51,7 @@ final class WhatsNewModel: ObservableObject {
     func refresh() {
         let fresh = reload()
         if fresh != todos { todos = fresh }
+        pingStatus = pingStatusProvider()
         onTodosChanged(fresh)
     }
 
@@ -57,6 +63,12 @@ final class WhatsNewModel: ObservableObject {
             // The action may have finished the job (widget on); settings / panel come back through didBecomeKey.
             refresh()
         }
+    }
+
+    func sendPing() {
+        guard pingStatus == .ready else { return }
+        ping()
+        pingStatus = pingStatusProvider()
     }
 
     func skip(_ todo: SetupTodo) {
@@ -225,8 +237,16 @@ private struct WhatsNewView: View {
                     .background(RoundedRectangle(cornerRadius: 6).fill(Self.accent.opacity(0.12)))
             }
             HStack(spacing: 8) {
-                Button(todo.action == .howToUpgradePartner && model.showUpgradeHelp ? "收起" : todo.button) { model.go(todo) }
-                    .buttonStyle(.borderedProminent).controlSize(.small)
+                if todo.action == .howToUpgradePartner, model.pingStatus != .unavailable {
+                    Button(model.pingStatus == .sent ? "已经叫过 TA 了 ✓" : "📣 叫 TA 升级") { model.sendPing() }
+                        .buttonStyle(.borderedProminent).controlSize(.small)
+                        .disabled(model.pingStatus == .sent)
+                    Button(model.showUpgradeHelp ? "收起" : todo.button) { model.go(todo) }
+                        .controlSize(.small)
+                } else {
+                    Button(todo.action == .howToUpgradePartner && model.showUpgradeHelp ? "收起" : todo.button) { model.go(todo) }
+                        .buttonStyle(.borderedProminent).controlSize(.small)
+                }
                 Button("不用了") { model.skip(todo) }
                     .controlSize(.small)
             }

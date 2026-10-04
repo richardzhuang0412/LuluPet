@@ -16,6 +16,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     var onSetupTodos: (() -> Void)?
     var onCheckUpdate: (() -> Void)?   // v0.14 检查更新…
     var onUpdateTapped: (() -> Void)?  // v0.14 「有新版本 vX」
+    var onPingUpgrade: (() -> Void)?   // v0.15.5 「TA 还在用 vX」 line → 叫 TA 升级
     /// v0.12: 「天气小组件」 toggled (the new state).
     var onTogglePin: (() -> Void)?
     var onGoVisit: (() -> Void)?
@@ -371,9 +372,13 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     /// v0.11.2: the upgrade line (nil / empty = hidden).
-    func setVersionLine(_ text: String?) {
+    /// `pingable` (v0.15.5): the 「TA 还在用 vX」 line is clickable and sends 「叫 TA 升级」.
+    func setVersionLine(_ text: String?, pingable: Bool = false) {
         versionLine.title = text ?? ""
         versionLine.isHidden = text == nil
+        versionLine.isEnabled = pingable
+        versionLine.target = pingable ? self : nil
+        versionLine.action = pingable ? #selector(pingUpgrade) : nil
     }
 
     var versionLineTitle: String? { versionLine.isHidden ? nil : versionLine.title }
@@ -592,6 +597,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
     @objc private func goVisit() { onGoVisit?() }
     @objc private func peek() { onPeek?() }
+    @objc private func pingUpgrade() { onPingUpgrade?() }
     @objc private func openSettings() { onSettings?() }
     @objc private func openWhatsNew() { onWhatsNew?() }
     @objc private func checkUpdate() { onCheckUpdate?() }

@@ -100,6 +100,14 @@ public struct ConfigStore: @unchecked Sendable {
         }
     }
 
+    /// v0.15.5: my version when I last sent 「叫 TA 升级」 (`upgradePingSent`, String like "0.15.5"; absent = never).
+    public var upgradePingSent: String? {
+        get { defaults.string(forKey: "upgradePingSent") }
+        nonmutating set {
+            if let newValue { defaults.set(newValue, forKey: "upgradePingSent") } else { defaults.removeObject(forKey: "upgradePingSent") }
+        }
+    }
+
     /// v0.13: the app version whose update log I last saw (`whatsNewSeen`, String like "0.13.0"; absent = never / upgraded
     /// from ≤ 0.12.2).
     public var whatsNewSeen: String? {

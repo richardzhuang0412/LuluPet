@@ -118,6 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // v0.14 one-click updater (all hidden, for tests)
         var update = UpdateOptions()       // --update-feed URL / --update-auto-confirm / --update-allow-dir DIR
         var demoUpdateCheck: TimeInterval?  // --demo-update-check S: a manual 检查更新 at S s (card / 已经是最新版)
+        var demoPingUpgrade: TimeInterval?  // --demo-ping-upgrade S: press 「📣 叫 TA 升级」 at S s (the 更新日志 button when open)
         var demoUpdateNow: TimeInterval?    // --demo-update-now S: 「一键更新」 at S s (check, confirm, install, restart)
 
         init(_ args: [String]) {
@@ -258,6 +259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case "--update-auto-confirm": update.autoConfirm = true
                 case "--update-allow-dir": update.allowDir = it.next()
                 case "--demo-update-check": demoUpdateCheck = it.next().flatMap(TimeInterval.init) ?? 1.5
+                case "--demo-ping-upgrade": demoPingUpgrade = it.next().flatMap(TimeInterval.init) ?? 3
                 case "--demo-update-now": demoUpdateNow = it.next().flatMap(TimeInterval.init) ?? 1.5
                 case "--demo-whatsnew-help": demoWhatsNewHelp = true; demoWhatsNew = .todos
                 case "--demo-welcome": demoWelcome = it.next().flatMap(Int.init) ?? 1
@@ -432,6 +434,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusMenu.onPeek = { [weak self] in self?.peekAtPartner() }   // v0.14.3
         statusMenu.onWhatsNew = { [weak self] in self?.openWhatsNew(page: .updates) }   // v0.13
         statusMenu.onSetupTodos = { [weak self] in self?.openWhatsNew(page: .todos) }
+        statusMenu.onPingUpgrade = { [weak self] in self?.pingPartnerToUpgrade() }   // v0.15.5
         statusMenu.onCheckUpdate = { [weak self] in self?.updater.check(manual: true) }   // v0.14
         statusMenu.onUpdateTapped = { [weak self] in self?.updater.updateTapped() }
         statusMenu.onOpen = { [weak self] in
@@ -575,6 +578,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if let t = options.demoUpdateCheck {
             DispatchQueue.main.asyncAfter(deadline: .now() + t) { [weak self] in self?.updater.check(manual: true) }
+        }
+        if let t = options.demoPingUpgrade {
+            DispatchQueue.main.asyncAfter(deadline: .now() + t) { [weak self] in
+                guard let self else { return }
+                NSLog("[lulu] demo: pressing 叫 TA 升级 (status %@)", String(describing: self.upgradePingStatus()))
+                if let w = self.whatsNewWindow, w.isVisible { w.model.sendPing() } else { self.pingPartnerToUpgrade() }
+            }
         }
         if let t = options.demoUpdateNow {
             DispatchQueue.main.asyncAfter(deadline: .now() + t) { [weak self] in self?.updater.updateTapped() }
@@ -1076,6 +1086,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSLog("[lulu] whatsnew: to-do %@ dismissed", id)
             })
         model.showUpgradeHelp = options.demoWhatsNewHelp
+        model.pingStatusProvider = { [weak self] in self?.upgradePingStatus() ?? .unavailable }   // v0.15.5
+        model.ping = { [weak self] in self?.pingPartnerToUpgrade() }
+        model.pingStatus = model.pingStatusProvider()
         model.checkUpdate = { [weak self] report in self?.updater.check(manual: true, report: report) }   // v0.14
         model.onTodosChanged = { [weak self] todos in self?.statusMenu.setSetupTodoCount(todos.count) }
         if let current { store.whatsNewSeen = current }   // opening the log = seen (the 「新」 badges use the value from before)
@@ -1104,6 +1117,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// fullscreen / 勿扰 / our own focus round). Re-evaluated on every partner presence read, which also retries a
     /// deferred bubble.
     private func evaluateUpgradeNudge() {
+        // v0.15.5: an open 更新日志 window follows the partner's version / my ping state.
+        defer { if let w = whatsNewWindow, w.isVisible { w.model.refresh() } }
         guard let config, config.effectiveMode != .solo, let channel, partnerOnline == true else {
             statusMenu.setVersionLine(nil)
             return
@@ -1114,7 +1129,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .none:
             statusMenu.setVersionLine(nil)
         case .partnerOlder(let v):
-            statusMenu.setVersionLine("TA 还在用 v\(v)")
+            // v0.15.5: clickable while I can still ping for this version; afterwards a plain line.
+            if UpgradePing.canPing(mine: mine, partner: v, sent: store.upgradePingSent) {
+                statusMenu.setVersionLine("TA 还在用 v\(v) · 📣 叫 TA 升级", pingable: true)
+            } else {
+                statusMenu.setVersionLine("TA 还在用 v\(v)")
+            }
         case .partnerNewer(let v, let shouldBubble):
             statusMenu.setVersionLine("有新版本 v\(v)（TA 已升级）")
             guard shouldBubble, upgradeBubbleQueued != v, !hide.isHidden, !dndOn, !holdingForFocus else { return }
@@ -1126,6 +1146,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                       buttons: [BubbleButton(title: "一键更新", action: { [weak self] in self?.updater.updateTapped() }),   // v0.14
                                                 BubbleButton(title: "知道啦", action: {})]))
         }
+    }
+
+    // MARK: v0.15.5 叫 TA 升级
+
+    private func upgradePingStatus() -> WhatsNewModel.PingStatus {
+        guard let config, config.effectiveMode != .solo, partnerOnline == true else { return .unavailable }
+        let mine = AppVersionSource.current
+        let partner = channel?.partnerPresence?.app
+        if UpgradePing.alreadySent(mine: mine, sent: store.upgradePingSent) {
+            return AppVersion(partner).map { p in AppVersion(mine).map { p < $0 } ?? false } == true ? .sent : .unavailable
+        }
+        return UpgradePing.canPing(mine: mine, partner: partner, sent: store.upgradePingSent) ? .ready : .unavailable
+    }
+
+    /// Once per my version: a normal text message + `upgradeTo`, sent like any text (queues when TA is offline).
+    private func pingPartnerToUpgrade() {
+        guard let role, !isSolo, let mine = AppVersionSource.current,
+              UpgradePing.canPing(mine: mine, partner: channel?.partnerPresence?.app, sent: store.upgradePingSent),
+              let ping = UpgradePing.message(from: role, version: mine) else { return }
+        store.upgradePingSent = mine
+        NSLog("[lulu] upgrade ping: v%@ → partner on v%@", mine, channel?.partnerPresence?.app ?? "?")
+        send(ping)
+        pet?.showToast("已经叫 TA 升级啦")
+        evaluateUpgradeNudge()   // the menu line stops being clickable
     }
 
     private func partnerIdentityChanged() {
@@ -2083,6 +2127,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .poke:
             return (nil, nil)
         case .text:
+            // v0.15.5: a 叫 TA 升级 ping from a newer version of TA gets 「一键更新」 (nothing otherwise).
+            if fromChannel, UpgradePing.shouldShowUpdateButton(message: m, mine: AppVersionSource.current) {
+                NSLog("[lulu] upgrade ping received: partner on v%@, mine v%@ — 一键更新 button", m.upgradeTo ?? "?", AppVersionSource.current ?? "?")
+                return (BubbleItem(header: header, content: .text(m.text ?? ""), message: source,
+                                   buttons: [BubbleButton(title: "一键更新", action: { [weak self] in self?.updater.updateTapped() }),
+                                             BubbleButton(title: "知道啦", action: {})]), nil)
+            }
             return (BubbleItem(header: header, content: .text(m.text ?? ""), message: source), nil)
         case .sticker:
             let label = m.stickerId.flatMap(stickers.label(for:))

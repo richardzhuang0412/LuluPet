@@ -3264,6 +3264,39 @@ do {
     check(files.count == 10 && files.allSatisfy { FileManager.default.fileExists(atPath: "assets/sounds/" + $0) }, "shipped sounds: 10 leave footsteps, all present")
 }
 
+// MARK: v0.15.5 叫 TA 升级
+do {
+    let ping = UpgradePing.message(from: .lulu, version: "0.15.5", ts: 42)!
+    check(ping.kind == .text && ping.text == "我升级到 v0.15.5 啦，你也点 🍊 →「检查更新…」升级一下吧～", "v0.15.5: ping is a text message with the agreed copy")
+    check(ping.upgradeTo == "0.15.5", "v0.15.5: ping carries upgradeTo")
+    check(UpgradePing.message(from: .lulu, version: nil) == nil && UpgradePing.message(from: .lulu, version: "abc") == nil, "v0.15.5: no version → no ping")
+    let wire = try JSONSerialization.jsonObject(with: ping.firebasePayload()) as! [String: Any]
+    check(wire["upgradeTo"] as? String == "0.15.5" && wire["kind"] as? String == "text", "v0.15.5: upgradeTo on the wire next to kind text")
+    let back = Message.decode(firebaseKey: "k1", value: wire)!
+    check(back.upgradeTo == "0.15.5" && back.text == ping.text, "v0.15.5: field round-trips")
+    check(back.extra["upgradeTo"] == .string("0.15.5"), "v0.15.5: an older decoder (no typed field) keeps upgradeTo in extra")
+    let reenc = try JSONSerialization.jsonObject(with: back.firebasePayload()) as! [String: Any]
+    check(reenc["upgradeTo"] as? String == "0.15.5", "v0.15.5: extra re-encoded verbatim")
+    check(Message.decode(firebaseKey: "k2", value: ["from": "lulu", "kind": "text", "text": "hi", "ts": 1, "upgradeTo": 5])!.upgradeTo == nil, "v0.15.5: non-string upgradeTo reads nil")
+    check(UpgradePing.shouldShowUpdateButton(message: ping, mine: "0.15.4"), "v0.15.5: older receiver gets 一键更新")
+    check(!UpgradePing.shouldShowUpdateButton(message: ping, mine: "0.15.5"), "v0.15.5: same version → plain text")
+    check(!UpgradePing.shouldShowUpdateButton(message: ping, mine: "0.16.0"), "v0.15.5: newer receiver → plain text")
+    check(!UpgradePing.shouldShowUpdateButton(message: ping, mine: nil), "v0.15.5: unknown own version → plain text")
+    check(!UpgradePing.shouldShowUpdateButton(message: .text("hi", from: .lulu), mine: "0.15.4"), "v0.15.5: ordinary text never gets the button")
+    var junk = ping; junk.extra["upgradeTo"] = .string("soon")
+    check(!UpgradePing.shouldShowUpdateButton(message: junk, mine: "0.15.4"), "v0.15.5: garbage upgradeTo → plain text")
+    check(UpgradePing.canPing(mine: "0.15.5", partner: "0.15.4", sent: nil), "v0.15.5: canPing: partner older, never sent")
+    check(!UpgradePing.canPing(mine: "0.15.5", partner: "0.15.4", sent: "0.15.5"), "v0.15.5: canPing: already sent for this version")
+    check(UpgradePing.canPing(mine: "0.15.6", partner: "0.15.4", sent: "0.15.5"), "v0.15.5: canPing: re-armed after my upgrade")
+    check(!UpgradePing.canPing(mine: "0.15.5", partner: "0.15.5", sent: nil) && !UpgradePing.canPing(mine: "0.15.5", partner: "0.16.0", sent: nil), "v0.15.5: canPing: partner not older")
+    check(!UpgradePing.canPing(mine: "0.15.5", partner: nil, sent: nil) && !UpgradePing.canPing(mine: nil, partner: "0.15.0", sent: nil), "v0.15.5: canPing: unknown version")
+    check(UpgradePing.alreadySent(mine: "0.15.5", sent: "0.15.5") && !UpgradePing.alreadySent(mine: "0.15.5", sent: "garbage"), "v0.15.5: alreadySent")
+    let pcs = ConfigStore(profile: "test-ping-\(UUID().uuidString)")
+    check(pcs.upgradePingSent == nil, "v0.15.5: upgradePingSent default nil")
+    pcs.upgradePingSent = "0.15.5"
+    check(pcs.upgradePingSent == "0.15.5", "v0.15.5: upgradePingSent persists")
+}
+
 try? FileManager.default.removeItem(at: tmp)
 // UserDefaults suites leave their plist behind even after removePersistentDomain; delete test ones.
 let prefsDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Preferences")
