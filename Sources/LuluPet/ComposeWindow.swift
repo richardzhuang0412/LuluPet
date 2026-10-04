@@ -14,6 +14,8 @@ final class ComposeWindow: NSPanel {
     var onGoVisit: (() -> Void)?
     /// v0.10: 「💧 叫 TA 喝水」/「🧍 叫 TA 起来动动」.
     var onSendRemind: ((ReminderKind) -> Void)?
+    /// v0.14.3 「👀 偷看」 under the weather card: peek at TA (the panel closes first).
+    var onPeek: (() -> Void)?
     /// v0.11.3 「调时长…」 on the 小工具 tab: open Settings on the 小工具 page.
     var onOpenToolsSettings: (() -> Void)?
 
@@ -98,6 +100,7 @@ final class ComposeWindow: NSPanel {
             onSendSticker: { [weak self] id in self?.onSendSticker?(id); self?.dismiss() },
             onSendHeart: { [weak self] in self?.onSendHeart?(); self?.dismiss() },
             onGoVisit: { [weak self] in self?.dismiss(); self?.onGoVisit?() },
+            onPeek: { [weak self] in self?.dismiss(); self?.onPeek?() },
             onSendRemind: { [weak self] kind in self?.onSendRemind?(kind); self?.dismiss() },
             onOpenSettings: { [weak self] in self?.dismiss(); self?.onOpenSettings?() },
             onOpenToolsSettings: { [weak self] in self?.dismiss(); self?.onOpenToolsSettings?() },
@@ -190,6 +193,7 @@ private struct ComposeView: View {
     let onSendSticker: (String) -> Void
     let onSendHeart: () -> Void
     let onGoVisit: () -> Void
+    let onPeek: () -> Void
     let onSendRemind: (ReminderKind) -> Void
     let onOpenSettings: () -> Void
     let onOpenToolsSettings: () -> Void
@@ -310,7 +314,24 @@ private struct ComposeView: View {
 
     /// v0.13.3 weather rows (TA first, then me), re-evaluated every minute while the panel is open.
     private var weatherLine: some View {
-        WeatherCardView(model: weather, onOpenSettings: onOpenSettings)
+        VStack(alignment: .trailing, spacing: 4) {
+            WeatherCardView(model: weather, onOpenSettings: onOpenSettings)
+            if !solo { peekButton }
+        }
+    }
+
+    /// v0.14.3: 「👀 偷看」: see what TA is up to right now (nothing is sent to TA).
+    private var peekButton: some View {
+        Button(action: onPeek) {
+            Text("👀 偷看")
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(Self.accent)
+                .padding(.horizontal, 10).padding(.vertical, 3)
+                .background(Capsule().fill(Self.accent.opacity(0.12)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("马上看看 TA 这会儿在干嘛（TA 不会知道哦）")
     }
 
     @ViewBuilder

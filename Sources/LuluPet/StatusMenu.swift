@@ -19,6 +19,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// v0.12: 「天气小组件」 toggled (the new state).
     var onTogglePin: (() -> Void)?
     var onGoVisit: (() -> Void)?
+    /// v0.14.3 「偷看 TA 👀」.
+    var onPeek: (() -> Void)?
     /// v0.4
     var onCompose: (() -> Void)?
     var onHide: ((HideOption) -> Void)?
@@ -50,6 +52,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private let outfitBackItem = NSMenuItem(title: "换回上一个", action: #selector(outfitBack), keyEquivalent: "")
     let chooseOutfitItem = NSMenuItem(title: "选择造型", action: nil, keyEquivalent: "")
     private let goVisitItem = NSMenuItem(title: "去找TA 🏃", action: #selector(goVisit), keyEquivalent: "")
+    private let peekItem = NSMenuItem(title: "偷看 TA 👀", action: #selector(peek), keyEquivalent: "")
     private let composeItem = NSMenuItem(title: "传话…", action: #selector(compose), keyEquivalent: "")
     private let hideItem = NSMenuItem(title: "隐藏", action: nil, keyEquivalent: "")
     private let showItem = NSMenuItem(title: "显示", action: #selector(show), keyEquivalent: "")
@@ -131,6 +134,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         goVisitItem.target = self
         goVisitItem.isEnabled = false
         menu.addItem(goVisitItem)
+        peekItem.target = self
+        peekItem.isEnabled = false
+        menu.addItem(peekItem)
         menu.addItem(.separator())
         let hideMenu = NSMenu()
         hideMenu.autoenablesItems = false
@@ -398,6 +404,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         // Offline / misconfigured still runs to the edge and back (nothing is sent); only a missing
         // config disables it.
         goVisitItem.isEnabled = state != nil
+        peekItem.isEnabled = state != nil
         render()
     }
 
@@ -408,6 +415,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         statusLine.isHidden = on
         topSeparator.isHidden = on   // (the 勿扰 line, when on, sits at the very top)
         goVisitItem.isHidden = on
+        peekItem.isHidden = on
         composeItem.title = on ? "表情…" : "传话…"
         render()
     }
@@ -583,6 +591,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         if let name = sender.representedObject as? String { onChooseOutfit?(name) }
     }
     @objc private func goVisit() { onGoVisit?() }
+    @objc private func peek() { onPeek?() }
     @objc private func openSettings() { onSettings?() }
     @objc private func openWhatsNew() { onWhatsNew?() }
     @objc private func checkUpdate() { onCheckUpdate?() }

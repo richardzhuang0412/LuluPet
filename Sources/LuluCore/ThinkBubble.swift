@@ -9,6 +9,8 @@ public enum ThinkReason: Equatable, Sendable {
     case hover
     /// TA's weather turned into rain / snow / hot.
     case weather(WeatherLook)
+    /// v0.14.3: 「偷看」 — the user explicitly asked (compose-panel button / 🍊 menu). Private: nothing is sent to TA.
+    case peek
 }
 
 /// What is going on right now (filled in by the app; every flag that is true blocks the bubble).
@@ -47,10 +49,48 @@ public enum ThinkRules {
     }
 
     public static func shouldShow(_ reason: ThinkReason, context: ThinkContext, lastShown: TimeInterval?, now: TimeInterval) -> Bool {
+        if case .peek = reason { return peekVerdict(context: context, partnerEverSeen: true) == .show }
         guard !context.blocked else { return false }
         if case .weather = reason { return true }
         guard let last = lastShown else { return true }
         return now < last || now - last >= cooldown   // a clock/uptime that went back never blocks forever
+    }
+
+    // MARK: v0.14.3 偷看
+
+    /// A peek holds longer than the other bubbles.
+    public static let peekDuration: TimeInterval = 9
+    public static let peekNeverSeenToast = "还看不到 TA，等 TA 上线吧"
+    public static let peekVisitToast = "TA 正在你这儿呢"
+
+    public enum PeekVerdict: Equatable, Sendable {
+        case show
+        /// Nothing visible to attach it to (solo / pet hidden or fullscreen-hidden): do nothing.
+        case ignore
+        /// A tiny toast on the pet instead of the bubble.
+        case toast(String)
+        /// A speech bubble is on screen: queue the peek until it is gone.
+        case wait
+    }
+
+    /// The user asked for it, so the 60 s cooldown and the dnd / focus / quiet / doze blockers do not apply. What is
+    /// left: solo and hidden (nothing to show), a visit in progress (toast), TA never seen (toast), a speech bubble
+    /// on screen (wait for it).
+    public static func peekVerdict(context c: ThinkContext, partnerEverSeen: Bool) -> PeekVerdict {
+        if c.solo || c.hidden { return .ignore }
+        if c.visitActive { return .toast(peekVisitToast) }
+        if !partnerEverSeen { return .toast(peekNeverSeenToast) }
+        if c.bubbleShowing { return .wait }
+        return .show
+    }
+
+    /// The pill of a peek. Online: as usual (city, weather, time). Offline: 「TA 不在线」 leads instead of the city and
+    /// the weather stays if it is known and fresh: 「TA 不在线 🌧 19° · 晚上 11:42」; without weather just 「TA 不在线」.
+    public static func peekBarText(online: Bool, place: WeatherPlace?, snapshot: WeatherSnapshot?, now: Date) -> String? {
+        let normal = barText(reason: .peek, place: place, snapshot: snapshot, now: now)
+        guard !online else { return normal }
+        guard let normal, let place else { return "TA 不在线" }
+        return "TA 不在线" + normal.dropFirst(place.name.count)
     }
 
     /// TA's look changed: the look to announce (rain / snow / hot only). `hadData` = a look was known before (the

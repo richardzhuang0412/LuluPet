@@ -102,6 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var fakeWeather = false            // --fake-weather: fixed FakeWeather data and city search, no network (offscreen tests)
         var demoPartnerPlace: WeatherPlace?   // --demo-partner-place 上海: pretend the partner's city is that FakeWeather place
         var demoThink: [(kind: String, at: TimeInterval)] = []   // --demo-think rain@2,snow@8,clear@14: show the 想 TA bubble (forced) with that weather
+        var demoPeek: [(at: TimeInterval, state: String?)] = []   // --demo-peek S[:never|offline|online][,S2…]: a 偷看 at S s; a state fakes TA (snapshots, no network), none = the real presence fetch
         var demoMyPlace: WeatherPlace?     // --demo-my-place 洛杉矶: seed my city (temp profiles; snapshots)
         // v0.14.1 current location (testing only; none of these touch the real location permission)
         var fakeLocation: String?          // --fake-location ok|denied|fail: no CoreLocation / geocoder, a fixed answer (ok = 伯克利)
@@ -231,6 +232,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         let bits = part.split(separator: "@")
                         guard bits.count == 2, let t = TimeInterval(bits[1]) else { return nil }
                         return (String(bits[0]), t)
+                    }
+                case "--demo-peek":
+                    demoPeek = (it.next() ?? "").split(separator: ",").compactMap { part in
+                        let bits = part.split(separator: ":").map(String.init)
+                        guard let t = bits.first.flatMap(TimeInterval.init) else { return nil }
+                        return (t, bits.count > 1 ? bits[1] : nil)
                     }
                 case "--demo-my-place": demoMyPlace = it.next().flatMap { n in FakeWeather.places.first { $0.name == n } }
                 case "--demo-city-query": CityPicker.demoQuery = it.next()
@@ -414,6 +421,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusMenu.onOutfitBack = { [weak self] in self?.outfitBack() }
         statusMenu.onChooseOutfit = { [weak self] o in self?.chooseOutfit(o) }
         statusMenu.onGoVisit = { [weak self] in self?.goVisit() }
+        statusMenu.onPeek = { [weak self] in self?.peekAtPartner() }   // v0.14.3
         statusMenu.onWhatsNew = { [weak self] in self?.openWhatsNew(page: .updates) }   // v0.13
         statusMenu.onSetupTodos = { [weak self] in self?.openWhatsNew(page: .todos) }
         statusMenu.onCheckUpdate = { [weak self] in self?.updater.check(manual: true) }   // v0.14
@@ -1519,6 +1527,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Shows the bubble when the rules allow (or `force`, for demos). Returns whether it was shown.
     @discardableResult
     private func tryThink(_ reason: ThinkReason, force: Bool = false, demo: WeatherSnapshot? = nil) -> Bool {
+        let isPeek = reason == .peek
         guard config != nil, let pet else { return false }
         if !force {
             guard ThinkRules.shouldShow(reason, context: thinkContext(), lastShown: thinkLastShown, now: uptime) else { return false }
@@ -1528,12 +1537,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var snap = demo ?? weather.partner
         if demo == nil, let s = snap, WeatherRefresh.isStale(fetchedAt: s.fetchedAt, now: wallClock) { snap = nil }
         let now = Date()
-        let bar = ThinkRules.barText(reason: reason, place: place, snapshot: snap.map { s in
-            var s = s; if demo != nil { s.fetchedAt = now.timeIntervalSince1970 }; return s }, now: now)
+        let shownSnap = snap.map { s in var s = s; if demo != nil { s.fetchedAt = now.timeIntervalSince1970 }; return s }
+        let bar = isPeek ? ThinkRules.peekBarText(online: partnerOnlineForPeek(), place: place, snapshot: shownSnap, now: now)
+                         : ThinkRules.barText(reason: reason, place: place, snapshot: shownSnap, now: now)
         thinkLastShown = uptime
         NSLog("[lulu] think: 想 TA (%@) bar \"%@\"", String(describing: reason), bar ?? "-")
         thinkWindow.show(.init(clip: scene.clip, still: scene.still, dimmed: scene.dimmed, badge: scene.badge, barText: bar,
-                               flourish: ThinkRules.flourish(snap)), anchor: pet.spriteScreenRect)
+                               flourish: ThinkRules.flourish(snap), clickToClose: isPeek), anchor: pet.spriteScreenRect,
+                         now: isPeek ? ThinkRules.peekDuration : ThinkRules.duration)
         return true
     }
 
@@ -1630,6 +1641,75 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tryThink(.idle, force: true, demo: s)
     }
     // MARK: end v0.13.3 想 TA
+
+    // MARK: v0.14.3 偷看 (peek at TA on demand; private: nothing is sent)
+    private var peekInFlight = false
+
+    /// --demo-peek: a faked TA state for this peek (nil = real).
+    private var peekDemoState: String?
+    /// TA online as the last presence read says (a demo state overrides it for snapshots).
+    private func partnerOnlineForPeek() -> Bool {
+        if let d = peekDemoState { return d == "online" }
+        guard let p = channel?.partnerPresence else { return false }
+        return Presence.isOnline(lastSeen: p.lastSeen, now: Int64(wallClock * 1000), thresholdMs: Presence.thresholdMs)
+    }
+    private func partnerEverSeenForPeek() -> Bool {
+        if let d = peekDemoState { return d != "never" }
+        return channel?.partnerPresence?.lastSeen != nil || lastPartnerOutfit != nil
+    }
+
+    /// 「👀 偷看」 / 「偷看 TA 👀」: one fresh GET of TA's presence, then the 想 TA bubble with that outfit / pose / weather.
+    /// Ignores the 60 s cooldown and dnd / focus / quiet / doze (the user asked); a visit in progress or TA never seen
+    /// gives a toast; a speech bubble on screen makes the peek wait until it is gone (the cleaner of the two options:
+    /// nothing overlaps and the message being read stays readable).
+    func peekAtPartner() {
+        guard config != nil, !isSolo, pet != nil, !peekInFlight else { return }
+        NSLog("[lulu] peek: asked")
+        // Checks that need no fetch: hidden / visit (a waiting speech bubble is handled after the fetch).
+        let pre = ThinkRules.peekVerdict(context: thinkContext(), partnerEverSeen: true)
+        if pre != .show && pre != .wait { applyPeekVerdict(pre); return }
+        if peekDemoState != nil || usingDummyConfig || channel == nil || connection != .connected {
+            finishPeek(waitedSince: nil)
+            return
+        }
+        peekInFlight = true
+        let started = uptime
+        channel?.refreshPartnerPresenceNow { [weak self] online in
+            guard let self else { return }
+            self.peekInFlight = false
+            NSLog("[lulu] peek: fresh presence in %.2f s → %@", self.uptime - started, online.map { $0 ? "online" : "offline" } ?? "check failed (last known)")
+            self.finishPeek(waitedSince: nil)
+        }
+    }
+
+    private func finishPeek(waitedSince: TimeInterval?) {
+        guard !isSolo else { return }
+        let v = ThinkRules.peekVerdict(context: thinkContext(), partnerEverSeen: partnerEverSeenForPeek())
+        switch v {
+        case .show:
+            tryThink(.peek, force: true)
+        case .wait:
+            // A speech bubble is on screen: look again every 0.5 s (only while a peek is waiting), give up after 30 s.
+            let since = waitedSince ?? uptime
+            guard uptime - since < 30 else { return }
+            if waitedSince == nil { NSLog("[lulu] peek: waiting for the speech bubble") }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.finishPeek(waitedSince: since) }
+        default:
+            applyPeekVerdict(v)
+        }
+    }
+
+    private func applyPeekVerdict(_ v: ThinkRules.PeekVerdict) {
+        switch v {
+        case .toast(let text):
+            NSLog("[lulu] peek: toast \"%@\"", text)
+            pet?.showToast(text)
+        case .ignore:
+            NSLog("[lulu] peek: ignored (solo / hidden)")
+        default: break
+        }
+    }
+    // MARK: end v0.14.3 偷看
 
     private func startIdleBehaviour() {
         noteActivity("pet shown")
@@ -2249,6 +2329,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         c.onSendText = { [weak self] text in self?.send(.text(text, from: role)) }
         c.onSendSticker = { [weak self] id in self?.send(.sticker(id, from: role)) }
         c.onGoVisit = { [weak self] in self?.goVisit() }
+        c.onPeek = { [weak self] in self?.peekAtPartner() }   // v0.14.3
         c.onSendHeart = { [weak self] in self?.sendHeart() }
         c.onSendRemind = { [weak self] kind in
             guard let self, let role = self.role else { return }
@@ -2771,6 +2852,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self, let pet = self.pet else { return }
                 NSLog("[lulu] demo: click on the home pet")
                 self.petClicked(pet)
+            }
+        }
+        for d in options.demoPeek {
+            DispatchQueue.main.asyncAfter(deadline: .now() + d.at) { [weak self] in
+                self?.peekDemoState = d.state
+                self?.peekAtPartner()
             }
         }
         for (kind, t) in options.demoThink {

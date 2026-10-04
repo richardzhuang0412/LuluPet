@@ -7,6 +7,13 @@ import LuluCore
 /// A separate click-through borderless window above the pet; about 6 s in all. No timers while it is hidden: the
 /// animation is Core Animation on the render server and one one-shot work item closes the window.
 final class ThinkBubbleWindow: NSPanel {
+    /// v0.14.3: the root view; only a 偷看 bubble takes clicks (the window ignores the mouse otherwise).
+    private final class ClickView: NSView {
+        var onClick: (() -> Void)?
+        override func mouseDown(with event: NSEvent) { onClick?() }
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    }
+
     struct Content {
         var clip: SpriteClip?
         /// v0.14.2: hold frame 0 (TA is dozing / quiet / 勿扰) instead of looping.
@@ -16,6 +23,8 @@ final class ThinkBubbleWindow: NSPanel {
         var badge: Badge?
         var barText: String?
         var flourish: ThinkFlourish
+        /// v0.14.3 偷看: the bubble takes clicks and closes on one.
+        var clickToClose = false
     }
 
     /// What floats by TA's head (v0.14.2): TA's 勿扰 sign (as above TA's pet), or a tiny emoji / "z z".
@@ -31,7 +40,7 @@ final class ThinkBubbleWindow: NSPanel {
     private static let circleY: [CGFloat] = [8, 28, 46]
     private static let circleR: [CGFloat] = [4.5, 7, 10]
 
-    private let root = NSView(frame: NSRect(origin: .zero, size: ThinkBubbleWindow.size))
+    private let root = ClickView(frame: NSRect(origin: .zero, size: ThinkBubbleWindow.size))
     private let player = SpritePlayer(frame: .zero)
     private var closeWork: DispatchWorkItem?
     private var anchor: NSRect = .zero
@@ -63,6 +72,8 @@ final class ThinkBubbleWindow: NSPanel {
     func show(_ c: Content, anchor: NSRect, now: TimeInterval = ThinkRules.duration) {
         dismiss(notify: false)
         isShowing = true
+        ignoresMouseEvents = !c.clickToClose
+        root.onClick = c.clickToClose ? { [weak self] in self?.dismiss(notify: true) } : nil
         buildScene(c)
         follow(anchor)
         alphaValue = 1

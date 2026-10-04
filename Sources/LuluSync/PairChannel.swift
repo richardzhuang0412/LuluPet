@@ -461,6 +461,16 @@ public final class PairChannel {
         return Presence.isOnline(lastSeen: value?.lastSeen, now: nowMs(), thresholdMs: threshold)
     }
 
+    /// v0.14.3 偷看: one GET of TA's presence right now (not waiting for the poll), applied like a poll result.
+    /// `completion` runs on the main actor with TA's online state, or nil when the check failed / timed out (the
+    /// last known `partnerPresence` stays). Read-only: nothing is written to the channel.
+    public func refreshPartnerPresenceNow(timeout: TimeInterval = 2, completion: @escaping @MainActor (Bool?) -> Void) {
+        Task { @MainActor [weak self] in
+            let online = await self?.refreshPartnerPresence(timeout: timeout)
+            completion(online)
+        }
+    }
+
     /// Clean sign-off before quitting or sleeping: blocks up to `timeout` so the write can finish.
     public func signOffBlocking(timeout: TimeInterval = 1.5) {
         let client = client, role = config.role, dnd = dnd, identity = identity, app = appVersion, place = place
