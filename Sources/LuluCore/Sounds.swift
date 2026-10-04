@@ -51,9 +51,11 @@ public enum SoundEvent: String, Sendable, CaseIterable {
     /// Built-in sound for a sticker's reaction when reactions.json gives none: angry / cry / happy.
     public static func forSticker(_ id: String?) -> SoundEvent? {
         switch id {
-        case "angry"?: return .angry
-        case "cry"?: return .cry
-        case "happy"?, "celebrate"?: return .happy
+        // v0.15 stickers follow the reaction pool they are mapped to (assets/reactions.json).
+        case "angry"?, "heng"?, "heng2"?, "lengzhan"?, "xiongni"?: return .angry
+        case "cry"?, "anwei"?, "weiqu"?, "xinsui"?, "xiasi"?, "leitan"?, "aqi"?: return .cry
+        case "happy"?, "celebrate"?, "haha"?, "haha2"?, "xiaosi"?, "heihei"?, "heihei2"?, "wow"?, "haode"?,
+             "biye"?, "ye"?, "jiayou"?, "facai"?, "shengdan"?: return .happy
         default: return nil
         }
     }

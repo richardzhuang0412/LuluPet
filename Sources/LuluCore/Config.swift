@@ -212,6 +212,19 @@ public struct ConfigStore: @unchecked Sendable {
         defaults.set(all, forKey: "outfitHistory")
     }
 
+    /// v0.15 「常用」 stickers: the ordered ids the user pinned (`stickerFavorites`, array of strings); nil = never
+    /// edited → `StickerPanel.defaultFavorites`. Unknown ids are skipped on read, never deleted.
+    public var stickerFavorites: [String]? {
+        get { defaults.stringArray(forKey: "stickerFavorites") }
+        nonmutating set { defaults.set(newValue, forKey: "stickerFavorites") }
+    }
+
+    /// v0.15 when each sticker was last sent / played (`stickerRecent`, `{id: Unix ms}`); orders 常用.
+    public var stickerRecent: [String: Int64] {
+        get { ((defaults.dictionary(forKey: "stickerRecent") as? [String: Any]) ?? [:]).compactMapValues { ($0 as? NSNumber)?.int64Value } }
+        nonmutating set { defaults.set(newValue, forKey: "stickerRecent") }
+    }
+
     // MARK: v0.5 sound (new keys, see docs/upgrade-compat.md)
 
     /// Sound on / off (`soundEnabled`; absent = `SoundDefaults.enabled`).

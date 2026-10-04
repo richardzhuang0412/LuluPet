@@ -19,6 +19,13 @@ final class ComposeWindow: NSPanel {
     /// v0.11.3 「调时长…」 on the 小工具 tab: open Settings on the 小工具 page.
     var onOpenToolsSettings: (() -> Void)?
 
+    private var stickerPrefs: StickerPrefsModel?
+    /// Open / close 「更多表情…」 (demo and snapshot flags).
+    func setMoreStickers(expanded: Bool) {
+        stickerPrefs?.moreExpanded = expanded
+        DispatchQueue.main.async { [weak self] in self?.refit() }
+    }
+
     private var outsideClickMonitor: Any?
     private var isDismissing = false
 
@@ -38,6 +45,54 @@ final class ComposeWindow: NSPanel {
         let id: String
         let label: String
         let thumbnail: NSImage?
+        /// `StickerGroup` raw value (nil = 其他).
+        var group: String? = nil
+
+        /// A very wide strip (≥ 1.85 : 1, e.g. 冷战 with the pets far apart): letterboxed, not cropped to an empty middle.
+        /// Ordinary 16:9 stickers (贴贴, 送你花, 晚安…) still fill their tile as before.
+        var isWide: Bool { thumbnail.map { $0.size.height > 0 && $0.size.width / $0.size.height >= 1.85 } ?? false }
+    }
+
+    /// v0.15 the user's 常用 list and use times (`stickerFavorites` / `stickerRecent` of the profile), shared by the
+    /// panel's grids. Without a store (tests, snapshots of a throwaway profile) it is in memory only.
+    @MainActor final class StickerPrefsModel: ObservableObject {
+        private let store: ConfigStore?
+        @Published var pinned: [String]?
+        @Published var recent: [String: Int64]
+        /// A short confirmation (「已加入常用」) shown beside the 常用 title for a moment.
+        @Published var toast: String?
+        /// 「更多表情…」 is open. Remembered while the app runs (not saved): the next panel opens the same way.
+        @Published var moreExpanded = StickerPrefsModel.expandedThisSession {
+            didSet { StickerPrefsModel.expandedThisSession = moreExpanded }
+        }
+        nonisolated(unsafe) static var expandedThisSession = false
+        private var toastGeneration = 0
+
+        init(store: ConfigStore?) {
+            self.store = store
+            pinned = store?.stickerFavorites
+            recent = store?.stickerRecent ?? [:]
+        }
+
+        /// A sticker was sent (or acted out in solo): it moves to the front of 常用 next time.
+        func use(_ id: String) {
+            recent = StickerPanel.recorded(id, at: nowMs(), in: recent)
+            store?.stickerRecent = recent
+        }
+
+        /// 加入常用 / 移出常用 (nothing happens when 常用 is full).
+        func toggle(_ id: String, visible: [String]) {
+            let removing = StickerPanel.favorites(pinned: pinned, recent: [:], visible: visible).contains(id)
+            guard removing || StickerPanel.canAdd(pinned: pinned, visible: visible) else { return }
+            pinned = StickerPanel.toggled(id, pinned: pinned)
+            store?.stickerFavorites = pinned
+            toastGeneration += 1
+            let mine = toastGeneration
+            toast = removing ? "已移出常用" : "已加入常用 ★"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in
+                if self?.toastGeneration == mine { self?.toast = nil }
+            }
+        }
     }
 
     /// Nothing is loaded until the「记录」tab is opened.
@@ -59,7 +114,8 @@ final class ComposeWindow: NSPanel {
     /// `statusNote` is a tiny warning under the title (e.g. when not connected yet); nil hides it.
     init(partnerName: String, stickers: StickerCatalog, partnerFocusNote: String? = nil, statusNote: String? = nil, partnerApp: String? = nil,
          history: HistorySource? = nil, tab: Tab = .compose,
-         policy: ContentPolicy = .couple, solo: Bool = false, tools: ToolsPanelModel? = nil, weather: WeatherCardData = WeatherCardData()) {
+         policy: ContentPolicy = .couple, solo: Bool = false, tools: ToolsPanelModel? = nil, weather: WeatherCardData = WeatherCardData(),
+         stickerStore: ConfigStore? = nil) {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 300, height: 240),
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         appearance = NSAppearance(named: .aqua)   // our panels are drawn light (cream / orange); keep them light in Dark Mode
@@ -73,7 +129,7 @@ final class ComposeWindow: NSPanel {
 
         // v0.11: kiss / hug stickers are hidden when the policy (friend mode) does not allow intimate content.
         let choices = stickers.stickers.filter { policy.allowsSticker(intimate: $0.intimate) }.map { s in
-            StickerChoice(id: s.id, label: s.label, thumbnail: stickers.url(for: s.id).flatMap(Self.firstFrame))
+            StickerChoice(id: s.id, label: s.label, thumbnail: stickers.url(for: s.id).flatMap(Self.firstFrame), group: s.group)
         }
         NSLog("[lulu] compose: %ld stickers (%@), policy %@%@", choices.count, choices.map(\.id).joined(separator: ","),
               policy.mode.rawValue, solo ? ", solo panel" : "")
@@ -81,6 +137,8 @@ final class ComposeWindow: NSPanel {
         let labels = Dictionary(choices.map { ($0.id, $0.label) }, uniquingKeysWith: { a, _ in a })
         let model = solo ? nil : history.map { HistoryModel(source: $0, thumbnails: thumbs, labels: labels) }
         weatherModel.data = weather
+        let sprefs = StickerPrefsModel(store: stickerStore)
+        stickerPrefs = sprefs
         let view = ComposeView(
             weather: weatherModel,
             partnerName: partnerName,
@@ -89,6 +147,7 @@ final class ComposeWindow: NSPanel {
             focusNote: partnerFocusNote,
             partnerApp: partnerApp,
             stickers: choices,
+            prefs: sprefs,
             history: model,
             tools: tools,
             initialTab: (tab == .history && model == nil) || (tab == .tools && tools == nil) ? .compose : tab,
@@ -185,6 +244,7 @@ private struct ComposeView: View {
     /// v0.11.2: the partner's app version when known (shown tiny next to mine).
     let partnerApp: String?
     let stickers: [ComposeWindow.StickerChoice]
+    @ObservedObject var prefs: ComposeWindow.StickerPrefsModel
     let history: HistoryModel?
     let tools: ToolsPanelModel?
     let initialTab: ComposeWindow.Tab
@@ -401,50 +461,162 @@ private struct ComposeView: View {
     private static let cellHeight: CGFloat = 66
     private static let gridSpacing: CGFloat = 6
 
+    /// v0.15: 「常用」 grid, then a「更多表情…」 row that opens the whole library by emotion (remembered while the app runs).
+
     private var stickerGrid: some View {
-        let rows = (stickers.count + Self.columns - 1) / Self.columns
-        // When scrolling, a sliver of the next row peeks out so it's obvious there are more.
-        let shown = rows > Self.visibleRows ? CGFloat(Self.visibleRows) + 0.4 : CGFloat(rows)
-        let height = shown * Self.cellHeight + CGFloat(Int(shown)) * Self.gridSpacing
+        let visibleIDs = stickers.map(\.id)
+        let favIDs = StickerPanel.favorites(pinned: prefs.pinned, recent: prefs.recent, visible: visibleIDs)
+        let byID = Dictionary(stickers.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let favs = favIDs.compactMap { byID[$0] }
+        let hasMore = stickers.count > favs.count
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text("常用")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Self.accent.opacity(0.85))
+                Spacer(minLength: 0)
+                if let toast = prefs.toast {
+                    Text(toast)
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .foregroundStyle(Self.accent)
+                        .transition(.opacity)
+                }
+            }
+            if favs.isEmpty {
+                Text("还没有常用表情：右键（或长按）表情，选「加入常用」")
+                    .font(.system(size: 10, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                gridBlock(favs, visibleRows: prefs.moreExpanded && hasMore ? 2 : Self.visibleRows, favIDs: Set(favIDs))
+            }
+            if hasMore {
+                moreToggle
+                if prefs.moreExpanded { moreSection(favIDs: Set(favIDs), canAdd: favIDs.count < StickerPanel.maxFavorites) }
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: prefs.toast)
+    }
+
+    /// 「更多表情」 sections (StickerGroup order; anything without a known group last, as 「其他」).
+    private var sections: [(title: String, items: [ComposeWindow.StickerChoice])] {
+        var out: [(title: String, items: [ComposeWindow.StickerChoice])] = []
+        for g in StickerGroup.allCases {
+            let items = stickers.filter { $0.group == g.rawValue }
+            if !items.isEmpty { out.append((g.title, items)) }
+        }
+        let rest = stickers.filter { $0.group.flatMap(StickerGroup.init(rawValue:)) == nil }
+        if !rest.isEmpty { out.append(("其他", rest)) }
+        return out
+    }
+
+    private func toggleFavorite(_ id: String) {
+        prefs.toggle(id, visible: stickers.map(\.id))
+        DispatchQueue.main.async { onTabChanged(.compose) }   // 常用 may have gained / lost a row: refit the panel
+    }
+
+    private var moreToggle: some View {
+        Button {
+            prefs.moreExpanded.toggle()
+            DispatchQueue.main.async { onTabChanged(.compose) }   // refit the panel to the new height
+        } label: {
+            HStack(spacing: 4) {
+                Text(prefs.moreExpanded ? "收起更多表情" : "更多表情…")
+                Image(systemName: prefs.moreExpanded ? "chevron.up" : "chevron.down").font(.system(size: 8, weight: .bold))
+            }
+            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .foregroundStyle(Self.accent)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 5)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Self.accent.opacity(0.12)))
+            .contentShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+        .help("全部表情，按心情分组")
+    }
+
+    /// The whole library by emotion inside one scroll area (a ★ marks what is already in 常用).
+    private func moreSection(favIDs: Set<String>, canAdd: Bool) -> some View {
+        let height = 2.4 * Self.cellHeight + 2 * Self.gridSpacing + 24   // two rows + a sliver of the next + a group title
+        return ScrollView(.vertical, showsIndicators: true) {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(section.title)
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Color(white: 0.45))
+                        gridBlock(section.items, visibleRows: nil, favIDs: favIDs, markFavorites: true)
+                    }
+                }
+            }
+            .padding(.trailing, 8)   // room for the scroller
+        }
+        .frame(height: height)
+    }
+
+    /// A 4-column grid of cells; `visibleRows` (nil = all) more rows scroll inside a fixed-height area.
+    @ViewBuilder
+    private func gridBlock(_ items: [ComposeWindow.StickerChoice], visibleRows: Int?, favIDs: Set<String>, markFavorites: Bool = false) -> some View {
+        let rows = (items.count + Self.columns - 1) / Self.columns
         let grid = LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Self.gridSpacing), count: Self.columns),
                              spacing: Self.gridSpacing) {
-            ForEach(stickers) { s in
-                Button { onSendSticker(s.id) } label: {
-                    VStack(spacing: 2) {
-                        Group {
-                            if let img = s.thumbnail {
-                                Image(nsImage: img).resizable().aspectRatio(contentMode: .fill)
-                            } else {
-                                Color.gray.opacity(0.15)
-                            }
-                        }
-                        .frame(width: 50, height: 40)
-                        .clipShape(RoundedRectangle(cornerRadius: 7))
-                        Text(s.label)
-                            .font(.system(size: 10, weight: .medium, design: .rounded))
-                            .foregroundStyle(Color(white: 0.3))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                    }
-                    .padding(4)
-                    .frame(maxWidth: .infinity, minHeight: Self.cellHeight, maxHeight: Self.cellHeight)
-                    .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(0.85)))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(solo ? "让它演「\(s.label)」" : "发送「\(s.label)」")
-            }
+            ForEach(items) { s in cell(s, isFavorite: favIDs.contains(s.id), mark: markFavorites, canAdd: favIDs.count < StickerPanel.maxFavorites) }
         }
-        return Group {
-            if rows > Self.visibleRows {
-                ScrollView(.vertical, showsIndicators: true) {
-                    grid.padding(.trailing, 8)   // room for the scroller
+        if let visibleRows, rows > visibleRows {
+            // When scrolling, a sliver of the next row peeks out so it's obvious there are more.
+            let shown = CGFloat(visibleRows) + 0.4
+            ScrollView(.vertical, showsIndicators: true) {
+                grid.padding(.trailing, 8)   // room for the scroller
+            }
+            .frame(height: shown * Self.cellHeight + CGFloat(visibleRows) * Self.gridSpacing)
+        } else {
+            grid
+        }
+    }
+
+    /// One sticker. Tap = send (solo: act it out); right-click or long-press = 加入 / 移出常用.
+    private func cell(_ s: ComposeWindow.StickerChoice, isFavorite: Bool, mark: Bool, canAdd: Bool) -> some View {
+        VStack(spacing: 2) {
+            Group {
+                if let img = s.thumbnail {
+                    // Wide strips (e.g. 冷战, two pets far apart) are letterboxed instead of cropped to an empty middle.
+                    Image(nsImage: img).resizable().aspectRatio(contentMode: s.isWide ? .fit : .fill)
+                } else {
+                    Color.gray.opacity(0.15)
                 }
-                .frame(height: height)
+            }
+            .frame(width: 50, height: 40)
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+            .overlay(alignment: .topTrailing) {
+                if mark && isFavorite {
+                    Text("★").font(.system(size: 9)).foregroundStyle(Self.accent).padding(1)
+                }
+            }
+            Text(s.label)
+                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .foregroundStyle(Color(white: 0.3))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .padding(4)
+        .frame(maxWidth: .infinity, minHeight: Self.cellHeight, maxHeight: Self.cellHeight)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(0.85)))
+        .contentShape(Rectangle())
+        .onTapGesture { prefs.use(s.id); onSendSticker(s.id) }
+        .onLongPressGesture(minimumDuration: 0.6) { toggleFavorite(s.id) }
+        .contextMenu {
+            if isFavorite {
+                Button("移出常用") { toggleFavorite(s.id) }
+            } else if canAdd {
+                Button("加入常用") { toggleFavorite(s.id) }
             } else {
-                grid
+                Button("常用已满（最多 \(StickerPanel.maxFavorites) 个）") {}.disabled(true)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(s.label)
+        .accessibilityAddTraits(.isButton)
+        .help((solo ? "让它演「\(s.label)」" : "发送「\(s.label)」") + "（右键：加入 / 移出常用）")
     }
 
     private func quickButton(_ title: String, filled: Bool, help: String, action: @escaping () -> Void) -> some View {

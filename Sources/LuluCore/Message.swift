@@ -127,8 +127,19 @@ public struct Message: Codable, Equatable, Sendable, Identifiable {
         Message(from: from, kind: .text, text: text, ts: ts)
     }
 
-    public static func sticker(_ id: String, from: Role, ts: Int64 = nowMs()) -> Message {
-        Message(from: from, kind: .sticker, stickerId: id, ts: ts)
+    public static let stickerFallbackPrefix = "[表情] "
+
+    /// The sticker's name from the fallback `text` (nil when absent).
+    public var stickerFallbackLabel: String? {
+        guard kind == .sticker, let t = text, t.hasPrefix(Message.stickerFallbackPrefix) else { return nil }
+        let label = String(t.dropFirst(Message.stickerFallbackPrefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        return label.isEmpty ? nil : label
+    }
+
+    /// v0.15: `label` (the sticker's name) goes in `text` as「[表情] 么么哒」, only a fallback for a client that lacks the
+    /// sticker (it shows that instead of the raw id); every client that has the sticker ignores `text` for stickers.
+    public static func sticker(_ id: String, from: Role, ts: Int64 = nowMs(), label: String? = nil) -> Message {
+        Message(from: from, kind: .sticker, text: label.map { stickerFallbackPrefix + $0 }, stickerId: id, ts: ts)
     }
 
     public static func poke(from: Role, ts: Int64 = nowMs()) -> Message {

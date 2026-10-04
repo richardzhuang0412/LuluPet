@@ -492,7 +492,8 @@ os.makedirs('Resources/Stickers')
 index = []
 for s in json.load(open('assets/stickers.json')):
     build_sticker(s['gif'], f"Resources/Stickers/{s['id']}.gif")
-    index.append({'id': s['id'], 'label': s['label'], 'file': f"{s['id']}.gif", **({'intimate': True} if s.get('intimate') else {})})
+    index.append({'id': s['id'], 'label': s['label'], 'file': f"{s['id']}.gif", **({'intimate': True} if s.get('intimate') else {}),
+                  **({'group': s['group']} if s.get('group') else {})})   # v0.15: group = the panel's 「更多表情」 section
     print(f"sticker {s['id']} <- {s['gif']}")
 json.dump(index, open('Resources/Stickers/stickers.json', 'w'), ensure_ascii=False, indent=1)
 

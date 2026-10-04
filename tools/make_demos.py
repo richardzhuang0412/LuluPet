@@ -101,9 +101,9 @@ SCENES = {
                    dict(role="lumei", flags=["--outfit", "lace", "--demo-dnd", "angry@0.5", "--demo-dnd-off", "13"])],
         seconds=25, trim=(2.5, 24.5), region=(520, 450), pet_right=170, fps=12),
     "compose": dict(
-        caption="传话面板：发爱心、去找 TA、24 个快捷表情；「记录」按天分组，可以一直往回翻",
+        caption="传话面板：发爱心、去找 TA、「常用」表情和「更多表情」（77 个按心情分组）；「记录」按天分组，可以一直往回翻",
         instances=[dict(role="lulu", prefs=dict(myPlace=MY_PLACE), flags=["--outfit", "classic", "--demo-history", "--demo-compose",
-                                             "--demo-open-history-at", "5", "--fake-weather"])],
+                                             "--demo-open-history-at", "6.5", "--demo-more-stickers", "2.5", "--fake-weather"])],
         seed=CITY_SEED,
         seconds=10, trim=(1.0, 9.8), region=(600, 660), pet_right=160, fps=12, menubar=True),
     "v090_hug_sit": dict(

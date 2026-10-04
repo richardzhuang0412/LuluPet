@@ -301,5 +301,500 @@
   "visitor": {
    "lulu": "lulu_comein_01"
   }
+ },
+ "mwah": {
+  "couple": [
+   "kiss",
+   "kiss_2",
+   "kiss_sit"
+  ],
+  "visitor": {
+   "lumei": [
+    "lumei_more_07",
+    "lumei_shy_03"
+   ],
+   "lulu": "vid_07"
+  }
+ },
+ "mwah2": {
+  "couple": [
+   "kiss",
+   "kiss_2",
+   "kiss_sit"
+  ],
+  "visitor": {
+   "lumei": [
+    "lumei_more_07",
+    "lumei_shy_03"
+   ],
+   "lulu": "vid_07"
+  }
+ },
+ "sajiao": {
+  "couple": "none",
+  "visitor": {
+   "lumei": [
+    "lumei_more_07",
+    "lumei_shy_03"
+   ],
+   "lulu": "vid_07"
+  }
+ },
+ "sajiao2": {
+  "couple": "none",
+  "visitor": {
+   "lumei": [
+    "lumei_more_07",
+    "lumei_shy_03"
+   ],
+   "lulu": "vid_07"
+  }
+ },
+ "baituo": {
+  "couple": [
+   "nuzzle",
+   "cuddle_bed",
+   "sniff",
+   "lean"
+  ],
+  "visitor": {
+   "lumei": [
+    "lumei_more_08",
+    "lumei_idle_03"
+   ],
+   "lulu": "lulu_shy_02"
+  }
+ },
+ "xindong": {
+  "couple": "none",
+  "visitor": {
+   "lumei": "lumei_more_07",
+   "lulu": "vid_08"
+  }
+ },
+ "aini": {
+  "couple": "none",
+  "visitor": {
+   "lumei": "lumei_more_07",
+   "lulu": "vid_08"
+  }
+ },
+ "xingfu": {
+  "couple": "none",
+  "visitor": {
+   "lumei": "lumei_more_07",
+   "lulu": "vid_08"
+  }
+ },
+ "anwei": {
+  "couple": [
+   "hug_soft",
+   "nuzzle",
+   "comfort"
+  ],
+  "visitor": {
+   "lumei": "lumei_pout_01",
+   "lulu": "lulu_think_03"
+  }
+ },
+ "haha": {
+  "couple": "happy",
+  "visitor": {
+   "lumei": "lumei_happy_01",
+   "lulu": "vid_09"
+  }
+ },
+ "haha2": {
+  "couple": "happy",
+  "visitor": {
+   "lumei": "lumei_happy_01",
+   "lulu": "vid_09"
+  }
+ },
+ "xiaosi": {
+  "couple": "happy",
+  "visitor": {
+   "lumei": "lumei_happy_01",
+   "lulu": "vid_09"
+  }
+ },
+ "heihei": {
+  "couple": "happy",
+  "visitor": {
+   "lumei": "lumei_happy_01",
+   "lulu": "vid_09"
+  }
+ },
+ "heihei2": {
+  "couple": "happy",
+  "visitor": {
+   "lumei": "lumei_happy_01",
+   "lulu": "vid_09"
+  }
+ },
+ "biye": {
+  "couple": [
+   "happy",
+   "dance_q"
+  ],
+  "visitor": {
+   "lumei": "lumei_clap_01",
+   "lulu": "lulu_celebrate_01"
+  }
+ },
+ "ye": {
+  "couple": [
+   "happy",
+   "dance_q"
+  ],
+  "visitor": {
+   "lumei": "lumei_clap_01",
+   "lulu": "lulu_celebrate_01"
+  }
+ },
+ "deyi": {
+  "couple": "none",
+  "visitor": {
+   "lumei": "lumei_celebrate_01"
+  }
+ },
+ "jiayou": {
+  "couple": [
+   "happy",
+   "dance_q"
+  ],
+  "visitor": {
+   "lumei": "lumei_clap_01",
+   "lulu": "lulu_celebrate_01"
+  }
+ },
+ "chongya": {
+  "couple": [
+   "hug",
+   "happy",
+   "dance",
+   "hug_stand",
+   "hug_kneel"
+  ]
+ },
+ "weiqu": {
+  "couple": [
+   "hug_soft",
+   "nuzzle",
+   "comfort"
+  ],
+  "visitor": {
+   "lumei": "lumei_pout_01",
+   "lulu": "lulu_think_03"
+  }
+ },
+ "heng": {
+  "couple": "angry",
+  "visitor": {
+   "lumei": [
+    "lumei_pout_01",
+    "lumei_stomp_01"
+   ],
+   "lulu": "lulu_angry_01"
+  }
+ },
+ "heng2": {
+  "couple": "angry",
+  "visitor": {
+   "lumei": [
+    "lumei_pout_01",
+    "lumei_stomp_01"
+   ],
+   "lulu": "lulu_angry_01"
+  }
+ },
+ "lengzhan": {
+  "couple": "angry",
+  "visitor": {
+   "lumei": [
+    "lumei_pout_01",
+    "lumei_stomp_01"
+   ],
+   "lulu": "lulu_angry_01"
+  }
+ },
+ "xinsui": {
+  "couple": [
+   "hug_soft",
+   "nuzzle",
+   "comfort"
+  ],
+  "visitor": {
+   "lumei": "lumei_pout_01",
+   "lulu": "lulu_think_03"
+  }
+ },
+ "xiongni": {
+  "couple": "angry",
+  "visitor": {
+   "lumei": [
+    "lumei_pout_01",
+    "lumei_stomp_01"
+   ],
+   "lulu": "lulu_angry_01"
+  }
+ },
+ "wuyu": {
+  "couple": "none",
+  "visitor": {
+   "lumei": "lumei_celebrate_01"
+  }
+ },
+ "wow": {
+  "couple": "happy",
+  "visitor": {
+   "lumei": "lumei_happy_01",
+   "lulu": "vid_09"
+  }
+ },
+ "xiasi": {
+  "couple": [
+   "hug_soft",
+   "nuzzle",
+   "comfort"
+  ],
+  "visitor": {
+   "lumei": "lumei_pout_01",
+   "lulu": "lulu_think_03"
+  }
+ },
+ "ah": {
+  "couple": "none",
+  "visitor": {
+   "lumei": [
+    "lumei_more_08",
+    "lumei_stretch_01"
+   ],
+   "lulu": "lulu_think_03"
+  }
+ },
+ "kunle": {
+  "couple": [
+   "hug_slow",
+   "nuzzle",
+   "cuddle_bed",
+   "lean"
+  ],
+  "visitor": {
+   "lulu": "lulu_wave_03"
+  }
+ },
+ "kunkun": {
+  "couple": [
+   "hug_slow",
+   "nuzzle",
+   "cuddle_bed",
+   "lean"
+  ],
+  "visitor": {
+   "lulu": "lulu_wave_03"
+  }
+ },
+ "wanan": {
+  "couple": [
+   "hug_slow",
+   "nuzzle",
+   "cuddle_bed",
+   "lean"
+  ],
+  "visitor": {
+   "lulu": "lulu_wave_03"
+  }
+ },
+ "ganfan": {
+  "couple": "none",
+  "visitor": {
+   "lumei": [
+    "lumei_eat_01",
+    "lumei_icecream_01"
+   ],
+   "lulu": "lulu_drink_02"
+  }
+ },
+ "e": {
+  "couple": "none",
+  "visitor": {
+   "lumei": [
+    "lumei_eat_01",
+    "lumei_icecream_01"
+   ],
+   "lulu": "lulu_drink_02"
+  }
+ },
+ "shangban": {
+  "couple": "none",
+  "visitor": {
+   "lumei": [
+    "lumei_more_08",
+    "lumei_stretch_01"
+   ],
+   "lulu": "lulu_think_03"
+  }
+ },
+ "xiaban": {
+  "couple": [
+   "hug",
+   "happy",
+   "dance",
+   "hug_stand",
+   "hug_kneel"
+  ]
+ },
+ "daojia": {
+  "couple": "none",
+  "visitor": {
+   "lulu": "lulu_comein_01"
+  }
+ },
+ "leitan": {
+  "couple": [
+   "hug_soft",
+   "nuzzle",
+   "comfort"
+  ],
+  "visitor": {
+   "lumei": "lumei_pout_01",
+   "lulu": "lulu_think_03"
+  }
+ },
+ "aqi": {
+  "couple": [
+   "hug_soft",
+   "nuzzle",
+   "comfort"
+  ],
+  "visitor": {
+   "lumei": "lumei_pout_01",
+   "lulu": "lulu_think_03"
+  }
+ },
+ "haode": {
+  "couple": "happy",
+  "visitor": {
+   "lumei": "lumei_happy_01",
+   "lulu": "vid_09"
+  }
+ },
+ "shoudao": {
+  "couple": [
+   "nuzzle",
+   "cuddle_bed",
+   "sniff",
+   "lean"
+  ],
+  "visitor": {
+   "lumei": [
+    "lumei_more_08",
+    "lumei_idle_03"
+   ],
+   "lulu": "lulu_shy_02"
+  }
+ },
+ "duibuqi": {
+  "couple": [
+   "hug",
+   "nuzzle",
+   "kiss",
+   "kiss_2",
+   "hug_stand",
+   "hug_kneel",
+   "hug_sit",
+   "comfort",
+   "cuddle_bed"
+  ],
+  "visitor": {
+   "lumei": "lumei_more_07",
+   "lulu": "vid_07"
+  }
+ },
+ "buma": {
+  "couple": "none",
+  "visitor": {
+   "lumei": [
+    "lumei_more_07",
+    "lumei_shy_03"
+   ],
+   "lulu": "vid_07"
+  }
+ },
+ "xiexie": {
+  "couple": "flowers",
+  "visitor": {
+   "lumei": "lumei_clap_01",
+   "lulu": "lulu_clap_01"
+  }
+ },
+ "dengni": {
+  "couple": [
+   "hug",
+   "nuzzle",
+   "kiss",
+   "kiss_2",
+   "hug_stand",
+   "hug_kneel",
+   "hug_sit",
+   "comfort",
+   "cuddle_bed"
+  ],
+  "visitor": {
+   "lumei": "lumei_more_07",
+   "lulu": "vid_07"
+  }
+ },
+ "baibai": {
+  "couple": "none",
+  "visitor": {
+   "lulu": "lulu_comein_01"
+  }
+ },
+ "huilai": {
+  "couple": [
+   "hug",
+   "happy",
+   "dance",
+   "hug_stand",
+   "hug_kneel"
+  ]
+ },
+ "wowowo": {
+  "couple": "none",
+  "visitor": {
+   "lumei": [
+    "lumei_more_08",
+    "lumei_stretch_01"
+   ],
+   "lulu": "lulu_think_03"
+  }
+ },
+ "haore": {
+  "couple": "bench",
+  "visitor": {
+   "lulu": "lulu_drink_02"
+  }
+ },
+ "facai": {
+  "couple": [
+   "happy",
+   "dance_q"
+  ],
+  "visitor": {
+   "lumei": "lumei_clap_01",
+   "lulu": "lulu_celebrate_01"
+  }
+ },
+ "shengdan": {
+  "couple": [
+   "happy",
+   "dance_q"
+  ],
+  "visitor": {
+   "lumei": "lumei_clap_01",
+   "lulu": "lulu_celebrate_01"
+  }
  }
 }

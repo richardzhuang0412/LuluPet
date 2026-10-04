@@ -24,7 +24,7 @@ public enum Visits {
     public static func coupleMove(for kind: Message.Kind, text: String? = nil, label: String? = nil) -> CoupleMove {
         if kind == .visit { return .hug }
         let words = [text, label].compactMap { $0 }.joined(separator: " ")
-        if words.contains("亲亲") { return .kiss }
+        if words.contains("亲亲") || words.contains("么么哒") { return .kiss }
         if words.contains("想你") || words.contains("抱抱") { return .hug }
         return .nuzzle
     }

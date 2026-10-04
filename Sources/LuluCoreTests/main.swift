@@ -2276,7 +2276,7 @@ do {
         }
         check(!leaked, "v0.11 visits: shipped pools under friend policy never yield an intimate clip (\(played) non-intimate picks)")
         let realStickers = StickerCatalog(root: res.appendingPathComponent("Stickers"))
-        check(realStickers.stickers.filter(\.intimate).map(\.id).sorted() == ["hug", "holdhands", "kiss", "nuzzle", "sleeptogether", "wink"].sorted(), "v0.11: shipped stickers: intimate set")
+        check(realStickers.stickers.filter(\.intimate).map(\.id).sorted() == ["hug", "holdhands", "kiss", "nuzzle", "sleeptogether", "wink", "mwah", "mwah2", "anwei"].sorted(), "v0.11 / v0.15: shipped stickers: intimate set")
     }
 } catch { check(false, "v0.11 manifests \(error)") }
 
@@ -3104,6 +3104,69 @@ do {
     check(st.remindSnooze(.water) == RemindSnoozeOrigin(ackOf: "-R1", at: 5) && st.remindSnooze(.stand) == nil, "snooze origin: per kind")
     st.setRemindSnooze(nil, for: .water)
     check(st.remindSnooze(.water) == nil, "snooze origin: cleared")
+}
+// v0.15 stickers: 77-sticker manifest, 常用 / 更多表情 rules.
+do {
+    let built = StickerCatalog(root: URL(fileURLWithPath: "Resources/Stickers"))
+    let ids = built.stickers.map(\.id)
+    check(ids.count == 77 && Set(ids).count == 77, "v0.15 manifest: 77 unique sticker ids (\(ids.count))")
+    check(ids.prefix(24).elementsEqual(StickerPanel.defaultFavorites), "v0.15 manifest: the original 24 come first, in their old order")
+    check(built.stickers.allSatisfy { FileManager.default.fileExists(atPath: built.root.appendingPathComponent($0.file).path) }, "v0.15 manifest: every sticker file exists in Resources")
+    let assetsJSON = (try? JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: "assets/stickers.json")))) as? [[String: Any]] ?? []
+    check(assetsJSON.allSatisfy { FileManager.default.fileExists(atPath: "assets/gifs/\($0["gif"] as? String ?? "?").gif") }, "v0.15 manifest: every sticker has its source gif in assets/gifs")
+    check(built.stickers.allSatisfy { $0.group.flatMap(StickerGroup.init(rawValue:)) != nil }, "v0.15 manifest: every sticker has a known group")
+    let intimate = Set(built.stickers.filter(\.intimate).map(\.id))
+    check(intimate == ["hug", "kiss", "nuzzle", "holdhands", "sleeptogether", "wink", "mwah", "mwah2", "anwei"], "v0.15: intimate stickers \(intimate.sorted())")
+    let friend = ContentPolicy(myMode: .friend, partnerMode: .friend, me: .lulu, partner: .lumei)
+    let couple = ContentPolicy(myMode: .couple, partnerMode: .couple, me: .lulu, partner: .lumei)
+    let friendIDs = built.stickers.filter { friend.allowsSticker(intimate: $0.intimate) }.map(\.id)
+    check(friendIDs.count == 68 && !friendIDs.contains("mwah") && !friendIDs.contains("mwah2") && !friendIDs.contains("anwei"), "v0.15: friend mode hides the 3 new intimate stickers (\(friendIDs.count) left)")
+    check(built.stickers.filter { couple.allowsSticker(intimate: $0.intimate) }.count == 77, "v0.15: couple mode shows all 77")
+
+    // grouping covers the library once, in group order
+    let groups = StickerPanel.grouped(built.stickers)
+    check(groups.map { $0.group } == StickerGroup.allCases.map { Optional($0) } && groups.reduce(0) { $0 + $1.stickers.count } == 77, "v0.15: 更多表情 groups cover all 77")
+    check(StickerPanel.grouped([Sticker(id: "x", label: "x", file: "x.gif", group: "future")]).first?.group == nil, "v0.15: unknown group → 其他")
+
+    // 常用 ordering
+    let vis = ids
+    check(StickerPanel.favorites(pinned: nil, recent: [:], visible: vis) == StickerPanel.defaultFavorites, "常用: default = the original 24, old order")
+    check(StickerPanel.favorites(pinned: nil, recent: [:], visible: friendIDs) == StickerPanel.defaultFavorites.filter { !intimate.contains($0) }, "常用: friend filter hides intimate")
+    let pinned = ["hug", "xiaosi", "chigua", "gone", "xiaosi"]
+    check(StickerPanel.favorites(pinned: pinned, recent: [:], visible: vis) == ["hug", "xiaosi", "chigua"], "常用: pinned order, unknown + duplicates dropped")
+    check(StickerPanel.favorites(pinned: pinned, recent: ["chigua": 30, "hug": 10], visible: vis) == ["chigua", "hug", "xiaosi"], "常用: recent first (newest first), unused keep pinned order")
+    check(StickerPanel.favorites(pinned: pinned, recent: ["xiaosi": 5, "chigua": 5], visible: vis) == ["xiaosi", "chigua", "hug"], "常用: equal timestamps keep pinned order")
+    check(StickerPanel.favorites(pinned: pinned, recent: ["mwah": 99], visible: vis) == ["hug", "xiaosi", "chigua"], "常用: recent use of an unpinned sticker does not pin it")
+    check(StickerPanel.toggled("chigua", pinned: nil) == StickerPanel.defaultFavorites, "常用: full list refuses to grow")
+    check(!StickerPanel.canAdd(pinned: nil, visible: vis) && StickerPanel.canAdd(pinned: Array(StickerPanel.defaultFavorites.dropLast()), visible: vis), "常用: canAdd false when 24")
+    check(StickerPanel.toggled("hug", pinned: nil) == StickerPanel.defaultFavorites.filter { $0 != "hug" }, "常用: first edit starts from the default 24")
+    check(StickerPanel.toggled("a", pinned: ["b"]) == ["b", "a"] && StickerPanel.toggled("a", pinned: ["a", "b"]) == ["b"], "常用: toggle adds at the end / removes")
+    let hidden = StickerPanel.toggled("xiaosi", pinned: ["mwah"])
+    check(hidden == ["mwah", "xiaosi"] && StickerPanel.favorites(pinned: hidden, recent: [:], visible: friendIDs) == ["xiaosi"], "常用: friend mode hides a pinned intimate sticker but keeps the pin")
+    check(StickerPanel.recorded("a", at: 7, in: ["a": 1, "b": 2]) == ["a": 7, "b": 2], "recent: stamp")
+    let big = Dictionary(uniqueKeysWithValues: (0..<300).map { ("s\($0)", Int64($0)) })
+    let trimmed = StickerPanel.recorded("new", at: 1000, in: big)
+    check(trimmed.count == 200 && trimmed["new"] == 1000 && trimmed["s0"] == nil && trimmed["s299"] == 299, "recent: capped at 200, oldest dropped")
+
+    // stored keys
+    let ps = ConfigStore(profile: "test-\(UUID().uuidString)")
+    check(ps.stickerFavorites == nil && ps.stickerRecent.isEmpty, "stickerFavorites / stickerRecent default: absent")
+    ps.stickerFavorites = ["hug", "mwah"]
+    ps.stickerRecent = ["mwah": 1759000000000]
+    check(ps.stickerFavorites == ["hug", "mwah"] && ps.stickerRecent == ["mwah": 1759000000000], "stickerFavorites / stickerRecent round trip")
+    check((ps.defaults.array(forKey: "stickerFavorites") as? [String]) == ["hug", "mwah"] && (ps.defaults.dictionary(forKey: "stickerRecent") as? [String: Int64]) == ["mwah": 1759000000000], "sticker prefs wire shape")
+    ps.wipe()
+
+    // label fallback in `text`
+    let fm = Message.sticker("mwah", from: .lulu, ts: 1, label: "么么哒")
+    check(fm.text == "[表情] 么么哒" && fm.stickerFallbackLabel == "么么哒" && Message.sticker("hug", from: .lulu, ts: 1).text == nil, "sticker label fallback in text")
+    check(Message.text("[表情] 么么哒", from: .lulu, ts: 1).stickerFallbackLabel == nil, "fallback label only on sticker messages")
+    check(Visits.coupleMove(for: .sticker, text: fm.text, label: "么么哒") == .kiss, "么么哒 → kiss move")
+    check(SoundEvent.forSticker("haha") == .happy && SoundEvent.forSticker("heng") == .angry && SoundEvent.forSticker("xinsui") == .cry && SoundEvent.forSticker("chigua") == nil, "v0.15 sticker sounds follow their reaction")
+    // every new sticker with a reaction has its reactions.json entry
+    let rt = ReactionTable(url: URL(fileURLWithPath: "assets/reactions.json"))
+    let noEntry = Set(["chigua", "xiayu"])
+    check(ids.dropFirst(24).allSatisfy { noEntry.contains($0) || rt.entries[$0] != nil }, "v0.15: new stickers have reactions (except default ones)")
 }
 try? FileManager.default.removeItem(at: tmp)
 // UserDefaults suites leave their plist behind even after removePersistentDomain; delete test ones.

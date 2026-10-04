@@ -49,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var demoHistory = false           // --demo-history: seed an EMPTY profile history with ~40 messages over 3 days
         var demoOpenHistory = false       // --demo-open-history: open the compose panel on the「记录」tab
         var demoOpenHistoryAt: TimeInterval?  // --demo-open-history-at S: (re)open the panel on the「记录」tab at S s (demo GIFs)
+        var demoMoreStickersAt: TimeInterval?  // --demo-more-stickers S: open 「更多表情…」 in the compose panel at S s (demo GIFs, snapshots)
         var demoHotkeys: [(HotkeyCenter.Action, TimeInterval)] = []   // --demo-hotkey toggle@2,compose@4
         var demoMenu: TimeInterval?       // --demo-menu S: pop up the status menu at S s (snapshots)
         var demoPressCard: TimeInterval?  // --demo-press-card S: press the card's「看看」at S s
@@ -170,6 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case "--demo-history": demoHistory = true
                 case "--demo-open-history": demoOpenHistory = true
                 case "--demo-open-history-at": demoOpenHistoryAt = it.next().flatMap(TimeInterval.init)
+                case "--demo-more-stickers": demoMoreStickersAt = it.next().flatMap(TimeInterval.init)
                 case "--demo-history-day": demoOpenHistory = true; HistoryModel.demoScrollToDaysAgo = it.next().flatMap(Int.init)
                 case "--demo-hotkey":
                     demoHotkeys = (it.next() ?? "").split(separator: ",").compactMap { part in
@@ -2066,7 +2068,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let id = m.stickerId, let url = stickers.url(for: id), FileManager.default.fileExists(atPath: url.path) {
                 content = .sticker(url, caption: label.map { $0.hasSuffix("～") || $0.hasSuffix("!") || $0.hasSuffix("！") ? $0 : $0 + "～" })
             } else {
-                content = .text("［表情：\(label ?? m.stickerId ?? "?")］")
+                content = .text("［表情：\(label ?? m.stickerFallbackLabel ?? m.stickerId ?? "?")］")
             }
             return (BubbleItem(header: header, content: content, message: source), label)
         case .visit:
@@ -2282,7 +2284,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notice.dismiss()
         DispatchQueue.main.async { [weak self] in self?.refreshWeather(force: false) }   // v0.12: after the panel is up (it is a reason to refresh)
         let c = ComposeWindow(partnerName: myName, stickers: stickers, tab: tab, policy: contentPolicy, solo: true, tools: tools.panel,
-                              weather: composeWeatherCard())
+                              weather: composeWeatherCard(), stickerStore: store)
         c.onOpenSettings = { [weak self] in self?.openSettings() }
         c.onOpenToolsSettings = { [weak self] in self?.tools.onOpenSettings?() }
         c.onSendSticker = { [weak self] id in self?.playSoloSticker(id, seat: role) }
@@ -2323,7 +2325,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                               partnerApp: partnerOnline == true ? channel?.partnerPresence?.app.flatMap { AppVersion($0)?.description } : nil,
                               history: .init(store: history, me: role, away: unseenAway, dndSpans: store.dndLog, awayTitle: unseenAwayTitle,
                                              awaySincerity: unseenAwayTitle.hasPrefix("🔕")), tab: tab,
-                              policy: contentPolicy, tools: tools.panel, weather: composeWeatherCard())
+                              policy: contentPolicy, tools: tools.panel, weather: composeWeatherCard(), stickerStore: store)
         c.onOpenSettings = { [weak self] in self?.openSettings() }
         c.onOpenToolsSettings = { [weak self] in self?.tools.onOpenSettings?() }
         c.onHistorySeen = { [weak self] in
@@ -2331,7 +2333,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.unseenAway = nil
         }
         c.onSendText = { [weak self] text in self?.send(.text(text, from: role)) }
-        c.onSendSticker = { [weak self] id in self?.send(.sticker(id, from: role)) }
+        c.onSendSticker = { [weak self] id in self?.send(.sticker(id, from: role, label: self?.stickers.label(for: id))) }
         c.onGoVisit = { [weak self] in self?.goVisit() }
         c.onPeek = { [weak self] in self?.peekAtPartner() }   // v0.14.3
         c.onSendHeart = { [weak self] in self?.sendHeart() }
@@ -2798,6 +2800,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if options.demoOpenHistory {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.openCompose(tab: .history) }
+        }
+        if let t = options.demoMoreStickersAt {
+            DispatchQueue.main.asyncAfter(deadline: .now() + t) { [weak self] in self?.compose?.setMoreStickers(expanded: true) }
         }
         if let t = options.demoOpenHistoryAt {
             DispatchQueue.main.asyncAfter(deadline: .now() + t) { [weak self] in self?.openCompose(tab: .history) }

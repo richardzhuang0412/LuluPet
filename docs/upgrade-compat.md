@@ -42,6 +42,8 @@
 | | `setupTodoDismissed`（v0.13，字符串数组，如 `["city","reminders"]`；缺省 = 空） | 「待设置」里点了「不用了」的项（`city` / `weatherWidget`（v0.13.3 起不再出现） / `reminders` / `partnerUpgrade`），永远不再出现；欢迎窗走完时会写入 `city` 和 `reminders`。老版本忽略 |
 | | `updateLastCheck`（v0.14，Double，Unix 秒；缺省 = 从没检查过） | 一天一次自动检查更新的上次时间（失败的检查也算一次，断网不会连环重试）。读不到就当作该检查了 |
 | | `updateSkipped`（v0.14，String，如 `"0.14.0"`；缺省 = 没跳过） | 在新版本卡片上点了「以后再说」的版本。只有自动检查对它保持安静；手动「检查更新」照常提示，更新的版本也照常提示 |
+| | `stickerFavorites`（v0.15，字符串数组，用户自己加入「常用」的表情 id，按加入顺序；缺省 = 没改过 = 用原来的 24 个：`StickerPanel.defaultFavorites`；最多 24 个，读时去重、不认识 / 当前模式隐藏的 id 跳过但**不删**） | 传话面板「常用」那一排（第一次右键加入 / 移出时才写入，起点是默认的 24 个）。老版本忽略这个键 |
+| | `stickerRecent`（v0.15，JSON 字典 `{表情 id: 最近一次发送 / 演出的 Unix 毫秒}`，最多 200 条，满了删最旧的；缺省 / 坏数据 = 空） | 「常用」按它排序：用过的在前（最近的最前），没用过的保持加入顺序。只记使用时间，不会因此把表情加进常用。老版本忽略 |
 | | `myPlace`（v0.12，`WeatherPlace` 的 JSON：`{"name", "admin"?, "country"?, "latitude", "longitude", "timezone"}`；经纬度保留两位小数，读取时也会取整；缺省 / 坏数据 = 没设城市） | 我的城市。设了才会查天气，也才会发布到 presence 的 `place`。老版本忽略这个键 |
 | | `weatherWidget`（v0.12，JSON `{"enabled": Bool, "x": Double?, "y": Double?}`；缺省 / 坏数据 = 关闭、没拖动过） | **已弃用（v0.13.3 起不再使用）**：v0.12 桌面天气小组件的开关和位置。v0.13.3 去掉了小组件（天气改在传话面板里），键仍可读、不会删，也不再写。老版本忽略 |
 | | `weatherCache`（v0.12，JSON `{"<纬度两位>,<经度两位>": WeatherSnapshot}`，最多 8 个地点，满了删最旧的；坏数据 = 空） | 每个地点最近一次成功的天气（失败时保留旧数据，显示「x 分钟前」）。老版本忽略 |
@@ -178,3 +180,11 @@
 - `pose` 由现有状态推出，优先级：隐藏 → 勿扰 → 番茄钟专注 → 打盹 → 省电静止 → 当前有片段的天气造型 → 待机。勿扰的心情不另发，泡泡直接读已有的 `presence.dnd.mood`。
 - 串门：消息自带的 `outfit` 优先；消息没带时用 TA 现在发布的 `outfit`。
 - 老版本整个对象 PUT 时没有这两个字段 = 没发布；新版本读到就是缺省。
+
+## 13. 53 个新表情 + 常用 / 更多表情（v0.15）
+
+- 纯加东西，没有迁移，不改 Firebase 数据格式。
+- **`stickers.json` 新增可选字段 `group`**（`love` / `happy` / `sad` / `wow` / `daily` / `reply` / `season`，对应「更多表情」里的分组）；缺省或不认识 = 归到「其他」。只是资源清单，随 App 打包。新表情的 `id` 一旦发出就**永远不能改名 / 复用**（它写在消息的 `stickerId` 里）：`mwah` `mwah2` `sajiao` `sajiao2` `baituo` `xindong` `aini` `xingfu` `anwei` `haha` `haha2` `xiaosi` `heihei` `heihei2` `biye` `ye` `deyi` `jiayou` `chongya` `weiqu` `heng` `heng2` `lengzhan` `xinsui` `xiongni` `wuyu` `wow` `xiasi` `ah` `chigua` `kunle` `kunkun` `wanan` `ganfan` `e` `shangban` `xiaban` `daojia` `leitan` `aqi` `haode` `shoudao` `duibuqi` `buma` `xiexie` `dengni` `baibai` `huilai` `wowowo` `xiayu` `haore` `facai` `shengdan`。亲密（朋友模式隐藏）的新表情：`mwah` `mwah2` `anwei`。
+- **老版本收到不认识的 `stickerId`（实测读代码）**：不会崩、不会丢。气泡显示文字「［表情：<id>］」（例如「［表情：mwah］」）、历史记录里是一个 🧸 加「表情」、「你不在的时候」卡片里是「🧸 表情」；消息照常存进历史，TA 升级后重新打开记录就能看到动图。老版本会忽略消息里的 `text`，所以对已发布的老版本没法改善这个提示。
+- **兜底 `text`（v0.15 起）**：发表情时消息多带一个 `text`：「[表情] 么么哒」（`Message.stickerFallbackLabel`）。所有认识这个表情的客户端对 sticker 消息都忽略 `text`（新版本优先显示动图）；v0.15 及以后的版本收到自己不认识的表情 id 时，气泡改显示「［表情：么么哒］」而不是拼音 id。老版本忽略 `text`，所以对它们没有变化、也没有副作用。
+- **本地新键** `stickerFavorites` / `stickerRecent`：见第 1 节。

@@ -6,15 +6,18 @@ public struct Sticker: Codable, Sendable, Identifiable {
     public var file: String
     /// v0.11: a kiss / hug / cuddle sticker, hidden in friend mode (`ContentPolicy.allowsSticker`). Absent = false.
     public var intimate: Bool
+    /// v0.15: the「更多表情」 section (`StickerGroup` raw value); absent / unknown = 「其他」.
+    public var group: String?
 
-    public init(id: String, label: String, file: String, intimate: Bool = false) {
+    public init(id: String, label: String, file: String, intimate: Bool = false, group: String? = nil) {
         self.id = id
         self.label = label
         self.file = file
         self.intimate = intimate
+        self.group = group
     }
 
-    private enum CodingKeys: String, CodingKey { case id, label, file, intimate }
+    private enum CodingKeys: String, CodingKey { case id, label, file, intimate, group }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -22,6 +25,7 @@ public struct Sticker: Codable, Sendable, Identifiable {
         label = try c.decode(String.self, forKey: .label)
         file = try c.decode(String.self, forKey: .file)
         intimate = (try? c.decodeIfPresent(Bool.self, forKey: .intimate)) ?? false
+        group = (try? c.decodeIfPresent(String.self, forKey: .group)) ?? nil
     }
 }
 
