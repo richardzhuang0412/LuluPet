@@ -422,7 +422,7 @@ private struct ToolsPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
-                Text("🍅").font(.system(size: 26))
+                Text("🧰").font(.system(size: 26))
                 VStack(alignment: .leading, spacing: 2) {
                     Text("小工具").font(.system(size: 17, weight: .bold, design: .rounded))
                     Text("番茄钟、喝水和站立提醒；改了马上生效")

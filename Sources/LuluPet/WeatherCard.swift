@@ -12,8 +12,19 @@ struct WeatherRow: Identifiable, Equatable {
     var label: String             // "TA" / "我"
     var avatar: NSImage?          // tiny idle frame of the character; nil → `emoji`
     var emoji: String             // fallback avatar
-    var place: WeatherPlace
+    var place: WeatherPlace?      // nil: TA hasn't set a city (the row still shows TA's status)
     var snapshot: WeatherSnapshot?
+    /// v0.15.1 TA's status tag (TA's row only).
+    var status: PartnerStatus? = nil
+}
+
+/// Raw inputs for `PartnerBadge` — kept raw so the minute-ticking view recomputes 「离线 · N 分钟前」.
+struct PartnerStatus: Equatable {
+    var online: Bool?
+    var neverSeen: Bool
+    var lastSeenMs: Int64?
+    var dnd: DNDStatus?
+    var focus: FocusStatus?
 }
 
 /// What the card shows. `hasMyCity == false` adds the 「设置我的城市」 link; no rows and a city = nothing to show.
@@ -70,12 +81,28 @@ private struct WeatherRowView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 4) {
                     Text(row.label).font(.system(size: 9, weight: .bold, design: .rounded)).foregroundStyle(Color(white: 0.5))
-                    Text(row.place.name).font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(Color(white: 0.2)).lineLimit(1)
+                    Text(row.place?.name ?? "还没设置城市").font(.system(size: 12, weight: row.place == nil ? .regular : .semibold, design: .rounded))
+                        .foregroundStyle(Color(white: row.place == nil ? 0.5 : 0.2)).lineLimit(1)
                 }
-                Text(timeLine).font(.system(size: 10, design: .rounded)).foregroundStyle(Color(white: 0.45)).lineLimit(1)
+                HStack(spacing: 4) {
+                    if row.place != nil {
+                        Text(timeLine).font(.system(size: 10, design: .rounded)).foregroundStyle(Color(white: 0.45)).lineLimit(1)
+                    }
+                    if let b = badge {   // v0.15.1 TA's status, on the second line so the city name keeps its room
+                        Text("\(b.dot) \(b.text)")
+                            .font(.system(size: 9, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Color(white: 0.4))
+                            .lineLimit(1)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(Capsule().fill(Color.black.opacity(0.05)))
+                            .fixedSize()
+                    }
+                }
             }
             Spacer(minLength: 4)
-            if let s = fresh {
+            if row.place == nil {
+                EmptyView()
+            } else if let s = fresh {
                 Text(s.condition.emoji(isDay: s.isDay)).font(.system(size: 20))
                 VStack(alignment: .trailing, spacing: 0) {
                     Text("\(Int(s.temperature.rounded()))°").font(.system(size: 15, weight: .semibold, design: .rounded)).monospacedDigit()
@@ -91,8 +118,14 @@ private struct WeatherRowView: View {
         .frame(height: 30)
     }
 
+    private var badge: PartnerBadge.Badge? {
+        row.status.map { PartnerBadge.make(online: $0.online, neverSeen: $0.neverSeen, lastSeenMs: $0.lastSeenMs, dnd: $0.dnd,
+                                           focus: $0.focus, nowMs: Int64(now.timeIntervalSince1970 * 1000)) }
+    }
+
     private var timeLine: String {
-        var out = WeatherText.localTime(timezone: row.place.timezone, now: now)
+        guard let place = row.place else { return "" }
+        var out = WeatherText.localTime(timezone: place.timezone, now: now)
         if let s = fresh, let age = WeatherRefresh.ageLabel(fetchedAt: s.fetchedAt, now: now.timeIntervalSince1970) { out += " · \(age)" }
         return out
     }

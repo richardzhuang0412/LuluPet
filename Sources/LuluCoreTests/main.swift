@@ -3168,6 +3168,20 @@ do {
     let noEntry = Set(["chigua", "xiayu"])
     check(ids.dropFirst(24).allSatisfy { noEntry.contains($0) || rt.entries[$0] != nil }, "v0.15: new stickers have reactions (except default ones)")
 }
+// MARK: v0.15.1 partner status tag
+do {
+    var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+    let now: Int64 = 1_760_000_000_000
+    check(PartnerBadge.make(online: nil, neverSeen: true, lastSeenMs: nil, dnd: nil, focus: nil, nowMs: now, calendar: cal) == .init(dot: "⚪️", text: "还没上线过"), "badge: never seen")
+    check(PartnerBadge.make(online: true, neverSeen: false, lastSeenMs: now, dnd: nil, focus: nil, nowMs: now, calendar: cal).text == "在线", "badge: online")
+    check(PartnerBadge.make(online: true, neverSeen: false, lastSeenMs: now, dnd: DNDStatus(mood: "angry", untilMs: 0), focus: nil, nowMs: now, calendar: cal) == .init(dot: "😤", text: "生气中"), "badge: dnd mood")
+    check(PartnerBadge.make(online: true, neverSeen: false, lastSeenMs: now, dnd: DNDStatus(mood: "angry", untilMs: now - 1), focus: nil, nowMs: now, calendar: cal).text == "在线", "badge: expired dnd")
+    check(PartnerBadge.make(online: false, neverSeen: false, lastSeenMs: now - 12 * 60_000, dnd: nil, focus: nil, nowMs: now, calendar: cal).text == "离线 · 12 分钟前", "badge: offline minutes")
+    check(PartnerBadge.make(online: false, neverSeen: false, lastSeenMs: now - 30_000, dnd: nil, focus: nil, nowMs: now, calendar: cal).text == "离线 · 刚刚", "badge: offline just now")
+    check(PartnerBadge.make(online: false, neverSeen: false, lastSeenMs: nil, dnd: nil, focus: nil, nowMs: now, calendar: cal).text == "离线", "badge: offline unknown")
+    check(PartnerBadge.make(online: false, neverSeen: false, lastSeenMs: now - 3 * 86_400_000, dnd: nil, focus: nil, nowMs: now, calendar: cal).text.hasPrefix("离线 · 10月"), "badge: offline date")
+}
+
 try? FileManager.default.removeItem(at: tmp)
 // UserDefaults suites leave their plist behind even after removePersistentDomain; delete test ones.
 let prefsDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Preferences")

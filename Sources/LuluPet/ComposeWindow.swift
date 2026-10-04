@@ -273,7 +273,7 @@ private struct ComposeView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Text(currentTab == .tools ? "🍅 小工具" : solo ? "让\(partnerName)演一个" : currentTab == .compose ? "给\(partnerName)传话" : "和\(partnerName)的记录")
+                Text(currentTab == .tools ? "🧰 小工具" : solo ? "让\(partnerName)演一个" : currentTab == .compose ? "给\(partnerName)传话" : "和\(partnerName)的记录")
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundStyle(Self.accent)
                     .lineLimit(1)

@@ -782,6 +782,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ch.onPartnerPresence = { [weak self] _ in
             self?.evaluateUpgradeNudge()
             self?.partnerPlaceMaybeChanged()   // v0.12
+            self?.refreshComposeWeatherCard()  // v0.15.1 TA's status tag
         }
         ch.onPartnerIdentity = { [weak self] id in
             guard let self else { return }
@@ -951,11 +952,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// v0.13.3 the weather card at the top of the compose panel: TA's row first (paired, once TA's city is known), then
     /// mine; solo only mine. No city of mine → the 「设置我的城市」 link.
+    private func refreshComposeWeatherCard() {
+        if let compose, compose.isVisible { compose.setWeatherCard(composeWeatherCard()) }
+    }
+
     private func composeWeatherCard() -> WeatherCardData {
         var rows: [WeatherRow] = []
-        if !isSolo, let place = weather.partnerPlace {
+        if !isSolo, let channel {
+            // v0.15.1: TA's row is there even without TA's city — it carries TA's online / 勿扰 / 专注 tag.
             let theirChar = Role(rawValue: partnerCharacter().rawValue)
-            rows.append(WeatherRow(id: "ta", label: "TA", avatar: theirChar.flatMap(avatar(for:)), emoji: "💛", place: place, snapshot: weather.partner))
+            let p = channel.partnerPresence
+            let status = PartnerStatus(online: partnerOnline, neverSeen: channel.partnerNeverSeen, lastSeenMs: p?.lastSeen,
+                                       dnd: p?.dnd, focus: channel.partnerFocus)
+            rows.append(WeatherRow(id: "ta", label: "TA", avatar: theirChar.flatMap(avatar(for:)), emoji: "💛",
+                                   place: weather.partnerPlace, snapshot: weather.partner, status: status))
         }
         if let place = weatherStore.myPlace {
             rows.append(WeatherRow(id: "me", label: "我", avatar: myCharacterRole.flatMap(avatar(for:)), emoji: "🍊", place: place, snapshot: weather.mine))
@@ -2126,6 +2136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusMenu.setPartnerNeverSeen(channel?.partnerNeverSeen ?? false)
         statusMenu.setPartnerOnline(online)
         evaluateUpgradeNudge()
+        refreshComposeWeatherCard()   // v0.15.1
         guard previous != online else { return }
         // v0.3: the home pet stays awake whatever the partner's presence (status menu only).
         if online, let pet, !pet.isDozing, !pet.isBusy { pet.playOnce(.happy) }
