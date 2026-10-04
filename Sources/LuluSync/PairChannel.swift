@@ -152,6 +152,34 @@ public final class PairChannel {
         if !tasks.isEmpty { heartbeatNow() }
     }
 
+    /// v0.14.2: how my pet looks on my desk (outfit + pose), published with every heartbeat. A change heartbeats at
+    /// once, at most every `lookBeatGap` seconds (a flurry of changes is folded into one trailing heartbeat).
+    public private(set) var look: PresenceLook?
+    public var lookBeatGap: TimeInterval = 5
+    private var lastLookBeat: Date?
+    private var lookBeatTask: Task<Void, Never>?
+
+    public func setLook(_ look: PresenceLook?) {
+        guard look != self.look else { return }
+        self.look = look
+        guard !tasks.isEmpty else { return }
+        let wait = lastLookBeat.map { max(0, lookBeatGap - Date().timeIntervalSince($0)) } ?? 0
+        if wait <= 0 {
+            lastLookBeat = Date()
+            lookBeatTask?.cancel()
+            lookBeatTask = nil
+            heartbeatNow()
+        } else if lookBeatTask == nil {
+            lookBeatTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(wait))
+                guard !Task.isCancelled, let self else { return }
+                self.lookBeatTask = nil
+                self.lastLookBeat = Date()
+                self.heartbeatNow()
+            }
+        }
+    }
+
     /// What goes into a heartbeat: my focus round only while it is still running.
     private var publishedFocus: FocusStatus? { focus.flatMap { $0.isActive(nowMs: nowMs()) ? $0 : nil } }
 
@@ -340,7 +368,7 @@ public final class PairChannel {
         while !Task.isCancelled {
             let due = schedule.fire(now: now(),
                                     heartbeat: heartbeatInterval, poll: presencePollInterval)
-            let client = client, role = config.role, dnd = dnd, focus = publishedFocus, identity = identity, app = appVersion, place = place
+            let client = client, role = config.role, dnd = dnd, focus = publishedFocus, identity = identity, app = appVersion, place = place, look = look
             // v0.11: my own seat is read BEFORE this iteration's heartbeat PUT, at start and then every ~3 min. Only in
             // iterations that send a heartbeat: just before my PUT the seat still holds whoever wrote last since my
             // previous PUT (the other machine, if there is one), while between two of my PUTs it would be my own write.
@@ -352,7 +380,7 @@ public final class PairChannel {
                     // Network trouble: not a read, try again at the next heartbeat.
                 }
             }
-            async let beat: Void = Self.heartbeat(client, role: role, dnd: dnd, focus: focus, identity: identity, app: app, place: place, if: due.heartbeat)
+            async let beat: Void = Self.heartbeat(client, role: role, dnd: dnd, focus: focus, identity: identity, app: app, place: place, look: look, if: due.heartbeat)
             if due.poll {
                 do {
                     // v0.8: the whole presence object (lastSeen + the partner's 勿扰); nil = never seen → offline.
@@ -368,9 +396,9 @@ public final class PairChannel {
         }
     }
 
-    private nonisolated static func heartbeat(_ client: FirebaseClient, role: Role, dnd: DNDStatus?, focus: FocusStatus?, identity: PresenceIdentity?, app: String?, place: WeatherPlace?, if due: Bool) async {
+    private nonisolated static func heartbeat(_ client: FirebaseClient, role: Role, dnd: DNDStatus?, focus: FocusStatus?, identity: PresenceIdentity?, app: String?, place: WeatherPlace?, look: PresenceLook?, if due: Bool) async {
         guard due else { return }
-        try? await client.heartbeat(role, dnd: dnd, focus: focus, identity: identity, app: app, place: place)
+        try? await client.heartbeat(role, dnd: dnd, focus: focus, identity: identity, app: app, place: place, look: look)
     }
 
     private func applyMySeat(_ info: PresenceInfo?, at now: TimeInterval) {
@@ -436,15 +464,16 @@ public final class PairChannel {
     /// Clean sign-off before quitting or sleeping: blocks up to `timeout` so the write can finish.
     public func signOffBlocking(timeout: TimeInterval = 1.5) {
         let client = client, role = config.role, dnd = dnd, identity = identity, app = appVersion, place = place
+        let signOffLook = look.map { PresenceLook(outfit: $0.outfit) }   // the pose is not on TA's desk any more
         let done = DispatchSemaphore(value: 0)
-        Task.detached { try? await client.markOffline(role, dnd: dnd, identity: identity, app: app, place: place); done.signal() }
+        Task.detached { try? await client.markOffline(role, dnd: dnd, identity: identity, app: app, place: place, look: signOffLook); done.signal() }
         _ = done.wait(timeout: .now() + timeout)
     }
 
     /// Heartbeat immediately (after wake).
     public func heartbeatNow() {
-        let client = client, role = config.role, dnd = dnd, focus = publishedFocus, identity = identity, app = appVersion, place = place
-        Task { try? await client.heartbeat(role, dnd: dnd, focus: focus, identity: identity, app: app, place: place) }
+        let client = client, role = config.role, dnd = dnd, focus = publishedFocus, identity = identity, app = appVersion, place = place, look = look
+        Task { try? await client.heartbeat(role, dnd: dnd, focus: focus, identity: identity, app: app, place: place, look: look) }
     }
 
     private func report(online: Bool) {

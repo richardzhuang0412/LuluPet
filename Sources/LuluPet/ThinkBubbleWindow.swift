@@ -9,8 +9,19 @@ import LuluCore
 final class ThinkBubbleWindow: NSPanel {
     struct Content {
         var clip: SpriteClip?
+        /// v0.14.2: hold frame 0 (TA is dozing / quiet / 勿扰) instead of looping.
+        var still = false
+        /// v0.14.2: TA dozing without a sleep clip: the same 70 % look as on TA's desk.
+        var dimmed = false
+        var badge: Badge?
         var barText: String?
         var flourish: ThinkFlourish
+    }
+
+    /// What floats by TA's head (v0.14.2): TA's 勿扰 sign (as above TA's pet), or a tiny emoji / "z z".
+    enum Badge: Equatable {
+        case sign(String)
+        case tiny(String)
     }
 
     private static let size = NSSize(width: 214, height: 236)
@@ -160,14 +171,16 @@ final class ThinkBubbleWindow: NSPanel {
         view.addSubview(player)
         if let clip = c.clip {
             player.pointScale = spriteH / max(1, clip.size.height)
-            player.idle(clip)
+            player.idle(clip, still: c.still)
         }
+        player.alphaValue = c.dimmed ? 0.7 : 1
         view.wantsLayer = true
         view.alphaValue = 1
         root.addSubview(view)
         spriteHost = view
         view.layer?.opacity = 0
         view.layer?.zPosition = 2   // above the cloud layer whatever order AppKit puts the layers in
+        if let badge = c.badge, let host = view.layer { addBadge(badge, to: view, host: host) }
 
         // pill (plain layers inside the cloud group, above its body)
         pillHost = nil
@@ -191,6 +204,20 @@ final class ThinkBubbleWindow: NSPanel {
             pill.opacity = 0
             cloudGroup.addSublayer(pill)
             pillHost = pill
+        }
+    }
+    private func addBadge(_ badge: Badge, to view: NSView, host: CALayer) {
+        switch badge {
+        case .sign(let text):
+            _ = Effects.moodSign(text, in: view, bottomCenter: CGPoint(x: view.bounds.midX, y: view.bounds.height - 8), maxTop: view.bounds.height + 34, scale: 0.8)
+        case .tiny(let text):
+            let l = CATextLayer()
+            l.string = NSAttributedString(string: text, attributes: [.font: NSFont.systemFont(ofSize: 13, weight: .bold),
+                                                                      .foregroundColor: NSColor(calibratedRed: 0.45, green: 0.55, blue: 0.75, alpha: 1)])
+            l.contentsScale = 2
+            l.alignmentMode = .center
+            l.frame = CGRect(x: view.bounds.midX + 18, y: view.bounds.height - 16, width: 44, height: 18)
+            host.addSublayer(l)
         }
     }
     private var spriteHost: NSView?

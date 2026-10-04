@@ -2979,6 +2979,58 @@ do {
     check(HousekeepingTask.location.isWallClock && lh[.location] == 4000 && Housekeeping.due(lh, uptime: 1, wall: 4000) == [.location] && HousekeepingDeadlines()[.location] == nil, "housekeeping: location deadline on the wall clock")
 }
 
+// v0.14.2: presence outfit + pose, and what the 想 TA bubble draws for them
+do {
+    for p in [PetPose.idle, .doze, .quiet, .focus, .dnd, .hidden] + WeatherLook.allCases.map(PetPose.weather) {
+        check(PetPose(raw: p.raw) == p, "pose roundtrip \(p.raw)")
+    }
+    check(PetPose(raw: "weather:rain") == .weather(.rain) && PetPose.weather(.snow).raw == "weather:snow", "weather pose words")
+    check(PetPose(raw: "levitating") == .idle && PetPose(raw: "weather:meteor") == .idle && PetPose(raw: "") == .idle, "unknown pose reads as idle")
+    func d(hidden: Bool = false, dnd: Bool = false, focus: Bool = false, dozing: Bool = false, quiet: Bool = false,
+           weather: WeatherLook? = nil, clips: Bool = false) -> PetPose {
+        PetPose.derive(hidden: hidden, dnd: dnd, focus: focus, dozing: dozing, quiet: quiet, weather: weather, hasWeatherClips: clips)
+    }
+    check(d() == .idle, "derive: idle")
+    check(d(hidden: true, dnd: true, focus: true, dozing: true, quiet: true, weather: .rain, clips: true) == .hidden, "derive: hidden wins")
+    check(d(dnd: true, focus: true, dozing: true, quiet: true) == .dnd, "derive: dnd before focus")
+    check(d(focus: true, dozing: true, quiet: true) == .focus, "derive: focus before doze")
+    check(d(dozing: true, quiet: true, weather: .rain, clips: true) == .doze, "derive: doze before quiet")
+    check(d(quiet: true, weather: .rain, clips: true) == .quiet, "derive: quiet before weather")
+    check(d(weather: .rain, clips: true) == .weather(.rain), "derive: weather with clips")
+    check(d(weather: .rain, clips: false) == .idle && d(weather: nil, clips: true) == .idle, "derive: weather without clips / look = idle")
+
+    let look = PresenceLook(outfit: "pajama", pose: .weather(.rain))
+    let pay = PresenceInfo.payload(lastSeen: 5, dnd: nil, look: look)
+    check(pay["outfit"] as? String == "pajama" && pay["pose"] as? String == "weather:rain", "payload carries outfit + pose")
+    check(Set(PresenceInfo.payload(lastSeen: 5, dnd: nil).keys) == ["lastSeen"], "payload without look = old shape")
+    check(Set(PresenceInfo.payload(lastSeen: 5, dnd: nil, look: PresenceLook(outfit: "x")).keys) == ["lastSeen", "outfit"], "payload outfit only (sign-off)")
+    let data = try JSONSerialization.data(withJSONObject: pay)
+    check(PresenceInfo.decode(data) == PresenceInfo(lastSeen: 5, outfit: "pajama", pose: .weather(.rain)), "presence roundtrip outfit + pose")
+    check(PresenceInfo.decode(Data(#"{"lastSeen":1234}"#.utf8)) == PresenceInfo(lastSeen: 1234), "old payload without outfit / pose still decodes")
+    check(PresenceInfo.decode(Data(#"{"lastSeen":1,"pose":"hover-board","outfit":"lace"}"#.utf8)) == PresenceInfo(lastSeen: 1, outfit: "lace", pose: .idle), "unknown pose → idle, outfit kept")
+    check(PresenceInfo.decode(Data(#"{"lastSeen":1,"pose":7,"outfit":""}"#.utf8)) == PresenceInfo(lastSeen: 1), "odd types / empty outfit ignored")
+    check(PresenceLook.cleanOutfit("../x") == nil && PresenceLook.cleanOutfit(String(repeating: "a", count: 65)) == nil && PresenceLook.cleanOutfit("lace") == "lace", "outfit sanitised")
+
+    let rainy: (WeatherLook) -> Bool = { $0 == .rain }
+    check(ThinkPoseLook.resolve(nil, hasFocusClip: true, hasWeatherClip: rainy) == .idleLoop, "bubble: no pose = idle")
+    check(ThinkPoseLook.resolve(.hidden, hasFocusClip: false, hasWeatherClip: rainy) == .idleLoop, "bubble: hidden = idle")
+    check(ThinkPoseLook.resolve(.doze, hasFocusClip: false, hasWeatherClip: rainy) == .dozeStill, "bubble: doze")
+    check(ThinkPoseLook.resolve(.quiet, hasFocusClip: false, hasWeatherClip: rainy) == .quietStill, "bubble: quiet")
+    check(ThinkPoseLook.resolve(.focus, hasFocusClip: true, hasWeatherClip: rainy) == .focusClip, "bubble: focus clip")
+    check(ThinkPoseLook.resolve(.focus, hasFocusClip: false, hasWeatherClip: rainy) == .focusStill, "bubble: focus without clip = still + 🍅")
+    check(ThinkPoseLook.resolve(.dnd, hasFocusClip: false, hasWeatherClip: rainy) == .dndStill, "bubble: dnd")
+    check(ThinkPoseLook.resolve(.weather(.rain), hasFocusClip: false, hasWeatherClip: rainy) == .weatherClip(.rain), "bubble: weather clip")
+    check(ThinkPoseLook.resolve(.weather(.snow), hasFocusClip: false, hasWeatherClip: rainy) == .idleLoop, "bubble: weather without clip = idle")
+    check(ThinkPoseLook.dndSign(DNDStatus(mood: "angry", untilMs: 0)) == "😤 生气中" && ThinkPoseLook.dndSign(nil) == "🔕 勿扰中"
+          && ThinkPoseLook.dndSign(DNDStatus(mood: "newmood", untilMs: 0)) == "🔕 勿扰中", "bubble: dnd sign from TA's mood")
+
+    let have = ["lace", "pajama", "bear"]
+    check(ThinkOutfit.pick(published: "pajama", lastMessage: "bear", available: have, preferred: "lace") == "pajama", "outfit: published first")
+    check(ThinkOutfit.pick(published: "nope", lastMessage: "bear", available: have, preferred: "lace") == "bear", "outfit: unknown published → last message")
+    check(ThinkOutfit.pick(published: nil, lastMessage: "nope", available: have, preferred: "lace") == "lace", "outfit: → preferred")
+    check(ThinkOutfit.pick(published: nil, lastMessage: nil, available: have, preferred: nil) == "lace" && ThinkOutfit.pick(published: "x", lastMessage: nil, available: [], preferred: nil) == nil, "outfit: first available / none")
+}
+
 try? FileManager.default.removeItem(at: tmp)
 // UserDefaults suites leave their plist behind even after removePersistentDomain; delete test ones.
 let prefsDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Preferences")

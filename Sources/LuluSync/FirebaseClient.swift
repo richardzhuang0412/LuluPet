@@ -65,24 +65,25 @@ public final class FirebaseClient: Sendable {
     /// v0.10: plus `"focus": {"phase", "until"}` while a pomodoro focus round runs (older clients ignore it).
     /// v0.11: plus optional `character` / `mode` / `device` (`PresenceIdentity`); older clients ignore them.
     /// v0.11.2: plus optional `app` (my app version string).
+    /// v0.14.2: plus optional `outfit` / `pose` (`PresenceLook`: what my pet looks like on my desk; the sign-off keeps only the outfit).
     /// v0.12: plus optional `place` (my city, coordinates at two decimals); the sign-off keeps it too, so TA still sees my weather.
-    public func heartbeat(_ role: Role, dnd: DNDStatus? = nil, focus: FocusStatus? = nil, identity: PresenceIdentity? = nil, app: String? = nil, place: WeatherPlace? = nil) async throws {
+    public func heartbeat(_ role: Role, dnd: DNDStatus? = nil, focus: FocusStatus? = nil, identity: PresenceIdentity? = nil, app: String? = nil, place: WeatherPlace? = nil, look: PresenceLook? = nil) async throws {
         var req = URLRequest(url: try Self.url(databaseURL: databaseURL, pairCode: pairCode, path: "presence/\(role.rawValue)"))
         req.httpMethod = "PUT"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.timeoutInterval = Self.presenceTimeout
         req.httpBody = try JSONSerialization.data(withJSONObject: PresenceInfo.payload(lastSeen: nowMs(), dnd: dnd, focus: focus,
-                                                                                 character: identity?.character, mode: identity?.mode, device: identity?.device, app: app, place: place))
+                                                                                 character: identity?.character, mode: identity?.mode, device: identity?.device, app: app, place: place, look: look))
         _ = try await data(for: req)
     }
 
     /// Clean sign-off (quit / sleep): lastSeen = 0 reads as offline on every client version.
-    public func markOffline(_ role: Role, dnd: DNDStatus? = nil, identity: PresenceIdentity? = nil, app: String? = nil, place: WeatherPlace? = nil) async throws {
+    public func markOffline(_ role: Role, dnd: DNDStatus? = nil, identity: PresenceIdentity? = nil, app: String? = nil, place: WeatherPlace? = nil, look: PresenceLook? = nil) async throws {
         var req = URLRequest(url: try Self.url(databaseURL: databaseURL, pairCode: pairCode, path: "presence/\(role.rawValue)"))
         req.httpMethod = "PUT"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.timeoutInterval = 2
-        req.httpBody = try JSONSerialization.data(withJSONObject: PresenceInfo.payload(lastSeen: 0, dnd: dnd, character: identity?.character, mode: identity?.mode, device: identity?.device, app: app, place: place))
+        req.httpBody = try JSONSerialization.data(withJSONObject: PresenceInfo.payload(lastSeen: 0, dnd: dnd, character: identity?.character, mode: identity?.mode, device: identity?.device, app: app, place: place, look: look))
         _ = try await data(for: req)
     }
 

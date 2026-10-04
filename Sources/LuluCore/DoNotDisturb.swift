@@ -234,10 +234,15 @@ public struct PresenceInfo: Equatable, Sendable {
     public var app: String?
     /// v0.12: the city the partner set (`presence/<role>/place`, coordinates at two decimals); nil = none / older client.
     public var place: WeatherPlace?
+    /// v0.14.2: the outfit the partner's pet wears (`presence/<role>/outfit`); nil = older client / not published.
+    public var outfit: String?
+    /// v0.14.2: what the partner's pet is doing on their desk (`presence/<role>/pose`); nil = not published; an
+    /// unknown word reads as `.idle`.
+    public var pose: PetPose?
 
     public init(lastSeen: Int64?, dnd: DNDStatus? = nil, focus: FocusStatus? = nil,
                 character: PetCharacter? = nil, mode: PairMode? = nil, device: String? = nil, app: String? = nil,
-                place: WeatherPlace? = nil) {
+                place: WeatherPlace? = nil, outfit: String? = nil, pose: PetPose? = nil) {
         self.lastSeen = lastSeen
         self.dnd = dnd
         self.focus = focus
@@ -246,6 +251,8 @@ public struct PresenceInfo: Equatable, Sendable {
         self.device = device
         self.app = app
         self.place = place
+        self.outfit = outfit
+        self.pose = pose
     }
 
     /// JSON body of `GET presence/<role>`: null → nil; an object → its fields; a bare number (never
@@ -260,13 +267,15 @@ public struct PresenceInfo: Equatable, Sendable {
                             mode: (d["mode"] as? String).flatMap(PairMode.init(rawValue:)),
                             device: (d["device"] as? String).flatMap { $0.isEmpty ? nil : $0 },
                             app: (d["app"] as? String).flatMap { $0.isEmpty ? nil : $0 },
-                            place: WeatherPlace(json: d["place"]))
+                            place: WeatherPlace(json: d["place"]),
+                            outfit: PresenceLook.cleanOutfit(d["outfit"] as? String),
+                            pose: (d["pose"] as? String).map(PetPose.init(raw:)))
     }
 
     /// Body of the presence PUT (heartbeat / sign-off).
     public static func payload(lastSeen: Int64, dnd: DNDStatus?, focus: FocusStatus? = nil,
                                character: PetCharacter? = nil, mode: PairMode? = nil, device: String? = nil,
-                               app: String? = nil, place: WeatherPlace? = nil) -> [String: Any] {
+                               app: String? = nil, place: WeatherPlace? = nil, look: PresenceLook? = nil) -> [String: Any] {
         var out: [String: Any] = ["lastSeen": lastSeen]
         if let dnd { out["dnd"] = dnd.json }
         if let focus { out["focus"] = focus.json }
@@ -275,6 +284,8 @@ public struct PresenceInfo: Equatable, Sendable {
         if let device { out["device"] = device }
         if let app { out["app"] = app }
         if let place { out["place"] = place.json }
+        if let outfit = PresenceLook.cleanOutfit(look?.outfit) { out["outfit"] = outfit }
+        if let pose = look?.pose { out["pose"] = pose.raw }
         return out
     }
 }

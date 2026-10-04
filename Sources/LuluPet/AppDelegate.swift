@@ -794,6 +794,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         ch.setPlace(weatherStore.myPlace)   // v0.12: heartbeats carry my city from the first one
         channel = ch
+        refreshPresenceLook()   // v0.14.2: the first heartbeat already carries outfit + pose
         tools.syncFocus()   // v0.10: a focus round in progress goes out with the new channel's heartbeats
         connection = .connecting
         statusMenu.setConnection(.connecting)
@@ -1219,6 +1220,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             petCharacter = character
             outfit = o
             pet.setCharacter(sprites, character: character, outfit: o)
+            refreshPresenceLook()
             let why = forced != nil ? "--outfit" : pinned != nil ? "pinned"
                 : OutfitRules.isInSeason(o, seasons: seasons, on: today) ? "in season" : "preferred"
             NSLog("[lulu] outfit: %@ (launch, %@; %ld outfits, %ld wearable today)", o, why, all.count,
@@ -1455,6 +1457,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func weatherDidChange() {
         if let compose, compose.isVisible { compose.setWeatherCard(composeWeatherCard()) }
         thinkWeatherChanged()
+        refreshPresenceLook()
         let look = currentWeatherLook
         if weatherLoggedLook != .some(look) {
             weatherLoggedLook = .some(look)
@@ -1520,8 +1523,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !force {
             guard ThinkRules.shouldShow(reason, context: thinkContext(), lastShown: thinkLastShown, now: uptime) else { return false }
         }
-        let theirs = Role(rawValue: partnerCharacter().rawValue)
-        guard let theirs, let clip = sprites.clip(theirs, outfit: avatarOutfit(for: theirs), action: .idle) else { return false }
+        guard let theirs = Role(rawValue: partnerCharacter().rawValue), let scene = thinkScene(for: theirs) else { return false }
         let place = weather.partnerPlace ?? currentPartnerPlace()
         var snap = demo ?? weather.partner
         if demo == nil, let s = snap, WeatherRefresh.isStale(fetchedAt: s.fetchedAt, now: wallClock) { snap = nil }
@@ -1530,9 +1532,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             var s = s; if demo != nil { s.fetchedAt = now.timeIntervalSince1970 }; return s }, now: now)
         thinkLastShown = uptime
         NSLog("[lulu] think: 想 TA (%@) bar \"%@\"", String(describing: reason), bar ?? "-")
-        thinkWindow.show(.init(clip: clip, barText: bar, flourish: ThinkRules.flourish(snap)), anchor: pet.spriteScreenRect)
+        thinkWindow.show(.init(clip: scene.clip, still: scene.still, dimmed: scene.dimmed, badge: scene.badge, barText: bar,
+                               flourish: ThinkRules.flourish(snap)), anchor: pet.spriteScreenRect)
         return true
     }
+
+    /// v0.14.2: TA's character as on TA's desk: TA's published outfit (else the last message's, else the character's
+    /// preferred one; only outfits we have) and pose (`PresenceLook` / `ThinkPoseLook`). Offline TA reads as idle.
+    private func thinkScene(for theirs: Role) -> (clip: SpriteClip, still: Bool, dimmed: Bool, badge: ThinkBubbleWindow.Badge?)? {
+        let presence = channel?.partnerPresence
+        let online = presence.map { Presence.isOnline(lastSeen: $0.lastSeen, now: Int64(wallClock * 1000), thresholdMs: Presence.thresholdMs) } ?? false
+        let pose: PetPose? = online ? presence?.pose : nil
+        let outfitName = ThinkOutfit.pick(published: presence?.outfit, lastMessage: lastPartnerOutfit,
+                                          available: sprites.outfits(for: theirs), preferred: sprites.preferredOutfit(for: theirs)) ?? "classic"
+        guard let idle = sprites.clip(theirs, outfit: outfitName, action: .idle) else { return nil }
+        let focusClip = sprites.namedClips(theirs, outfit: outfitName, list: .clips).first { ToolClips.pool(.focus, for: theirs).contains($0.name) }?.clip
+        let kind = ThinkPoseLook.resolve(pose, hasFocusClip: focusClip != nil,
+                                         hasWeatherClip: { !sprites.weatherNamedClips(for: theirs, look: $0).isEmpty })
+        let quiet = sprites.clip(theirs, outfit: outfitName, action: .quiet) ?? idle
+        NSLog("[lulu] think: TA draws %@ in %@, pose %@ → %@ (%@)", theirs.rawValue, outfitName, pose?.raw ?? "-", String(describing: kind),
+              online ? "online" : "offline / no presence")
+        switch kind {
+        case .idleLoop: return (idle, false, false, nil)
+        case .dozeStill:
+            if let sleep = sprites.exactClip(theirs, outfit: outfitName, action: .sleep) { return (sleep, true, false, .tiny("z z")) }
+            return (idle, true, true, .tiny("z z"))
+        case .quietStill: return (quiet, true, false, nil)
+        case .focusClip: return (focusClip ?? idle, false, false, nil)
+        case .focusStill: return (quiet, true, false, .tiny("🍅"))
+        case .dndStill: return (quiet, true, false, .sign(ThinkPoseLook.dndSign(presence?.dnd)))
+        case .weatherClip(let look):
+            let clips = sprites.weatherNamedClips(for: theirs, look: look)
+            return (clips.randomElement()?.clip ?? idle, false, false, nil)
+        }
+    }
+
+    /// v0.14.2: how my pet looks on my desk, published in presence (outfit + pose) for TA's 想 TA bubble.
+    private func refreshPresenceLook() {
+        let look = currentWeatherLook
+        let hasClips = look.map { l in petCharacter.map { !sprites.weatherClips(for: $0, look: l).isEmpty } ?? false } ?? false
+        let pose = PetPose.derive(hidden: windowsHidden || hide.isHidden, dnd: dndOn, focus: tools.isFocusing,
+                                  dozing: pet?.isDozing ?? false, quiet: restQuiet, weather: look, hasWeatherClips: hasClips)
+        channel?.setLook(PresenceLook(outfit: outfit, pose: pose))
+    }
+    /// The outfit on TA's most recent message (fallback for the bubble when presence has none).
+    private var lastPartnerOutfit: String?
 
     /// Called from the fidget slot (no timer of its own): the first call draws a 20–40 min wait, later calls show the
     /// bubble once it is over (and keep trying on later fidgets while something blocks it).
@@ -1600,6 +1644,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if dozeClock.activity(now: uptime), let pet {
             NSLog("[lulu] idle: woke up (%@)", reason)
             pet.setDozing(false)
+            refreshPresenceLook()
             if !pet.isBusy { pet.playOnce(.happy) }
         }
         dozeDue = uptime + dozeClock.threshold
@@ -1644,6 +1689,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let pet else { return }
         let pose = RestPose.pick(dozing: pet.isDozing, quiet: restQuiet, dnd: dndOn)
         pet.setQuiet(restQuiet || dndOn)
+        refreshPresenceLook()
         DispatchQueue.main.async { [weak pet] in
             guard let pet else { return }
             NSLog("[lulu] rest pose: %@ (%@)", pose.rawValue, pet.isStill ? "still, nothing animating" : "animating")
@@ -1662,6 +1708,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             blockedTasks.remove(.doze)
             guard let pet else { return }
             pet.setDozing(true)
+            refreshPresenceLook()
             housekeeping.setNeedsArm()   // no fidgets while dozing
             NSLog("[lulu] idle: dozing after %.0f s without interaction (%@, %@)", dozeClock.threshold,
                   pet.hasClip(.sleep) ? "still eyes-closed frame + Zzz" : "frozen idle + Zzz", pet.isStill ? "nothing animating" : "animating")
@@ -1738,6 +1785,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if remember, let old = outfit { rememberOutfit(old, for: character) }
         outfit = o
         NSLog("[lulu] outfit: %@ (%@)", o, reason)
+        refreshPresenceLook()
         pet.transitionOutfit(sprites, character: character, outfit: o) { [weak self] in self?.petMoved() }
         if isOutfitPinned { setPinnedOutfit(o, for: character) }
         scheduleOutfitRotation()
@@ -1793,6 +1841,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let old = outfit { rememberOutfit(old, for: character) }   // v0.8 换回上一个
         outfit = o
         defer { refreshOutfitMenu() }
+        refreshPresenceLook()
         NSLog("[lulu] outfit: %@ (%@)", o, reason)
         pet.transitionOutfit(sprites, character: character, outfit: o) { [weak self] in self?.petMoved() }
         return o
@@ -1823,6 +1872,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("[lulu] received %@: %@ (id %@, ts %lld, trip %@, %@)", m.kind.rawValue, m.text ?? m.stickerId ?? m.remindRaw ?? "", m.id, m.ts,
                   m.trip ?? "-", live ? "live" : "backlog")
         }
+        if fromChannel, let o = m.outfit { lastPartnerOutfit = o }
         guard pet != nil else { return }
         thinkWindow.dismiss()   // v0.13.3: a real message beats the thought bubble
         checkDNDExpiry(reason: "incoming")
@@ -1969,7 +2019,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let stickerSound = [SoundEvent.forSticker(m.stickerId)?.rawValue].compactMap { $0 }
         return .init(kind: m.kind, bubble: item, move: Visits.coupleMove(for: m.kind, text: m.text, label: label), live: live,
                      reaction: reaction, sounds: reaction?.sounds ?? [], fallbackSounds: stickerSound,
-                     outfit: local ? nil : m.outfit, local: local)
+                     outfit: local ? nil : (m.outfit ?? channel?.partnerPresence?.outfit), local: local)   // v0.14.2: no outfit on the message → what TA wears now
     }
 
     /// No visitor sprites: the v0.1 behaviour, on the home pet.
@@ -2444,6 +2494,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         housekeeping.setNeedsArm()   // hide end, fidgets (none while hidden)
         guard hidden != windowsHidden else { return }
         windowsHidden = hidden
+        refreshPresenceLook()
         if hidden { thinkWindow.dismiss() }
         notice.suppressed = hidden
         sound.setHidden(hidden)
