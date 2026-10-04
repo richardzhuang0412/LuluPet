@@ -217,6 +217,8 @@ private struct ComposeView: View {
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundStyle(Self.accent)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .layoutPriority(-1)
                 Spacer(minLength: 4)
                 if history != nil || tools != nil { tabPicker }
                 Button(action: onClose) {
@@ -288,6 +290,8 @@ private struct ComposeView: View {
                 } label: {
                     Text(title)
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .lineLimit(1)
+                        .fixedSize()   // never wrap 「记录」/「小工具」 into a vertical column when the title is long
                         .foregroundStyle(currentTab == t ? Color.white : Self.accent)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 3)

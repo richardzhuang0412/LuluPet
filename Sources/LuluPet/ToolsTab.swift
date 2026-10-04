@@ -48,7 +48,10 @@ struct ToolsTabView: View {
 
     private var pomodoroCard: some View {
         card {
-            Text("🍅 番茄钟").font(.system(size: 12, weight: .bold, design: .rounded)).foregroundStyle(Self.accent)
+            HStack(spacing: 4) {
+                Text("🍅 番茄钟").font(.system(size: 12, weight: .bold, design: .rounded)).foregroundStyle(Self.accent)
+                InfoBadge(text: ToolsCopy.pomodoroHint)
+            }
             stateLine
             HStack(spacing: 6) { pomodoroButtons }
             HStack(spacing: 4) {
@@ -60,7 +63,6 @@ struct ToolsTabView: View {
                     .foregroundStyle(Self.accent)
                     .help("到设置 → 小工具 里改专注 / 休息时长")
             }
-            note(ToolsCopy.pomodoroHint)
         }
     }
 
@@ -110,6 +112,7 @@ struct ToolsTabView: View {
             HStack {
                 Text("\(ToolsCopy.emoji(kind)) \(ToolsCopy.name(kind))")
                     .font(.system(size: 12, weight: .bold, design: .rounded)).foregroundStyle(Self.accent)
+                InfoBadge(text: ToolsCopy.explanation(kind, interval: interval))
                 Spacer(minLength: 0)
                 Toggle("", isOn: on).labelsHidden().toggleStyle(.switch).controlSize(.mini).tint(Self.accent)
             }
@@ -127,7 +130,6 @@ struct ToolsTabView: View {
                         .foregroundStyle(Self.accent)
                 }
             }
-            note(ToolsCopy.explanation(kind, interval: interval))
             if water {
                 Text("今天喝了 \(model.cups) 杯 💧")
                     .font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(Self.accent)
@@ -163,5 +165,29 @@ struct ToolsTabView: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()   // no focus ring cutting into the outlined pill
+    }
+}
+
+/// v0.15: a small ⓘ that shows the long explanation in a popover while the pointer is over it (replaces the
+/// always-visible paragraphs in the 小工具 tab). Clicking toggles it too.
+private struct InfoBadge: View {
+    let text: String
+    @State private var shown = false
+
+    var body: some View {
+        Image(systemName: "questionmark.circle")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .contentShape(Rectangle())
+            .onHover { shown = $0 }
+            .onTapGesture { shown.toggle() }
+            .popover(isPresented: $shown, arrowEdge: .bottom) {
+                Text(text)
+                    .font(.system(size: 11, design: .rounded))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(width: 230, alignment: .leading)
+                    .padding(10)
+            }
+            .accessibilityLabel(text)
     }
 }

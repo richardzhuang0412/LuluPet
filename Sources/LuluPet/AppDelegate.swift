@@ -593,7 +593,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if options.demoCompose || options.demoSoloCompose {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.openCompose(tab: self?.options.demoComposeTab == "tools" ? .tools : .compose)
+                self?.openCompose(tab: self?.options.demoComposeTab == "tools" ? .tools : self?.options.demoComposeTab == "history" ? .history : .compose)
             }
         }
         if options.demoPoke, let role {
