@@ -113,6 +113,13 @@
   - 「离开期间」汇总里算作"其它消息"（v0.10 起 `.remind` 暂时同样算进 `unknown`）；
   - **回执（带 `ackOf` 的 remind）对老版本也是一条这样的未知消息**：会再来一次访客 + 升级提示。可以接受，升级后就正常。
   - 所以老版本不会丢消息也不会崩，只是看不懂提醒内容、也不会有"喝了 / 等会儿"按钮。
+- **v0.14.4 回话（马上 / 等会儿 / 终于做到了）**：`Message` 新增可选字段 `answer`（`"now"` / `"later"`）和 `late`（布尔，只在 `now` 上）。三种编码（`RemindReply`）：
+  - 马上：`{kind:"remind", remind:"water", ackOf:<id>, answer:"now"}`，就是 v0.10 的回执加一个字段；老版本（v0.10–v0.14.3）照常显示「TA 喝啦」，这是对的。缺 `answer` 的回执 = `now`。
+  - 等会儿：`{kind:"remind", remind:"water.later", ackOf:<id>, answer:"later"}`。`remind` 的值**故意不是** `ReminderKind`（`water` / `stand` 之外），老版本的规则是 `isRemindAck(m) && m.remind != nil` 才冒「TA 喝啦」（读 v0.10 `55a7f90` 到 v0.14.3 的 `receive`），`m.remind` 为 nil 所以不会冒；不会再被当成"新提醒"弹按钮（`bubbleItem` 在 `ackOf != nil` 时返回 nil）。残留的老版本表现：和别的回执一样会有一次没有气泡的访客串门，「记录」里显示成「［新版本消息］」，「离开期间」汇总算「新版本消息」。可以接受，升级后正常。没有选新的 `kind`：新 kind 在老版本会弹「请升级」气泡，更吵。
+  - 终于做到了：`now` 回执 + `late: true`，老版本显示「TA 喝啦」，也是对的。
+  - `remind` 的取值规则补充：`<kind>.later` 只用在回话上，`water` / `stand` 本身的含义不变；新版本读到 `<不认识的 kind>.later` = 不是回话（沿用「新版本消息」）。
+  - 本地键 `remindSnooze.water` / `remindSnooze.stand`（JSON `{"ackOf", "at"}`，`at` 是 Unix 秒；缺省 = 没有）：记住当前「等会儿」是回应 TA 的哪条提醒，用于 2 小时内在本地再次提醒上点「喝了 / 好的」时发「终于做到了」。纯加，老版本忽略。隐藏测试参数 `--demo-snooze-delay S`。
+  - 「离开期间」汇总：`later` 回话单独一行「⏰ TA 说等会儿」，`now` / 终于做到了算「TA 回应了提醒」。
 - `Message.Kind.remind` 的 `rawValue` 永远是 `"remind"`；`remind` 字段的取值只增不改（现有 `water` / `stand`）。
 - 对方在专注（`presence.focus` 有效）时，发送方把东西"先放在 TA 那儿"；消息本身照常写进 Firebase，不影响老版本。
 - 新的 `HousekeepingTask`（`pomodoro` wall clock，`water` / `stand` monotonic）只是 app 内部的计时挂点，不涉及数据格式。

@@ -3,13 +3,15 @@
 #
 # Usage: scripts/release.sh [--dry-run] [--no-install] x.y.z
 #   --dry-run     only the checks (VERSION, changelog, docs sync, working tree, tests, privacy check of the
-#                 current public tree); builds, installs, commits and pushes nothing.
+#                 current public tree); builds, installs, commits and pushes nothing (it does regenerate
+#                 CHANGELOG.md / README「最近更新」 from assets/changelog.json, like a real run).
 #   --no-install  skip installing into /Applications (still builds, commits and publishes).
 #
 # Before running: bump VERSION, add the x.y.z entry at the top of assets/changelog.json (copied to
 # Resources/changelog.json) and sync the docs (scripts/check_docs_sync.sh; see docs/DOCS_SYNC.md).
+# CHANGELOG.md and README.md's 「最近更新」 block are regenerated from the changelog here (tools/gen_changelog.py).
 # Refuses when: VERSION ≠ x.y.z, no changelog entry, docs not synced, tests fail, the privacy check hits,
-# or tracked files other than the release files (VERSION, changelogs, README.md, docs/) are modified.
+# or tracked files other than the release files (VERSION, changelogs, CHANGELOG.md, README.md, docs/) are modified.
 # Needs (for a real run): branch master, local branch `release`, remote `github`, `gh` logged in, and the
 # installed app's config (the privacy check reads the Firebase host / pair code from it — never printed).
 set -euo pipefail
@@ -36,7 +38,7 @@ APP_ID="com.lulupet.app"
 INSTALLED="/Applications/LuluPet.app"
 HISTORY="$HOME/Library/Application Support/LuluPet/default/history.jsonl"
 # Tracked files a release may leave uncommitted (they go into the release commit).
-RELEASE_FILES=(VERSION assets/changelog.json Resources/changelog.json README.md docs/features.md docs/firebase-setup.md docs/DOCS_SYNC.md docs/demo)
+RELEASE_FILES=(VERSION assets/changelog.json Resources/changelog.json CHANGELOG.md README.md docs/features.md docs/firebase-setup.md docs/DOCS_SYNC.md docs/demo)
 
 TMP="$(mktemp -d -t lulupet-release)"
 trap 'rm -rf "$TMP"' EXIT
@@ -56,6 +58,10 @@ preflight() {
   local top; top="$(python3 -c 'import json;print(json.load(open("assets/changelog.json",encoding="utf-8"))[0]["version"])')"
   [[ "$top" == "$VER" ]] || die "assets/changelog.json 第一条是 v$top，不是 v$VER / the top changelog entry must be v$VER"
   ok "changelog 有 v$VER 的条目 / changelog entry present"
+
+  # CHANGELOG.md + README「最近更新」 are generated from assets/changelog.json (release files, committed below).
+  python3 tools/gen_changelog.py | sed 's/^/    /' || die "tools/gen_changelog.py 失败 / failed"
+  ok "CHANGELOG.md / README「最近更新」已按 changelog 生成 / regenerated"
 
   scripts/check_docs_sync.sh "$VER" || die "先同步文档再发版 / sync the docs first"
 

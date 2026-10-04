@@ -34,4 +34,10 @@ public final class PersonalToolsStore: @unchecked Sendable {
     public func reminder(_ kind: ReminderKind) -> ActiveTimeReminder? { load("reminder.\(kind.rawValue)") }
 
     public func setReminder(_ r: ActiveTimeReminder?, for kind: ReminderKind) { save(r, "reminder.\(kind.rawValue)") }
+
+    /// v0.14.4 key `remindSnooze.water` / `remindSnooze.stand` (JSON `{"ackOf", "at"}`; absent = none): which partner
+    /// reminder the current 「等会儿」 answers. Additive; older versions ignore it.
+    public func remindSnooze(_ kind: ReminderKind) -> RemindSnoozeOrigin? { load("remindSnooze.\(kind.rawValue)") }
+
+    public func setRemindSnooze(_ o: RemindSnoozeOrigin?, for kind: ReminderKind) { save(o, "remindSnooze.\(kind.rawValue)") }
 }

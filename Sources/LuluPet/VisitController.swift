@@ -113,6 +113,9 @@ final class VisitController {
     private var awayTimer: Timer?
     /// v0.6: shown when the pet is back from a bounce (partner offline) instead of the delivered toast.
     private var homeNotice: String?
+    /// v0.14.4: the partner answered a 叫 TA 喝水 / 起来动动 while our pet was at their desk: the return toast says it
+    /// (「TA 说马上喝 💧」…) instead of 「送到啦」. Cleared when used / on the next trip.
+    var homeToastOverride: String?
     /// v0.6: the message our current delivery trip carries (the collision plan compares it).
     private var tripMessage: Message?
     /// v0.6 collision dance: the steps still to run, and the partner's message as a meeting.
@@ -629,6 +632,7 @@ final class VisitController {
         case .deliver(let away):
             if before == .home { homeOrigin = host.frame.origin }
             homeNotice = nil
+            homeToastOverride = nil
             host.inputLocked = true
             notice.dismiss()
             homeSound(.goVisit)
@@ -725,12 +729,14 @@ final class VisitController {
                 self.homeSound(.notHome)
                 Self.log("back home, told \"\(line)\"")
             } else {
-                host.showToast(Visits.deliveredToast)
+                let toast = self.homeToastOverride ?? Visits.deliveredToast
+                host.showToast(toast)
                 host.showHearts()
                 self.homeSound(.goBack)
-                Self.log("back home, toast \"\(Visits.deliveredToast)\"")
+                Self.log("back home, toast \"\(toast)\"")
             }
             self.homeNotice = nil
+            self.homeToastOverride = nil
             self.onLayoutChanged?()
             self.onHome?()
             let queued = self.queuedWhileAway

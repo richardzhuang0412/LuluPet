@@ -76,6 +76,11 @@ public struct Message: Codable, Equatable, Sendable, Identifiable {
     public var remindRaw: String?
     /// v0.10 (optional): on a `remind` receipt, the id of the reminder it answers.
     public var ackOf: String?
+    /// v0.14.4 (optional, on a `remind` reply): `"now"` | `"later"` (see `RemindReply`). Missing = `"now"` (a v0.10–v0.14.3 receipt).
+    /// Older clients keep it in `extra`.
+    public var answer: String?
+    /// v0.14.4 (optional, on a `"now"` reply): true = TA did it after first pressing 等会儿. Older clients keep it in `extra`.
+    public var late: Bool?
     /// v0.11 (optional): the character the sender's pet is drawn as. An unknown value (a future character) reads as
     /// nil and its raw string stays in `extra["character"]`, re-encoded unchanged. Older clients keep it in `extra`.
     public var character: PetCharacter?
@@ -149,7 +154,7 @@ public struct Message: Codable, Equatable, Sendable, Identifiable {
         init?(intValue: Int) { nil }
     }
 
-    private static let knownKeys: Set<String> = ["id", "from", "kind", "text", "stickerId", "ts", "v", "outfit", "trip", "localId", "remind", "ackOf", "character"]
+    private static let knownKeys: Set<String> = ["id", "from", "kind", "text", "stickerId", "ts", "v", "outfit", "trip", "localId", "remind", "ackOf", "answer", "late", "character"]
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Key.self)
@@ -164,6 +169,8 @@ public struct Message: Codable, Equatable, Sendable, Identifiable {
         trip = try? c.decodeIfPresent(String.self, forKey: Key("trip"))
         remindRaw = try? c.decodeIfPresent(String.self, forKey: Key("remind"))
         ackOf = try? c.decodeIfPresent(String.self, forKey: Key("ackOf"))
+        answer = try? c.decodeIfPresent(String.self, forKey: Key("answer"))
+        late = try? c.decodeIfPresent(Bool.self, forKey: Key("late"))
         localId = try? c.decodeIfPresent(String.self, forKey: Key("localId"))
         var extra: [String: JSONValue] = [:]
         for k in c.allKeys where !Self.knownKeys.contains(k.stringValue) {
@@ -193,6 +200,8 @@ public struct Message: Codable, Equatable, Sendable, Identifiable {
         try c.encodeIfPresent(trip, forKey: Key("trip"))
         try c.encodeIfPresent(remindRaw, forKey: Key("remind"))
         try c.encodeIfPresent(ackOf, forKey: Key("ackOf"))
+        try c.encodeIfPresent(answer, forKey: Key("answer"))
+        try c.encodeIfPresent(late, forKey: Key("late"))
         if let character { try c.encode(character, forKey: Key("character")) }
         else if let raw = extra["character"] { try c.encode(raw, forKey: Key("character")) }   // unknown value, kept verbatim
         if local { try c.encodeIfPresent(localId, forKey: Key("localId")) }

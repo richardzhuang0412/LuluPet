@@ -91,6 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var demoPomodoro: TimeInterval?    // --demo-pomodoro S: start a focus round of S seconds (breaks S/2) at launch
         var demoReminders: [(ReminderKind, TimeInterval)] = []   // --demo-reminder water@5,stand@9: that bubble pops at T s
         var demoMenuTools: String?         // --demo-menu-tools pomodoro|reminders: --demo-menu pops up that submenu instead
+        var demoSnoozeDelay: TimeInterval?   // --demo-snooze-delay S: 等会儿 asks again after S s (test only)
         var demoOutfitSteps: [(String, TimeInterval)] = []   // --demo-outfit change@2,back@4,choose:bear@6
         // v0.11 modes (Task 2: welcome / settings / solo)
         var demoWelcome: Int?              // --demo-welcome N: open the welcome window on step N (1 mode, 2 character, 3 city, 4 pairing)
@@ -221,6 +222,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         return (k, t)
                     }
                 case "--demo-menu-tools": demoMenuTools = it.next()
+                case "--demo-snooze-delay": demoSnoozeDelay = it.next().flatMap(TimeInterval.init)
                 case "--demo-settings-tools": SettingsWindow.demoToolsPage = true
                 case "--demo-solo-compose": demoSoloCompose = true
                 case "--demo-compose-tab": demoComposeTab = it.next()
@@ -372,7 +374,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var holdingForFocus: Bool { Visits.isHoldingForFocus(state: toolsStore.pomodoro, now: wallClock) }
     private var awayBatchIsFocus = false
     /// v0.10: partner receipts (「TA 喝啦」) that arrived while our pet was out; shown when it is home again.
-    private var pendingRemindAcks: [(message: Message, fromChannel: Bool, live: Bool)] = []
     private var unseenAwayTitle = "🍊 你不在的时候"
     private var dndOn: Bool { dnd.isOn(now: wallClock) }
     private let visibility = VisibilityMonitor()
@@ -477,7 +478,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         visits.onNoVisitor = { [weak self] e in self?.showOnHomePet(e) }
         visits.onHome = { [weak self] in
             self?.playTripCard()
-            self?.showPendingRemindAcks()
         }
         visits.outfitFor = { [weak self] character in
             guard let self else { return nil }
@@ -504,7 +504,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             SettingsWindow.demoToolsPage = false
         }
         tools.onOpenPanel = { [weak self] in self?.openCompose(tab: .tools) }
+        tools.testSnoozeDelay = options.demoSnoozeDelay
         tools.start(menu: statusMenu)   // v0.10: 🍅 / 提醒 menus, restore the pomodoro, arm the reminders
+        // v0.14.4: 「喝了」 on the re-reminder a partner-remind 等会儿 caused → tell TA 「终于做到了」.
+        NotificationCenter.default.addObserver(forName: PersonalToolsNotification.didCompleteLate, object: nil, queue: .main) { [weak self] n in
+            guard let kind = (n.userInfo?["kind"] as? String).flatMap(ReminderKind.init(rawValue:)), let ackOf = n.userInfo?["ackOf"] as? String else { return }
+            MainActor.assumeIsolated {
+                guard let self, let role = self.role else { return }
+                self.transmit(RemindReply(kind: kind, answer: .now, late: true).message(from: role, ackOf: ackOf))
+            }
+        }
         tools.onFocusEnded = { [weak self] in DispatchQueue.main.async { self?.releaseFocusHold(reason: "focus ended"); self?.showUpgradeCardIfFree() } }   // after the controller saved the new phase
         housekeeping.setNeedsArm()
         // v0.8 省电
@@ -1973,14 +1982,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         // v0.10: the partner's receipt (「TA 喝啦」) is a small bubble on the home pet — no visitor runs over.
-        if Visits.isRemindAck(m), m.remind != nil {
-            if visits.homeState != .home {
-                // Our pet is out delivering: the receipt waits for it (shown once it is home).
-                pendingRemindAcks.append((m, fromChannel, live))
-                NSLog("[lulu] remind receipt: held until the pet is home (%ld waiting)", pendingRemindAcks.count)
+        // v0.14.4: it may be 马上 / 等会儿 / 终于做到了 (`RemindReply`). Our pet still out at TA's desk: it carries the
+        // answer home as the return toast instead of 「送到啦」.
+        if Visits.isRemindAck(m), let reply = RemindReply.decode(m) {
+            if !live, nowMs() - m.ts >= Self.stalePokeMs {   // a replayed old reply (after a restart) isn't news
+                if fromChannel { channel?.markRead(m) }
                 return
             }
-            showRemindAck(m, fromChannel: fromChannel, live: live)
+            if visits.homeState != .home {
+                visits.homeToastOverride = reply.line
+                if fromChannel { channel?.markRead(m) }
+                NSLog("[lulu] remind reply: carried home on the return toast: %@", reply.line)
+                return
+            }
+            showRemindAck(m, reply: reply, fromChannel: fromChannel, live: live)
             return
         }
         // v0.6: our pet may be out delivering (no host to visit) — or both set off at once.
@@ -2009,33 +2024,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// tools controller hears about it (it owns the local reminder state).
     private func answerRemind(_ m: Message, kind: ReminderKind, comply: Bool) {
         NSLog("[lulu] remind %@: %@", kind.rawValue, comply ? "complied" : "snoozed (等会儿)")
+        // v0.14.4: both answers go back (`RemindReply`): 马上 = the v0.10 receipt + `answer`, 等会儿 = "water.later".
+        if let role { transmit(RemindReply(kind: kind, answer: comply ? .now : .later).message(from: role, ackOf: m.id)) }
         if comply {
-            if let role { transmit(.remind(kind, from: role, ackOf: m.id)) }
             NotificationCenter.default.post(name: PersonalToolsNotification.didComply, object: nil, userInfo: ["kind": kind.rawValue])
         } else {
-            NotificationCenter.default.post(name: PersonalToolsNotification.didSnooze, object: nil, userInfo: ["kind": kind.rawValue])
+            NotificationCenter.default.post(name: PersonalToolsNotification.didSnooze, object: nil, userInfo: ["kind": kind.rawValue, "ackOf": m.id])
         }
     }
 
     /// The partner's receipt: a small bubble on the home pet (「TA 喝啦 💧」), nothing runs, bubble sound.
-    private func showRemindAck(_ m: Message, fromChannel: Bool, live: Bool) {
-        guard let kind = m.remind else { return }
-        // A replayed old receipt (after a restart) isn't news.
-        if !live, nowMs() - m.ts >= Self.stalePokeMs {
-            if fromChannel { channel?.markRead(m) }
-            return
-        }
-        if live { noteActivity("partner remind receipt") }
-        NSLog("[lulu] remind receipt: %@", Visits.remindAckLine(kind))
-        bubble.enqueueAtHome(BubbleItem(header: partnerCharacter(for: m).displayName, content: .text(Visits.remindAckLine(kind)),
+    private func showRemindAck(_ m: Message, reply: RemindReply, fromChannel: Bool, live: Bool) {
+        if live { noteActivity("partner remind reply") }
+        NSLog("[lulu] remind reply: %@", reply.line)
+        bubble.enqueueAtHome(BubbleItem(header: partnerCharacter(for: m).displayName, content: .text(reply.line),
                                   message: fromChannel ? m : nil, autoHide: 4))
         petMoved()
-    }
-
-    private func showPendingRemindAcks() {
-        let acks = pendingRemindAcks
-        pendingRemindAcks = []
-        for a in acks { showRemindAck(a.message, fromChannel: a.fromChannel, live: a.live) }
     }
 
     /// Our focus round is over (or no longer holds): show what the partner left meanwhile. Called when something

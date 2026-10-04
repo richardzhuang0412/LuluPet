@@ -5,7 +5,9 @@
 #
 # Passes when
 #   1. assets/changelog.json has an entry for x.y.z, and Resources/changelog.json is an identical copy;
-#   2. README.md or docs/features.md was touched for this release, i.e. EITHER
+#   2. CHANGELOG.md and README.md's 「最近更新」 block are up to date with it (tools/gen_changelog.py --check);
+#   3. README.md or docs/features.md was touched for this release (edits inside the generated 「最近更新」
+#      block do not count), i.e. EITHER
 #      - modified in a commit after the last commit whose VERSION was the previous changelog version
 #        (or modified in the working tree / index right now), OR
 #      - contains the marker  <!-- docs-synced: vx.y.z -->  (the /release skill adds it after syncing docs,
@@ -52,6 +54,8 @@ if grep -q $'^ERR\t' <<<"$INFO"; then
 fi
 cmp -s assets/changelog.json Resources/changelog.json \
   || fail "Resources/changelog.json 和 assets/changelog.json 不一样 / differs — cp assets/changelog.json Resources/changelog.json"
+python3 tools/gen_changelog.py --check 2>/dev/null \
+  || fail "CHANGELOG.md / README.md「最近更新」和 assets/changelog.json 对不上 / stale — 运行 / run: python3 tools/gen_changelog.py"
 
 PREV="$(grep $'^PREV\t' <<<"$INFO" | cut -f2- || true)"
 ITEMS="$(grep $'^ITEM\t' <<<"$INFO" | cut -f2- || true)"
@@ -64,8 +68,21 @@ for f in "${DOCS[@]}"; do
   fi
 done
 
+# A doc's text (stdin) without the generated 「最近更新」 block: tools/gen_changelog.py rewrites it for every
+# release, so on its own it must not count as "the docs were updated".
+strip_generated() { sed '/<!-- recent-changes:start -->/,/<!-- recent-changes:end -->/d'; }
+# docs_differ REV: does README.md / docs/features.md in the working tree differ from REV (generated block ignored)?
+docs_differ() {
+  local f
+  for f in "${DOCS[@]}"; do
+    [[ -f "$f" ]] || continue
+    if ! cmp -s <(git show "$1:$f" 2>/dev/null | strip_generated) <(strip_generated < "$f"); then return 0; fi
+  done
+  return 1
+}
+
 # Uncommitted edits to the docs count (the release commit is made after this check).
-if [[ -n "$(git status --porcelain --untracked-files=all -- "${DOCS[@]}" 2>/dev/null)" ]]; then
+if docs_differ HEAD; then
   echo "✓ 文档已同步 / docs synced for v$VER (uncommitted edits to README.md / docs/features.md)"; exit 0
 fi
 
@@ -77,9 +94,9 @@ if [[ -n "$PREV" ]]; then
   done < <(git log --format=%H -- VERSION)
 fi
 if [[ -n "$BASE" ]]; then
-  CHANGED="$(git log --format=%h "${BASE}..HEAD" -- "${DOCS[@]}" | head -1)"
-  if [[ -n "$CHANGED" ]]; then
-    echo "✓ 文档已同步 / docs synced for v$VER (README.md / docs/features.md changed since v$PREV, e.g. $CHANGED)"; exit 0
+  if docs_differ "$BASE"; then
+    CHANGED="$(git log --format=%h "${BASE}..HEAD" -- "${DOCS[@]}" | head -1)"
+    echo "✓ 文档已同步 / docs synced for v$VER (README.md / docs/features.md changed since v$PREV${CHANGED:+, e.g. $CHANGED})"; exit 0
   fi
   WHY="README.md 和 docs/features.md 自 v$PREV（${BASE:0:7}）以来都没改过 / unchanged since v$PREV"
 else

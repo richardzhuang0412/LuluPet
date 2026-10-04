@@ -50,10 +50,13 @@ extension Visits {
     }
 
     /// 回执（`ackOf` 不为空）不串门，只在自家宠物上冒小气泡。
+    /// Note (v0.14.4): the v0.10–v0.14.3 rule was `isRemindAck(m) && m.remind != nil` → 「TA 喝啦」; a 「等会儿」 reply's
+    /// `remind` ("water.later") is not a `ReminderKind`, so those builds skip it. v0.14.4 reads `RemindReply.decode`.
     public static func isRemindAck(_ m: Message) -> Bool { m.kind == .remind && m.ackOf != nil }
 
     /// 记录里的一行：`fromMe` = 我发的。nil = 不认识的 remind 值（沿用「新版本消息」）。
     public static func remindHistoryLine(_ m: Message, fromMe: Bool) -> String? {
+        if let reply = RemindReply.decode(m), let line = reply.historyLine(fromMe: fromMe) { return line }   // v0.14.4
         guard m.kind == .remind, let kind = m.remind else { return nil }
         let icon = kind == .water ? "💧" : "🧍"
         if m.ackOf != nil {

@@ -314,5 +314,11 @@ public enum PersonalToolsNotification {
     /// (「喝了 / 好的」); the tools controller resets that timer and counts a cup for water.
     public static let didComply = Notification.Name("lulu.tools.didComply")
     /// userInfo: ["kind": ...]. Posted when the partner's reminder got 「等会儿」; the controller snoozes the local one.
+    /// (v0.14.4: userInfo also has "ackOf": the id of the partner's reminder, so the controller can remember that this
+    /// snooze came from it.)
     public static let didSnooze = Notification.Name("lulu.tools.didSnooze")
+    /// v0.14.4. userInfo: ["kind", "ackOf"]. Posted by the controller when 「喝了 / 好的」 is pressed on the local
+    /// re-reminder that a partner-remind snooze caused (within `RemindReply.lateWindow`); AppDelegate sends the
+    /// 「终于做到了」 reply.
+    public static let didCompleteLate = Notification.Name("lulu.tools.didCompleteLate")
 }

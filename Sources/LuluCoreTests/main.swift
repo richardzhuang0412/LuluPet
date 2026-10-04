@@ -3049,6 +3049,62 @@ do {
     check(ThinkOutfit.pick(published: nil, lastMessage: nil, available: have, preferred: nil) == "lace" && ThinkOutfit.pick(published: "x", lastMessage: nil, available: [], preferred: nil) == nil, "outfit: first available / none")
 }
 
+
+// MARK: v0.14.4 remind replies (马上 / 等会儿 / 终于做到了)
+do {
+    // The v0.10–v0.14.3 receive rule, verbatim: a receipt is shown as 「TA 喝啦」 when `isRemindAck(m) && m.remind != nil`.
+    func oldClientShowsAck(_ m: Message) -> Bool { Visits.isRemindAck(m) && m.remind != nil }
+    func oldHistoryIsReceipt(_ m: Message) -> Bool { m.kind == .remind && m.ackOf != nil && m.remind != nil }
+
+    let now = RemindReply(kind: .water, answer: .now).message(from: .lumei, ackOf: "-R1", ts: 10)
+    let later = RemindReply(kind: .water, answer: .later).message(from: .lumei, ackOf: "-R1", ts: 11)
+    let late = RemindReply(kind: .stand, answer: .now, late: true).message(from: .lumei, ackOf: "-R2", ts: 12)
+
+    func wire(_ m: Message) -> [String: Any] { (try? JSONSerialization.jsonObject(with: m.firebasePayload())) as? [String: Any] ?? [:] }
+    check(wire(now)["remind"] as? String == "water" && wire(now)["answer"] as? String == "now" && wire(now)["late"] == nil, "reply: now wire")
+    check(wire(later)["remind"] as? String == "water.later" && wire(later)["answer"] as? String == "later" && wire(later)["ackOf"] as? String == "-R1", "reply: later wire")
+    check(wire(late)["remind"] as? String == "stand" && wire(late)["late"] as? Bool == true && wire(late)["answer"] as? String == "now", "reply: late wire")
+
+    for (m, want) in [(now, RemindReply(kind: .water, answer: .now)), (later, RemindReply(kind: .water, answer: .later)),
+                      (late, RemindReply(kind: .stand, answer: .now, late: true))] {
+        let back = Message.decode(firebaseKey: "-X", value: wire(m))
+        check(back.flatMap(RemindReply.decode) == want && back?.extra.isEmpty == true, "reply decodes into typed fields: \(want)")
+    }
+    let v10 = Message.remind(.water, from: .lumei, ackOf: "-R1", ts: 1)
+    check(RemindReply.decode(v10) == RemindReply(kind: .water, answer: .now), "reply: v0.10 receipt = now")
+    check(RemindReply.decode(Message.remind(.water, from: .lumei, ts: 1)) == nil, "reply: a new reminder is not a reply")
+    var weird = v10; weird.remindRaw = "sleep.later"
+    check(RemindReply.decode(weird) == nil, "reply: unknown kind.later → nil")
+    check(RemindReply(kind: .water, answer: .later, late: true).late == false, "reply: late only on now")
+
+    // Old-client simulation: a later reply must never be shown as 「TA 喝啦」; now / late replies still are (true for them).
+    check(oldClientShowsAck(now) && oldClientShowsAck(late), "old client: now / late reply = 「TA 喝啦」 receipt")
+    check(!oldClientShowsAck(later) && !oldHistoryIsReceipt(later), "old client: 等会儿 reply is NOT a receipt (water.later is not a ReminderKind)")
+    check(later.kind == .remind && later.ackOf != nil && later.remindRaw == "water.later", "old client keeps remind / ackOf")
+    check(Message.decode(firebaseKey: "-X", value: wire(later)).map { $0.firebasePayload() == later.firebasePayload() } == true, "later reply re-encodes unchanged")
+
+    check(RemindReply(kind: .water, answer: .now).line == "TA 说马上喝 💧" && RemindReply(kind: .stand, answer: .now).line == "TA 说马上起来动动", "lines: now")
+    check(RemindReply(kind: .water, answer: .later).line == "TA 说等会儿再喝 ⏰" && RemindReply(kind: .stand, answer: .later).line == "TA 说等会儿再动", "lines: later")
+    check(RemindReply(kind: .water, answer: .now, late: true).line == "TA 终于喝啦 💧" && RemindReply(kind: .stand, answer: .now, late: true).line == "TA 终于起来动啦", "lines: late")
+
+    check(Visits.remindHistoryLine(later, fromMe: false) == "⏰ TA 说等会儿" && Visits.remindHistoryLine(later, fromMe: true) == "⏰ 你说等会儿", "history: later")
+    check(Visits.remindHistoryLine(late, fromMe: false) == "🧍 TA 终于起来动啦" && Visits.remindHistoryLine(late, fromMe: true) == "🧍 你终于起来动啦", "history: late")
+    check(Visits.remindHistoryLine(now, fromMe: false) == "💧 TA 喝啦" && Visits.remindHistoryLine(v10, fromMe: true) == "💧 你喝啦", "history: now unchanged")
+
+    check(RemindReply.isWithinLateWindow(snoozedAt: 1000, now: 1000 + 600) && RemindReply.isWithinLateWindow(snoozedAt: 1000, now: 1000 + 7200), "late window: ≤ 2 h")
+    check(!RemindReply.isWithinLateWindow(snoozedAt: 1000, now: 1000 + 7201) && !RemindReply.isWithinLateWindow(snoozedAt: 1000, now: 999), "late window: > 2 h / clock went back")
+
+    let s = AwaySummary.build([now, later, late], me: .lulu, stickerLabel: { _ in nil })
+    check(s?.acks == 2 && s?.laterReplies == 1 && s?.unknown == 0 && s?.total == 3 && s?.lines.contains("⏰ TA 说等会儿") == true, "away summary counts replies: \(String(describing: s?.lines))")
+
+    let d = UserDefaults(suiteName: "lulupet.test-remindsnooze-\(UUID().uuidString)")!
+    let st = PersonalToolsStore(defaults: d)
+    check(st.remindSnooze(.water) == nil, "snooze origin: none by default")
+    st.setRemindSnooze(RemindSnoozeOrigin(ackOf: "-R1", at: 5), for: .water)
+    check(st.remindSnooze(.water) == RemindSnoozeOrigin(ackOf: "-R1", at: 5) && st.remindSnooze(.stand) == nil, "snooze origin: per kind")
+    st.setRemindSnooze(nil, for: .water)
+    check(st.remindSnooze(.water) == nil, "snooze origin: cleared")
+}
 try? FileManager.default.removeItem(at: tmp)
 // UserDefaults suites leave their plist behind even after removePersistentDomain; delete test ones.
 let prefsDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Preferences")

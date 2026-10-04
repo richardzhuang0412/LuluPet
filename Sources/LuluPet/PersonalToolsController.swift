@@ -55,6 +55,8 @@ final class PersonalToolsController {
     private var pendingBubbles: [(BubbleItem, Role?)] = []
 
     private var wall: TimeInterval { Date().timeIntervalSince1970 }
+    /// `--demo-snooze-delay S`: 「等会儿」 asks again after S seconds instead of 10 minutes (test only).
+    var testSnoozeDelay: TimeInterval?
     private var uptime: TimeInterval { ProcessInfo.processInfo.systemUptime }
     private var pomodoroConfig: PomodoroConfig { demoPomodoroConfig ?? settings.pomodoro }
 
@@ -96,7 +98,8 @@ final class PersonalToolsController {
         })
         observers.append(nc.addObserver(forName: PersonalToolsNotification.didSnooze, object: nil, queue: .main) { [weak self] n in
             let kind = (n.userInfo?["kind"] as? String).flatMap(ReminderKind.init(rawValue:))
-            MainActor.assumeIsolated { if let kind { self?.partnerReminderSnoozed(kind) } }
+            let ackOf = n.userInfo?["ackOf"] as? String
+            MainActor.assumeIsolated { if let kind { self?.partnerReminderSnoozed(kind, ackOf: ackOf) } }
         })
 
         for kind in ReminderKind.allCases { loadReminder(kind) }
@@ -310,7 +313,7 @@ final class PersonalToolsController {
     private func scheduleReminder(_ kind: ReminderKind) {
         guard let r = reminders[kind] else { reminderDue[kind] = nil; return }
         // At most 5 minutes between looks (= the away threshold), so an away stretch is noticed.
-        reminderDue[kind] = uptime + min(r.secondsUntilNextCheck(), ActiveTimeReminder.awayThreshold)
+        reminderDue[kind] = uptime + min(r.secondsUntilNextCheck(), testSnoozeDelay != nil ? 2 : ActiveTimeReminder.awayThreshold)   // test flag: look every 2 s
     }
 
     /// Housekeeping woke up for a reminder: count the active time and pop the bubble when it is due.
@@ -365,12 +368,14 @@ final class PersonalToolsController {
     /// 「喝了 ✓ / 好的 ✓」.
     private func complied(_ kind: ReminderKind) {
         if kind == .water { addCup() }
+        completeSnoozeOrigin(kind)
         resetReminder(kind)
     }
 
     private func snoozed(_ kind: ReminderKind) {
         guard var r = reminders[kind] else { return }
         r.snooze(now: wall)
+        if let d = testSnoozeDelay { r.snoozeUntil = wall + d }   // --demo-snooze-delay (test only)
         reminders[kind] = r
         store.setReminder(r, for: kind)
         scheduleReminder(kind)
@@ -378,7 +383,10 @@ final class PersonalToolsController {
     }
 
     /// The bubble was clicked away without a button: the timer starts over.
-    private func dismissed(_ kind: ReminderKind) { resetReminder(kind) }
+    private func dismissed(_ kind: ReminderKind) {
+        store.setRemindSnooze(nil, for: kind)
+        resetReminder(kind)
+    }
 
     private func resetReminder(_ kind: ReminderKind) {
         guard var r = reminders[kind] else { return }
@@ -393,13 +401,26 @@ final class PersonalToolsController {
     private func partnerReminderAccepted(_ kind: ReminderKind) {
         NSLog("[lulu] tools: partner %@ reminder accepted", kind.rawValue)
         if kind == .water { addCup() }
+        store.setRemindSnooze(nil, for: kind)
         resetReminder(kind)
     }
 
-    private func partnerReminderSnoozed(_ kind: ReminderKind) {
+    private func partnerReminderSnoozed(_ kind: ReminderKind, ackOf: String?) {
         NSLog("[lulu] tools: partner %@ reminder snoozed", kind.rawValue)
         guard isEnabled(kind) else { return }
         snoozed(kind)
+        // v0.14.4: remember that this snooze came from TA's reminder, so 「喝了」 on the re-reminder can say so.
+        if let ackOf { store.setRemindSnooze(RemindSnoozeOrigin(ackOf: ackOf, at: wall), for: kind) }
+    }
+
+    /// 「喝了 / 好的」 on the local re-reminder: if it came from a partner-remind 「等会儿」 (≤ 2 h ago), tell TA.
+    private func completeSnoozeOrigin(_ kind: ReminderKind) {
+        guard let o = store.remindSnooze(kind) else { return }
+        store.setRemindSnooze(nil, for: kind)
+        guard RemindReply.isWithinLateWindow(snoozedAt: o.at, now: wall) else { return }
+        NSLog("[lulu] tools: %@ done after all (snoozed %.0f s ago): telling TA", kind.rawValue, wall - o.at)
+        NotificationCenter.default.post(name: PersonalToolsNotification.didCompleteLate, object: nil,
+                                        userInfo: ["kind": kind.rawValue, "ackOf": o.ackOf])
     }
 
     private func addCup() {

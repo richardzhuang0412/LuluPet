@@ -5,11 +5,31 @@
 
 ![两只宠物串门：噜噜跑到 TA 的桌面送表情，见面互动后再跑回来](docs/demo/visit.gif)
 
+<sub>[▶ 高清视频](docs/demo/visit.mp4)</sub>
+
 平台：macOS 14+ · 下载：[Releases 里的 LuluPet.zip](https://github.com/richardzhuang0412/LuluPet/releases/latest) ·
-完整功能说明：[docs/features.md](docs/features.md)
+完整功能说明：[docs/features.md](docs/features.md) · 更新日志：[CHANGELOG.md](CHANGELOG.md)
 
 > **非商用 · 素材版权归原作者**：「水豚噜噜」形象和动图版权归原作者，本项目只供个人、粉丝向、非商业使用，侵删。
 > 代码是 MIT 协议，素材不在 MIT 范围内，详见 [版权与素材](#版权与素材)。
+
+<!-- recent-changes:start -->
+## 最近更新
+
+**v0.14.4（2026-10-04）**
+
+- 叫 TA 喝水 / 起来动动 后，TA 点「马上」还是「等会儿」都会带回来告诉你；TA 后来做到了也会说一声
+
+**v0.14.3（2026-10-04）**
+
+- 新增「偷看」：传话面板或菜单里点「👀 偷看」，马上看看 TA 这会儿在干嘛（TA 不会知道哦）
+
+**v0.14.2（2026-10-04）**
+
+- 「想 TA」泡泡里的 TA 和 TA 桌面上一模一样：同一套造型、同样在睡觉 / 专注 / 勿扰 / 撑伞
+
+完整的更新日志见 [CHANGELOG.md](CHANGELOG.md)。
+<!-- recent-changes:end -->
 
 ---
 
@@ -28,7 +48,7 @@
 
 ## 功能一览
 
-> 动图都是 App 自己渲染的（`tools/make_demos.sh`），同目录下有 MP4 版。两个桌面并排时，左边是你的，右边是 TA 的。
+> 动图都是 App 自己渲染的（`tools/make_demos.sh`），每张下面的「高清视频」是同一段的高清 MP4。两个桌面并排时，左边是你的，右边是 TA 的。
 > 每个功能的详细用法和设置位置见 [docs/features.md](docs/features.md)。
 
 ### 日常陪伴
@@ -37,6 +57,8 @@
 
 ![日常：待机、小动作、单击冒爱心](docs/demo/daily.gif)
 
+<sub>[▶ 高清视频](docs/demo/daily.mp4)</sub>
+
 ### 串门送信与见面互动
 
 双击宠物打开传话面板：发爱心、文字、24 个快捷表情，或者直接「去找 TA」。自己的宠物会**亲自跑去 TA 的桌面**送，
@@ -44,11 +66,15 @@
 
 ![传话面板和按天分组的记录](docs/demo/compose.gif)
 
+<sub>[▶ 高清视频](docs/demo/compose.mp4)</sub>
+
 ### 撞车
 
 两个人同时发：先在一边见面，再一起走到另一边见一面，最后各回各家。
 
 ![撞车：两个人同时发](docs/demo/collide.gif)
+
+<sub>[▶ 高清视频](docs/demo/collide.mp4)</sub>
 
 ### 勿扰
 
@@ -57,11 +83,15 @@
 
 ![勿扰：TA 生气中，消息先攒着，关掉后送来诚意清单](docs/demo/dnd.gif)
 
+<sub>[▶ 高清视频](docs/demo/dnd.mp4)</sub>
+
 ### 换装和大小
 
 噜噜 11 套、噜妹 9 套造型（含节日限定），自动轮换，也能「选择造型」直接挑；鼠标移上去，拖右下角的小圆点等比例缩放。
 
 ![换装和大小](docs/demo/outfits.gif)
+
+<sub>[▶ 高清视频](docs/demo/outfits.mp4)</sub>
 
 ### 番茄钟 / 喝水 / 站立提醒
 
@@ -69,11 +99,15 @@
 
 ![番茄钟倒计时和喝水提醒](docs/demo/tools.gif)
 
+<sub>[▶ 高清视频](docs/demo/tools.mp4)</sub>
+
 ### 叫 TA 喝水
 
-传话面板里点「💧 叫 TA 喝水」或「🧍 叫 TA 起来动动」：你的宠物跑过去叫 TA，TA 点「喝了 ✓」，你这边会冒一句「TA 喝啦」。
+传话面板里点「💧 叫 TA 喝水」或「🧍 叫 TA 起来动动」：你的宠物跑过去叫 TA，TA 点「喝了 ✓」或「等会儿」，你这边都会收到回话（「TA 说马上喝 💧」/「TA 说等会儿再喝 ⏰」）；TA 等会儿之后真的喝了，还会再告诉你一句「TA 终于喝啦」。
 
 ![叫 TA 喝水](docs/demo/remind.gif)
+
+<sub>[▶ 高清视频](docs/demo/remind.mp4)</sub>
 
 ### 三种模式：一个人 / 情侣 / 朋友
 
@@ -82,6 +116,12 @@
 - **朋友**：两个人可以选同一个角色，串门、传话照样有，亲密的动作自动换掉。
 
 ![朋友模式：两只噜噜见面](docs/demo/modes.gif)
+
+<sub>[▶ 高清视频](docs/demo/modes.mp4)</sub>
+
+![一个人模式：一只宠物，「表情」和「小工具」，番茄钟和喝水提醒](docs/demo/solo.gif)
+
+<sub>[▶ 高清视频](docs/demo/solo.mp4)</sub>
 
 ### 天气卡 + 想 TA 泡泡
 
@@ -92,15 +132,27 @@
 
 ![想 TA 泡泡和传话面板里的天气卡](docs/demo/weather.gif)
 
+<sub>[▶ 高清视频](docs/demo/weather.mp4)</sub>
+
+![想 TA 泡泡：TA 此刻的造型和状态 + TA 那边的天气](docs/demo/think.gif)
+
+<sub>[▶ 高清视频](docs/demo/think.mp4)</sub>
+
 ### 更新日志 + 待设置
 
 升级后宠物冒个小卡片，点「看看」就能看到这一版多了什么；「待设置」列出还没设置的新功能。随时可以在 🍊 →「更新日志…」里翻看。
 
 ![升级卡片和更新日志窗口](docs/demo/whatsnew.gif)
 
-### 一键更新（v0.14 即将推出）
+<sub>[▶ 高清视频](docs/demo/whatsnew.mp4)</sub>
 
-🍊 菜单里会多一个「检查更新」：有新版本时直接下载替换，不用再手动去 Releases 下载。在那之前，请按 [怎么更新](#常见问题) 手动更新。
+### 一键更新
+
+有新版本时宠物会冒「有新版本 · 更新」，点一下就自动下载、替换、重启，聊天记录和设置都不会丢；也可以随时点 🍊 →「检查更新…」。（v0.14.0 以前的版本需要先手动装一次新版，见 [怎么更新](#常见问题)。）
+
+![检查更新：「有新版本 · 更新」卡片，点「更新」开始下载](docs/demo/update.gif)
+
+<sub>[▶ 高清视频](docs/demo/update.mp4)</sub>
 
 ---
 
@@ -125,6 +177,10 @@
 2. **选角色**：噜噜还是噜妹。情侣模式两个人要选不同的；朋友模式可以一样。
 3. **选城市**（可以跳过）：用来显示天气，只分享城市。
 4. **配对**（情侣 / 朋友）：填配对码和 Firebase 数据库地址，见下一节。一个人模式没有这一步，点「开始」就好。
+
+![欢迎窗：模式 → 角色 → 城市 → 配对](docs/demo/welcome.gif)
+
+<sub>[▶ 高清视频](docs/demo/welcome.mp4)</sub>
 
 ## 两个人用：Firebase 设置
 

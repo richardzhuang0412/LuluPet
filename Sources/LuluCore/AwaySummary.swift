@@ -21,12 +21,14 @@ public struct AwaySummary: Equatable, Sendable {
     public var waterCalls = 0
     public var standCalls = 0
     public var acks = 0
+    /// v0.14.4: 「等会儿」 replies (counted in `total`, own line).
+    public var laterReplies = 0
     /// Grouped by sticker id, in order of first appearance.
     public var stickers: [StickerCount] = []
     /// The newest text message (for a one-line preview).
     public var latestText: String?
 
-    public var total: Int { pokes + texts + visits + unknown + waterCalls + standCalls + acks + stickers.reduce(0) { $0 + $1.count } }
+    public var total: Int { pokes + texts + visits + unknown + waterCalls + standCalls + acks + laterReplies + stickers.reduce(0) { $0 + $1.count } }
 
     /// nil when nothing arrived. `messages` should be the partner's messages in arrival order;
     /// messages from `me` (if given) are ignored.
@@ -40,7 +42,10 @@ public struct AwaySummary: Equatable, Sendable {
                 if let t = m.text?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty { s.latestText = t }
             case .visit: s.visits += 1
             case .remind:
-                if m.remind == nil { s.unknown += 1 }
+                if let reply = RemindReply.decode(m) {
+                    if reply.answer == .later { s.laterReplies += 1 } else { s.acks += 1 }
+                }
+                else if m.remind == nil { s.unknown += 1 }
                 else if m.ackOf != nil { s.acks += 1 }
                 else if m.remind == .water { s.waterCalls += 1 }
                 else { s.standCalls += 1 }
@@ -80,6 +85,7 @@ public struct AwaySummary: Equatable, Sendable {
         if waterCalls > 0 { out.append("💧 叫你喝水" + Self.times(waterCalls)) }
         if standCalls > 0 { out.append("🧍 叫你起来动动" + Self.times(standCalls)) }
         if acks > 0 { out.append("✅ TA 回应了提醒" + Self.times(acks)) }
+        if laterReplies > 0 { out.append("⏰ TA 说等会儿" + Self.times(laterReplies)) }
         return out
     }
 
