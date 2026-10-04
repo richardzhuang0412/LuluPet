@@ -18,6 +18,8 @@ final class ComposeWindow: NSPanel {
     var onPeek: (() -> Void)?
     /// v0.11.3 「调时长…」 on the 小工具 tab: open Settings on the 小工具 page.
     var onOpenToolsSettings: (() -> Void)?
+    /// v0.15.3 the ⚙︎ next to 「快捷栏」: Settings on the 「表情」 page.
+    var onOpenStickerSettings: (() -> Void)?
 
     private var stickerPrefs: StickerPrefsModel?
     /// Open / close 「更多表情…」 (demo and snapshot flags).
@@ -125,6 +127,7 @@ final class ComposeWindow: NSPanel {
             onSendRemind: { [weak self] kind in self?.onSendRemind?(kind); self?.dismiss() },
             onOpenSettings: { [weak self] in self?.dismiss(); self?.onOpenSettings?() },
             onOpenToolsSettings: { [weak self] in self?.dismiss(); self?.onOpenToolsSettings?() },
+            onOpenStickerSettings: { [weak self] in self?.dismiss(); self?.onOpenStickerSettings?() },
             onClose: { [weak self] in self?.dismiss() }
         )
         let host = NSHostingView(rootView: view)
@@ -219,6 +222,7 @@ private struct ComposeView: View {
     let onSendRemind: (ReminderKind) -> Void
     let onOpenSettings: () -> Void
     let onOpenToolsSettings: () -> Void
+    let onOpenStickerSettings: () -> Void
     let onClose: () -> Void
 
     @State private var text = ""
@@ -438,6 +442,13 @@ private struct ComposeView: View {
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
                     .foregroundStyle(Self.accent.opacity(0.85))
                     .help("在 设置 →「表情」里挑 8 个最爱，也可以右键表情放进来")
+                Button(action: onOpenStickerSettings) {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Self.accent.opacity(0.85))
+                }
+                .buttonStyle(.plain)
+                .help("调快捷栏：设置 →「表情」")
                 Spacer(minLength: 0)
                 if let toast = prefs.toast {
                     Text(toast)

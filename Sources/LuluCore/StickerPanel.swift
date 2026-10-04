@@ -165,6 +165,33 @@ public enum StickerPanel {
         return out
     }
 
+    /// v0.15.3 drag & drop on the quick bar: `id` dropped onto visible slot `slot` (0-based; past the end = append).
+    /// Already on the bar → moves there. From the library → takes that slot (the sticker there comes off, returned as
+    /// `replaced`), or is appended to a free slot; a full bar dropped past the end replaces the last slot.
+    /// Ids hidden by the policy keep their place after the visible ones.
+    public static func dropped(_ id: String, onto slot: Int, in stored: [String], visible: [String]) -> (list: [String], replaced: String?) {
+        let ok = Set(visible)
+        var shown = stored.filter { ok.contains($0) }
+        let hidden = stored.filter { !ok.contains($0) }
+        guard ok.contains(id) else { return (stored, nil) }
+        var replaced: String?
+        if let from = shown.firstIndex(of: id) {
+            shown.remove(at: from)
+            shown.insert(id, at: min(max(0, slot), shown.count))
+        } else if slot < shown.count {
+            replaced = shown[max(0, slot)]
+            shown[max(0, slot)] = id
+        } else if shown.count + hidden.count < maxQuickBar {
+            shown.append(id)
+        } else if !shown.isEmpty {
+            replaced = shown.removeLast()
+            shown.append(id)
+        } else {
+            return (stored, nil)
+        }
+        return (shown + hidden, replaced)
+    }
+
     /// 「按常用推荐」: the 8 most-sent stickers; ids hidden by the policy that were on the bar stay (taking their slots).
     public static func recommended(stored: [String], counts: [String: Int], recent: [String: Int64], visible: [String]) -> [String] {
         let ok = Set(visible)

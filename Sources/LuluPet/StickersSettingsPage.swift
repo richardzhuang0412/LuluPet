@@ -14,6 +14,7 @@ struct StickersPage: View {
     @ObservedObject var model: StickerPrefsModel
     let choices: [ComposeWindow.StickerChoice]
     @State private var message: String?
+    @State private var dropTarget: Int?   // v0.15.3 the quick-bar slot a drag hovers over
 
     private static let accent = Color(red: 0.91, green: 0.54, blue: 0.29)
     private var visible: [String] { choices.map(\.id) }
@@ -46,17 +47,30 @@ struct StickersPage: View {
             }
             HStack(alignment: .top, spacing: 4) {
                 ForEach(0..<StickerPanel.maxQuickBar, id: \.self) { i in
-                    if i < barIDs.count, let s = byID[barIDs[i]] {
-                        barTile(s, index: i, count: barIDs.count)
-                    } else {
-                        RoundedRectangle(cornerRadius: 8)
-                            .strokeBorder(Self.accent.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                            .frame(maxWidth: .infinity, minHeight: 54, maxHeight: 54)
+                    Group {
+                        if i < barIDs.count, let s = byID[barIDs[i]] {
+                            barTile(s, index: i, count: barIDs.count)
+                                .onDrag { NSItemProvider(object: s.id as NSString) }
+                        } else {
+                            RoundedRectangle(cornerRadius: 8)
+                                .strokeBorder(Self.accent.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                                .frame(maxWidth: .infinity, minHeight: 54, maxHeight: 54)
+                        }
+                    }
+                    // v0.15.3: drop a bar tile to reorder, or a sticker from below to put it in this slot.
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Self.accent, lineWidth: dropTarget == i ? 2 : 0))
+                    .onDrop(of: [.text], isTargeted: Binding(get: { dropTarget == i }, set: { dropTarget = $0 ? i : (dropTarget == i ? nil : dropTarget) })) { providers in
+                        guard let p = providers.first else { return false }
+                        _ = p.loadObject(ofClass: NSString.self) { obj, _ in
+                            guard let id = obj as? String else { return }
+                            DispatchQueue.main.async { message = model.drop(id, onto: i, visible: visible, label: label) }
+                        }
+                        return true
                     }
                 }
             }
 
-            Text(message ?? "点下面的表情装上快捷栏，再点一下拿下；◀ ▶ 调顺序，✕ 拿下。发过的表情会按次数自动排进传话面板的「常用」。")
+            Text(message ?? "点下面的表情装上快捷栏（也可以直接拖到某一格），再点一下拿下；拖动或 ◀ ▶ 调顺序，✕ 拿下。发过的表情会按次数自动排进传话面板的「常用」。")
                 .font(.system(size: 11, design: .rounded))
                 .foregroundStyle(message == nil ? Color.secondary : Self.accent)
                 .fixedSize(horizontal: false, vertical: true)
@@ -171,6 +185,7 @@ struct StickersPage: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(onBar ? "点一下从快捷栏拿下「\(s.label)」" : "点一下装上快捷栏")
+        .onDrag { NSItemProvider(object: s.id as NSString) }   // v0.15.3: drag up onto a quick-bar slot
+        .help(onBar ? "点一下从快捷栏拿下「\(s.label)」" : "点一下装上快捷栏，或拖到上面某一格")
     }
 }

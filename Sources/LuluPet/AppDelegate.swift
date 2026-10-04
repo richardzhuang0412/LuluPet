@@ -957,6 +957,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// v0.13.3 the weather card at the top of the compose panel: TA's row first (paired, once TA's city is known), then
     /// mine; solo only mine. No city of mine → the 「设置我的城市」 link.
+    /// v0.15.3 the compose panel's ⚙︎ by 「快捷栏」: Settings opened on the 「表情」 page.
+    private func openStickerSettings() {
+        SettingsWindow.demoStickersPage = true   // the page the window opens on (reset right after)
+        openSettings()
+        SettingsWindow.demoStickersPage = false
+    }
+
     private func refreshComposeWeatherCard() {
         if let compose, compose.isVisible { compose.setWeatherCard(composeWeatherCard()) }
     }
@@ -2303,6 +2310,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                               weather: composeWeatherCard(), stickerPrefs: stickerPrefs)
         c.onOpenSettings = { [weak self] in self?.openSettings() }
         c.onOpenToolsSettings = { [weak self] in self?.tools.onOpenSettings?() }
+        c.onOpenStickerSettings = { [weak self] in self?.openStickerSettings() }
         c.onSendSticker = { [weak self] id in self?.playSoloSticker(id, seat: role) }
         compose = c
         c.present(beside: pet.spriteScreenRect)
@@ -2344,6 +2352,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                               policy: contentPolicy, tools: tools.panel, weather: composeWeatherCard(), stickerPrefs: stickerPrefs)
         c.onOpenSettings = { [weak self] in self?.openSettings() }
         c.onOpenToolsSettings = { [weak self] in self?.tools.onOpenSettings?() }
+        c.onOpenStickerSettings = { [weak self] in self?.openStickerSettings() }
         c.onHistorySeen = { [weak self] in
             if self?.unseenAway != nil { NSLog("[lulu] history tab: \"你不在的时候\" batch seen") }
             self?.unseenAway = nil

@@ -3243,6 +3243,20 @@ do {
     check(PartnerBadge.make(online: false, neverSeen: false, lastSeenMs: now - 3 * 86_400_000, dnd: nil, focus: nil, nowMs: now, calendar: cal).text.hasPrefix("离线 · 10月"), "badge: offline date")
 }
 
+// MARK: v0.15.3 quick-bar drag & drop
+do {
+    let vis = ["a","b","c","d","e","f","g","h","i","j"]
+    check(StickerPanel.dropped("c", onto: 0, in: ["a","b","c"], visible: vis).list == ["c","a","b"], "drop: reorder to front")
+    check(StickerPanel.dropped("a", onto: 5, in: ["a","b","c"], visible: vis).list == ["b","c","a"], "drop: reorder past end = last")
+    let r = StickerPanel.dropped("z", onto: 1, in: ["a","b","c"], visible: vis + ["z"])
+    check(r.list == ["a","z","c"] && r.replaced == "b", "drop: library sticker takes the slot")
+    check(StickerPanel.dropped("d", onto: 7, in: ["a","b","c"], visible: vis).list == ["a","b","c","d"], "drop: empty slot appends")
+    let full = ["a","b","c","d","e","f","g","h"]
+    let r2 = StickerPanel.dropped("i", onto: 8, in: full, visible: vis)
+    check(r2.list.last == "i" && r2.replaced == "h" && r2.list.count == 8, "drop: full bar past end replaces last")
+    check(StickerPanel.dropped("b", onto: 0, in: ["x","a","b"], visible: ["a","b"]).list == ["b","a","x"], "drop: hidden ids kept after visible")
+}
+
 try? FileManager.default.removeItem(at: tmp)
 // UserDefaults suites leave their plist behind even after removePersistentDomain; delete test ones.
 let prefsDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Preferences")

@@ -82,6 +82,15 @@ import LuluCore
     }
 
     func unequip(_ id: String) { setBar(StickerPanel.removed(id, from: quickBar)) }
+    /// v0.15.3 drag & drop onto a quick-bar slot. Returns the message for the page.
+    func drop(_ id: String, onto slot: Int, visible: [String], label: (String) -> String) -> String {
+        let wasOn = isOnBar(id)
+        let r = StickerPanel.dropped(id, onto: slot, in: quickBar, visible: visible)
+        setBar(r.list)
+        if wasOn { return "已把「\(label(id))」挪到第 \(min(slot, r.list.count - 1) + 1) 格" }
+        if let old = r.replaced { return "「\(label(id))」换下了「\(label(old))」" }
+        return "已装上「\(label(id))」"
+    }
     func move(_ id: String, by delta: Int, visible: [String]) { setBar(StickerPanel.moved(id, by: delta, in: quickBar, visible: visible)) }
     func recommend(visible: [String]) {
         setBar(StickerPanel.recommended(stored: quickBar, counts: counts, recent: recent, visible: visible))
