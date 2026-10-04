@@ -1,6 +1,7 @@
 {
   "arrive": ["arrive_03.m4a", "arrive_04.m4a", "arrive_05.m4a", "v2/arrive_01.m4a", "v2/arrive_02.m4a", "v2/arrive_03.m4a", "v2/arrive_04.m4a",
             {"file": "v4/S01.m4a", "visitor": "lulu"}, {"file": "v4/S02.m4a", "visitor": "lulu", "intimate": true}],
+  "leave": ["v5/leave_L02.m4a", "v5/leave_L03.m4a", "v5/leave_L04.m4a", "v5/leave_L07.m4a", "v5/leave_L09.m4a", "v5/leave_L10.m4a", "v5/leave_L11.m4a", "v5/leave_L12.m4a", "v5/leave_L15.m4a", "v5/leave_L16.m4a"],
   "goVisit": [{"file": "v4/S01.m4a", "visitor": "lulu"}],
   "poke": ["poke_05.m4a", "v2/poke_01.m4a", "v2/poke_03.m4a", "v4/S03.m4a"],
   "hug": ["hug_01.m4a", "v2/hug_01.m4a", "v2/hug_02.m4a", {"file": "v4/S06.m4a", "intimate": true}],

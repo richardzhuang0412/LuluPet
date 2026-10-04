@@ -530,10 +530,10 @@ final class VisitController {
         onLayoutChanged?()   // v0.7.4: bubbles left at time-up point at our pet right away
         visitor.inputLocked = true
         visitor.setRest(.idle)
-        sound(.leave)
         Self.log("visitor leaving: \(visitor.hasClip(.wave) ? "wave" : "happy (no wave clip)"), then back to the \(plan.entrySide.rawValue) edge")
         visitor.playOnce(.wave) { [weak self, weak visitor] in
             guard let self, let visitor, self.visitorState == .leaving else { return }
+            self.sound(.leave)   // v0.15.4: the footsteps start with the walk off screen (after the wave)
             visitor.run(toX: plan.entryX) { [weak self, weak visitor] in
                 guard let self, self.visitorState == .leaving else { return }
                 visitor?.orderOut(nil)

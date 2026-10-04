@@ -17,6 +17,18 @@
    "intimate": true
   }
  ],
+ "leave": [
+  "v5/leave_L02.m4a",
+  "v5/leave_L03.m4a",
+  "v5/leave_L04.m4a",
+  "v5/leave_L07.m4a",
+  "v5/leave_L09.m4a",
+  "v5/leave_L10.m4a",
+  "v5/leave_L11.m4a",
+  "v5/leave_L12.m4a",
+  "v5/leave_L15.m4a",
+  "v5/leave_L16.m4a"
+ ],
  "goVisit": [
   {
    "file": "v4/S01.m4a",

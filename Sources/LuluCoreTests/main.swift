@@ -3257,6 +3257,13 @@ do {
     check(StickerPanel.dropped("b", onto: 0, in: ["x","a","b"], visible: ["a","b"]).list == ["b","a","x"], "drop: hidden ids kept after visible")
 }
 
+// MARK: v0.15.4 leave footsteps
+do {
+    let sm = SoundManifest(url: URL(fileURLWithPath: "assets/sounds.json"))
+    let files = sm.files(for: "leave")
+    check(files.count == 10 && files.allSatisfy { FileManager.default.fileExists(atPath: "assets/sounds/" + $0) }, "shipped sounds: 10 leave footsteps, all present")
+}
+
 try? FileManager.default.removeItem(at: tmp)
 // UserDefaults suites leave their plist behind even after removePersistentDomain; delete test ones.
 let prefsDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Preferences")

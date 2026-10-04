@@ -245,4 +245,4 @@
 
 两个人配对的完整步骤见 [firebase-setup.md](firebase-setup.md)。
 
-<!-- docs-synced: v0.15.3 -->
+<!-- docs-synced: v0.15.4 -->
