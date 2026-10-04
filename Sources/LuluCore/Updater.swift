@@ -162,6 +162,8 @@ public enum UpdateCopy {
     public static let verifying = "正在检查新版本…"
     public static let installing = "正在安装，马上重启…"
     public static let checkFailed = "检查更新失败了，稍后再试试吧"
+    /// The releases feed answered 404: the GitHub repo isn't public (yet) or has no release.
+    public static let feedNotFound = "还连不上 GitHub 的发布页（仓库可能还没公开），这次先用安装包更新吧"
     public static let manualNeeded = "请手动更新"
     public static func manualBody(_ v: String) -> String {
         "噜噜桌宠不在「应用程序」文件夹里，没法自动替换自己。请到发布页下载 v\(v)，把「应用程序」里的旧版换成新的。"

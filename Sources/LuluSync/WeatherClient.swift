@@ -39,13 +39,23 @@ public struct WeatherClient: Sendable {
         return WeatherParse.places(try await fetch(url))
     }
 
-    /// Current conditions plus today's high / low; `fetchedAt` is now.
+    /// Current conditions plus today's high / low; `fetchedAt` is now. Open-Meteo only.
     public func current(for place: WeatherPlace) async throws -> WeatherSnapshot {
         let url = try Self.url("https://api.open-meteo.com/v1/forecast", [
             "latitude": String(format: "%.2f", place.latitude), "longitude": String(format: "%.2f", place.longitude),
-            "current": "temperature_2m,weather_code,wind_speed_10m,is_day",
+            "current": "temperature_2m,weather_code,cloud_cover,wind_speed_10m,is_day",
             "daily": "temperature_2m_max,temperature_2m_min", "timezone": "auto", "forecast_days": "1"])
         return try WeatherParse.snapshot(try await fetch(url), now: Date().timeIntervalSince1970)
+    }
+
+    /// v0.14.1: the weather the app shows. High / low (and wind, day / night) always come from Open-Meteo; inside the US
+    /// the temperature and sky are replaced by a real station observation (`NWSClient`) when a usable one exists.
+    /// `source` says which: "NWS KSFO" or "Open-Meteo". Open-Meteo failing is an error (no high / low to show).
+    public func currentBest(for place: WeatherPlace, store: WeatherStore?, userAgent: String) async throws -> (snapshot: WeatherSnapshot, source: String) {
+        async let nws = NWSClient(userAgent: userAgent, session: session).observation(for: place, store: store)
+        let base = try await current(for: place)
+        let obs = await nws
+        return (WeatherMerge.apply(base, nws: obs), obs.map { "NWS \($0.stationId)" + ($0.skyStationId.map { " (sky \($0))" } ?? "") } ?? "Open-Meteo")
     }
 
     static func url(_ base: String, _ query: [String: String]) throws -> URL {

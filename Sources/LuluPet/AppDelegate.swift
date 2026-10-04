@@ -1,4 +1,5 @@
 import AppKit
+import CoreLocation
 import LuluCore
 import LuluSync
 
@@ -102,6 +103,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var demoPartnerPlace: WeatherPlace?   // --demo-partner-place 上海: pretend the partner's city is that FakeWeather place
         var demoThink: [(kind: String, at: TimeInterval)] = []   // --demo-think rain@2,snow@8,clear@14: show the 想 TA bubble (forced) with that weather
         var demoMyPlace: WeatherPlace?     // --demo-my-place 洛杉矶: seed my city (temp profiles; snapshots)
+        // v0.14.1 current location (testing only; none of these touch the real location permission)
+        var fakeLocation: String?          // --fake-location ok|denied|fail: no CoreLocation / geocoder, a fixed answer (ok = 伯克利)
+        var demoMyPlaceAuto = false        // --demo-my-place-auto: seed 「使用我现在的位置」 as on (snapshots, temp profiles)
+        var demoLocationStatus: LocationStatus?   // --demo-location-status denied|failed|locating: show that status line (snapshots)
         var demoSoloCompose = false        // --demo-solo-compose: open the (simplified) panel at launch like --demo-compose
         // v0.13 更新日志 / 待设置
         var demoWhatsNew: WhatsNewModel.Page?   // --demo-whatsnew [updates|todos]: open the 更新日志 window at 0.5 s
@@ -229,6 +234,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 case "--demo-my-place": demoMyPlace = it.next().flatMap { n in FakeWeather.places.first { $0.name == n } }
                 case "--demo-city-query": CityPicker.demoQuery = it.next()
+                case "--fake-location": fakeLocation = it.next()
+                case "--demo-my-place-auto": demoMyPlaceAuto = true
+                case "--demo-location-status":
+                    demoLocationStatus = ["denied": .denied, "failed": .failed, "locating": .locating][it.next() ?? ""]
                 case "--demo-whatsnew":
                     let next = args.firstIndex(of: a).flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
                     demoWhatsNew = next == "todos" ? .todos : .updates   // an unknown following arg is ignored by the loop
@@ -389,6 +398,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated {
                 self?.checkDNDExpiry(reason: "wake")
                 self?.channel?.heartbeatNow()
+                self?.refreshLocation(userInitiated: false, minGap: 300)   // v0.14.1: the Mac may have moved (no-op unless 「使用我现在的位置」 is on)
                 self?.refreshWeather(force: false)   // v0.12: overdue after sleep → fetch now (no-op when nothing needs weather)
             }
         }
@@ -508,6 +518,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSLog("[lulu] history: %ld messages in %@", history.count, history.fileURL.path)
 
         if let p = options.demoMyPlace { weatherStore.myPlace = p }   // v0.12 --demo-my-place (temp profiles)
+        if options.demoMyPlaceAuto { weatherStore.myPlaceAuto = true }   // v0.14.1 (temp profiles)
         // v0.13: was there a saved config before this launch? (old user vs. new user, see `Changelog.plan`)
         let hadConfig = store.load() != nil
         if let seen = options.demoWhatsNewSeen { store.whatsNewSeen = seen }
@@ -821,13 +832,102 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return { q in try await WeatherClient().search(q) }
     }
 
-    /// I picked (or cleared) my city: save it, tell TA with the next heartbeat, fetch.
+    /// I picked (or cleared) my city by hand: save it (this turns 「使用我现在的位置」 off), tell TA with the next heartbeat, fetch.
     func setMyPlace(_ place: WeatherPlace?) {
-        weatherStore.myPlace = place
-        channel?.setPlace(place)
-        NSLog("[lulu] weather: my city → %@", place?.name ?? "none")
-        refreshWeather(force: true)
+        weatherStore.myPlaceAuto = false
+        cityModel.auto = false
+        cityModel.status = .idle
+        storeMyPlace(place)
     }
+
+    private func storeMyPlace(_ place: WeatherPlace?) {
+        weatherStore.myPlace = place
+        cityModel.place = place
+        channel?.setPlace(place)
+        NSLog("[lulu] weather: my city → %@%@", place?.name ?? "none", weatherStore.myPlaceAuto ? " (located)" : "")
+        refreshWeather(force: true)
+        housekeeping.setNeedsArm()
+    }
+
+    // MARK: v0.14.1 「使用我现在的位置」
+    /// Shared with the Settings 我的城市 section (a located city shows up there while it is open).
+    lazy var cityModel: CityModel = {
+        let m = CityModel()
+        m.place = weatherStore.myPlace
+        m.auto = weatherStore.myPlaceAuto
+        m.status = options.demoLocationStatus ?? .idle
+        return m
+    }()
+    private lazy var locationProvider = LocationProvider()
+    private var locating = false
+    private var locationLastAttempt: TimeInterval?
+
+    /// The Settings toggle. On: ask for permission (the one place the system prompt may appear) and look up the city;
+    /// denied / failed → the toggle goes back off and the manual city stays. Off: just stop (the city stays as it is).
+    func setAutoLocation(_ on: Bool) {
+        weatherStore.myPlaceAuto = on
+        cityModel.auto = on
+        cityModel.status = .idle
+        NSLog("[lulu] location: auto %@", on ? "on" : "off")
+        if on { refreshLocation(userInitiated: true) }
+        housekeeping.setNeedsArm()
+    }
+
+    /// One look-up: location → (moved > 3 km, or asked by hand) city name → my city. Never prompts unless `userInitiated`.
+    /// `minGap`: skip when the last look-up was less than that many seconds ago.
+    func refreshLocation(userInitiated: Bool, minGap: TimeInterval = 0) {
+        guard weatherStore.myPlaceAuto, !locating else { return }
+        let now = wallClock
+        if let last = locationLastAttempt, now >= last, now - last < minGap { return }
+        locating = true
+        locationLastAttempt = now
+        if userInitiated { cityModel.status = .locating }
+        let fix: (Result<CLLocation, LocationFailure>) -> Void = { [weak self] result in
+            guard let self else { return }
+            Task { @MainActor in await self.locationArrived(result, userInitiated: userInitiated) }
+        }
+        switch options.fakeLocation {
+        case nil: locationProvider.locate(prompt: userInitiated, completion: fix)
+        case "denied": fix(.failure(.denied))
+        case "fail": fix(.failure(.unavailable))
+        default: fix(.success(CLLocation(latitude: 37.8716, longitude: -122.2727)))
+        }
+    }
+
+    private func locationArrived(_ result: Result<CLLocation, LocationFailure>, userInitiated: Bool) async {
+        defer { locating = false; housekeeping.setNeedsArm() }
+        guard weatherStore.myPlaceAuto else { return }   // switched off meanwhile
+        func fail(_ status: LocationStatus) {
+            cityModel.status = status
+            NSLog("[lulu] location: %@", status == .denied ? "denied" : "no fix")
+            if userInitiated { weatherStore.myPlaceAuto = false; cityModel.auto = false }   // the toggle did not take
+        }
+        guard case .success(let loc) = result else {
+            if case .failure(let why) = result { fail(why == .denied ? .denied : .failed) }
+            return
+        }
+        cityModel.status = .idle
+        let c = loc.coordinate
+        guard userInitiated || LocationRules.needsGeocode(current: weatherStore.myPlace, latitude: c.latitude, longitude: c.longitude) else {
+            NSLog("[lulu] location: still within %.0f km of %@", LocationRules.moveKm, weatherStore.myPlace?.name ?? "?")
+            return
+        }
+        let place: WeatherPlace?
+        if options.fakeLocation != nil {
+            place = WeatherPlace(name: "伯克利", admin: "加利福尼亚", country: "美国", latitude: c.latitude, longitude: c.longitude, timezone: "America/Los_Angeles")
+        } else {
+            place = await PlaceGeocoder.place(for: loc)
+        }
+        guard weatherStore.myPlaceAuto else { return }
+        guard let place else { fail(.failed); return }
+        if place != weatherStore.myPlace { storeMyPlace(place) }
+    }
+
+    /// 系统设置 → 隐私与安全性 → 定位服务.
+    func openLocationSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices") { NSWorkspace.shared.open(url) }
+    }
+    // MARK: end v0.14.1 location
 
     /// v0.13.3 the weather card at the top of the compose panel: TA's row first (paired, once TA's city is known), then
     /// mine; solo only mine. No city of mine → the 「设置我的城市」 link.
@@ -1188,6 +1288,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tools.fill(&d)   // v0.10 pomodoro / water / stand
         d.weather = weatherDeadline()   // v0.12
         d.updateCheck = updater.deadline()   // v0.14
+        d.location = LocationRules.deadline(auto: weatherStore.myPlaceAuto && !locating, last: locationLastAttempt, now: wallClock)   // v0.14.1
         return d
     }
 
@@ -1202,6 +1303,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .pomodoro, .water, .stand: tools.run(task)   // v0.10
         case .weather: refreshWeather(force: true)   // v0.12: the job only exists (and is only due) when weather is needed
         case .updateCheck: updater.runAuto()   // v0.14: the daily update check
+        case .location: refreshLocation(userInitiated: false)   // v0.14.1: 3 h after the last look-up, only while auto-location is on
         }
     }
 
@@ -1279,15 +1381,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         weatherFetching = true
         let client = WeatherClient()
         NSLog("[lulu] weather: fetching %@%@", mine.name, theirs.map { " + \($0.name)" } ?? "")
+        let store = weatherStore
+        let ua = NWSClient.userAgent(version: AppVersionSource.current)
         Task { @MainActor [weak self] in
-            let m = try? await client.current(for: mine)
-            var t: WeatherSnapshot?
-            if let theirs { t = try? await client.current(for: theirs) }
+            // v0.14.1: US places use a nearby station's observation (NWS), everything else (and any failure) Open-Meteo
+            let m = try? await client.currentBest(for: mine, store: store, userAgent: ua)
+            var t: (snapshot: WeatherSnapshot, source: String)?
+            if let theirs { t = try? await client.currentBest(for: theirs, store: store, userAgent: ua) }
+            NSLog("[lulu] weather: %@ ← %@%@", mine.name, m?.source ?? "failed", theirs.map { ", \($0.name) ← \(t?.source ?? "failed")" } ?? "")
             guard let self else { return }
             self.weatherFetching = false
             self.weatherLastAttempt = self.wallClock
             if m == nil { NSLog("[lulu] weather: no data for %@ (keeping the last result)", mine.name) }
-            self.takeWeather(mine: m, partner: t, mineAt: mine, partnerAt: theirs)
+            self.takeWeather(mine: m?.snapshot, partner: t?.snapshot, mineAt: mine, partnerAt: theirs)
             if self.weatherRefetchPending {
                 self.weatherRefetchPending = false
                 if self.weatherStore.myPlace != mine || self.weather.partnerPlace != theirs { self.refreshWeather(force: true) }
@@ -2142,7 +2248,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             tools: tools.settingsAccess,
             applyMode: { [weak self] cfg in self?.applyModeChange(cfg) },   // v0.11
             confirmSeatMove: { [weak self] character in self?.confirmSeatMove(to: character) ?? true },
-            city: CityAccess(place: weatherStore.myPlace, set: { [weak self] in self?.setMyPlace($0) }, search: citySearch, partnerPlace: weather.partnerPlace))   // v0.12
+            city: CityAccess(model: cityModel, set: { [weak self] in self?.setMyPlace($0) }, search: citySearch, partnerPlace: weather.partnerPlace,
+                             setAuto: { [weak self] in self?.setAutoLocation($0) },
+                             openLocationSettings: { [weak self] in self?.openLocationSettings() }))   // v0.12 / v0.14.1
         let w = SettingsWindow(initial: config ?? store.load(), defaultRole: options.role ?? .lulu, warning: warning, prefs: prefs)
         w.onSave = { [weak self] cfg in
             guard let self else { return }

@@ -10,7 +10,14 @@ public enum WeatherCondition: String, Codable, Sendable, CaseIterable {
     /// WMO code (https://open-meteo.com/en/docs): 0-1 clear, 2 partly cloudy, 3 overcast, 45/48 fog,
     /// 51-57 drizzle, 61-67 and 80-82 rain / showers, 71-77 and 85-86 snow, 95-99 thunderstorm.
     /// Anything unknown is read as cloudy.
-    public init(wmo: Int) {
+    public init(wmo: Int) { self.init(wmo: wmo, cloudCover: nil) }
+
+    /// v0.14.1: with the cloud cover (%) known, WMO 3 only counts as overcast from 85 % up, else it is partly
+    /// cloudy (the model said "overcast" on days the airports reported clear sky). Without it, 3 stays cloudy.
+    public static let overcastCloudCover = 85.0
+
+    public init(wmo: Int, cloudCover: Double?) {
+        if wmo == 3, let cc = cloudCover, cc < Self.overcastCloudCover { self = .partlyCloudy; return }
         switch wmo {
         case 0, 1: self = .clear
         case 2: self = .partlyCloudy
@@ -243,7 +250,8 @@ public enum WeatherParse {
               let temp = (cur["temperature_2m"] as? NSNumber)?.doubleValue else { throw WeatherParseError.malformed }
         let daily = root["daily"] as? [String: Any]
         func first(_ key: String) -> Double? { ((daily?[key] as? [Any])?.first as? NSNumber)?.doubleValue }
-        return WeatherSnapshot(condition: WeatherCondition(wmo: (cur["weather_code"] as? NSNumber)?.intValue ?? -1),
+        return WeatherSnapshot(condition: WeatherCondition(wmo: (cur["weather_code"] as? NSNumber)?.intValue ?? -1,
+                                                           cloudCover: (cur["cloud_cover"] as? NSNumber)?.doubleValue),
                                temperature: temp, high: first("temperature_2m_max"), low: first("temperature_2m_min"),
                                windSpeed: (cur["wind_speed_10m"] as? NSNumber)?.doubleValue,
                                isDay: ((cur["is_day"] as? NSNumber)?.intValue ?? 1) != 0, fetchedAt: now)

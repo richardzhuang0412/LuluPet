@@ -12,10 +12,12 @@ public enum HousekeepingTask: String, CaseIterable, Sendable {
     case weather
     // v0.14 the daily update check (wall clock; one-shot like the others, re-armed after each check).
     case updateCheck
+    // v0.14.1 auto-location refresh (wall clock; 3 h after the last look-up, only while 「使用我现在的位置」 is on).
+    case location
 
     /// Wall-clock deadlines (Unix seconds) keep their time across sleep and clock changes;
     /// the others are monotonic (system uptime, which stops while the Mac sleeps — like `Timer`).
-    public var isWallClock: Bool { self == .dndEnd || self == .hideEnd || self == .pomodoro || self == .weather || self == .updateCheck }
+    public var isWallClock: Bool { self == .dndEnd || self == .hideEnd || self == .pomodoro || self == .weather || self == .updateCheck || self == .location }
 }
 
 /// The pending deadlines; nil = not armed.
@@ -37,11 +39,13 @@ public struct HousekeepingDeadlines: Equatable, Sendable {
     public var weather: TimeInterval?
     /// v0.14 next automatic update check (wall clock).
     public var updateCheck: TimeInterval?
+    /// v0.14.1 next automatic location refresh (wall clock).
+    public var location: TimeInterval?
 
     public init(quiet: TimeInterval? = nil, doze: TimeInterval? = nil, rotation: TimeInterval? = nil,
                 fidget: TimeInterval? = nil, dndEnd: TimeInterval? = nil, hideEnd: TimeInterval? = nil,
                 pomodoro: TimeInterval? = nil, water: TimeInterval? = nil, stand: TimeInterval? = nil,
-                weather: TimeInterval? = nil, updateCheck: TimeInterval? = nil) {
+                weather: TimeInterval? = nil, updateCheck: TimeInterval? = nil, location: TimeInterval? = nil) {
         self.quiet = quiet
         self.doze = doze
         self.rotation = rotation
@@ -53,6 +57,7 @@ public struct HousekeepingDeadlines: Equatable, Sendable {
         self.stand = stand
         self.weather = weather
         self.updateCheck = updateCheck
+        self.location = location
     }
 
     public subscript(task: HousekeepingTask) -> TimeInterval? {
@@ -68,6 +73,7 @@ public struct HousekeepingDeadlines: Equatable, Sendable {
         case .stand: return stand
         case .weather: return weather
         case .updateCheck: return updateCheck
+        case .location: return location
         }
     }
 

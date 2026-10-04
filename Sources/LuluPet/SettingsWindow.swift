@@ -236,16 +236,7 @@ private struct SettingsView: View {
 
             if let city {
                 section("我的城市") {
-                    CityPicker(place: city.place, search: city.search, onChange: city.set)
-                    if draft.mode.isPaired {
-                        Text(city.partnerPlace.map { "TA 的城市：📍 " + $0.pickerTitle } ?? "TA 还没设置城市")
-                            .font(.system(size: 12, design: .rounded))
-                            .foregroundStyle(city.partnerPlace == nil ? Color.secondary : Color(white: 0.2))
-                            .lineLimit(1)
-                    }
-                    Text("用来显示天气：TA 能看到你那边的天气和当地时间，只分享城市，不分享精确位置")
-                        .font(.system(size: 11, design: .rounded)).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    CitySection(access: city, paired: draft.mode.isPaired)
                 }
             }
 

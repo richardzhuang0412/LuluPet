@@ -30,6 +30,28 @@ public final class WeatherStore: @unchecked Sendable {
         set { save(newValue, "myPlace") }
     }
 
+    /// v0.14.1: my city comes from 「使用我现在的位置」 (default false = I picked it by hand). Additive key; old versions ignore it.
+    public var myPlaceAuto: Bool {
+        get { defaults.bool(forKey: "myPlaceAuto") }
+        set { if newValue { defaults.set(true, forKey: "myPlaceAuto") } else { defaults.removeObject(forKey: "myPlaceAuto") } }
+    }
+
+    /// v0.14.1: the NWS `/points` → stations lookup per place (US or not, valid for a week). Own key (`nwsLookups`) so the
+    /// older `weatherCache` keeps its shape. At most `cacheLimit` places.
+    public func nwsLookup(for place: WeatherPlace) -> NWSLookup? {
+        let all: [String: NWSLookup] = load("nwsLookups") ?? [:]
+        return all[place.cacheKey]
+    }
+
+    public func setNWSLookup(_ l: NWSLookup, for place: WeatherPlace) {
+        var all: [String: NWSLookup] = load("nwsLookups") ?? [:]
+        all[place.cacheKey] = l
+        if all.count > Self.cacheLimit {
+            for (k, _) in all.sorted(by: { $0.value.checkedAt < $1.value.checkedAt }).prefix(all.count - Self.cacheLimit) where k != place.cacheKey { all[k] = nil }
+        }
+        save(all, "nwsLookups")
+    }
+
     private var widget: WidgetState {
         get { load("weatherWidget") ?? WidgetState() }
         set { save(newValue, "weatherWidget") }

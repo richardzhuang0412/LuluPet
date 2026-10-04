@@ -2791,6 +2791,194 @@ do {
     check(HousekeepingDeadlines()[.updateCheck] == nil, "housekeeping: updateCheck not armed by default")
 }
 
+// MARK: v0.14.1 weather accuracy (NWS observations, overcast fix) + current location rules
+do {
+    // overcast false positive: WMO 3 needs cloud_cover >= 85 to be cloudy
+    check(WeatherCondition(wmo: 3, cloudCover: 100) == .cloudy && WeatherCondition(wmo: 3, cloudCover: 85) == .cloudy, "overcast: wmo 3 with 85+ % cloud = cloudy")
+    check(WeatherCondition(wmo: 3, cloudCover: 84) == .partlyCloudy && WeatherCondition(wmo: 3, cloudCover: 0) == .partlyCloudy, "overcast: wmo 3 under 85 % cloud = partly cloudy")
+    check(WeatherCondition(wmo: 3, cloudCover: nil) == .cloudy && WeatherCondition(wmo: 3) == .cloudy, "overcast: wmo 3 without cloud cover stays cloudy")
+    check(WeatherCondition(wmo: 61, cloudCover: 10) == .rain && WeatherCondition(wmo: 2, cloudCover: 100) == .partlyCloudy, "overcast: other codes ignore cloud cover")
+    let om3 = try WeatherParse.snapshot(Data(#"{"current":{"temperature_2m":30.7,"weather_code":3,"cloud_cover":62,"wind_speed_10m":9,"is_day":1},"daily":{"temperature_2m_max":[33],"temperature_2m_min":[15]}}"#.utf8), now: 1)
+    check(om3.condition == .partlyCloudy, "overcast: parse applies the cloud cover")
+    let om3b = try WeatherParse.snapshot(Data(#"{"current":{"temperature_2m":30.7,"weather_code":3,"cloud_cover":100,"is_day":1}}"#.utf8), now: 1)
+    check(om3b.condition == .cloudy, "overcast: parse keeps real overcast")
+
+    // NWS text → condition (keyword order from the research doc)
+    let texts: [(String, WeatherCondition?)] = [
+        ("Thunderstorm", .thunder), ("Light Rain and Thunder", .thunder), ("Snow", .snow), ("Freezing Rain/Sleet", .snow), ("Ice Pellets", .snow), ("Blowing Snow", .snow),
+        ("Light Drizzle", .drizzle), ("Rain", .rain), ("Heavy Rain", .rain), ("Rain Showers", .rain), ("Light Rain Fog/Mist", .rain),
+        ("Fog/Mist", .fog), ("Haze", .fog), ("Smoke", .fog), ("Dust", .fog),
+        ("Overcast", .cloudy), ("Mostly Cloudy", .cloudy), ("Cloudy", .cloudy),
+        ("Partly Cloudy", .partlyCloudy), ("Partly Sunny", .partlyCloudy), ("Mostly Sunny", .partlyCloudy),
+        ("Clear", .clear), ("Mostly Clear", .clear), ("Sunny", .clear), ("Fair", .clear), ("Fair/Windy", .clear), ("A Few Clouds", .clear),
+        ("", nil), ("Windy", nil)]
+    for (t, c) in texts { check(WeatherCondition(nwsText: t) == c, "nws text: \(t.isEmpty ? "(empty)" : t) → \(c.map { $0.label } ?? "nil")") }
+    check(WeatherCondition(nwsCloudAmounts: ["CLR"]) == .clear && WeatherCondition(nwsCloudAmounts: ["SKC"]) == .clear && WeatherCondition(nwsCloudAmounts: ["FEW"]) == .clear, "nws layers: CLR / SKC / FEW = clear")
+    check(WeatherCondition(nwsCloudAmounts: ["SCT"]) == .partlyCloudy && WeatherCondition(nwsCloudAmounts: ["FEW", "BKN"]) == .partlyCloudy, "nws layers: SCT / BKN = partly cloudy (largest wins)")
+    check(WeatherCondition(nwsCloudAmounts: ["FEW", "OVC"]) == .cloudy && WeatherCondition(nwsCloudAmounts: ["VV"]) == .cloudy, "nws layers: OVC / VV = cloudy")
+    check(WeatherCondition(nwsCloudAmounts: []) == nil && WeatherCondition(nwsCloudAmounts: ["XYZ"]) == nil, "nws layers: none / unknown = nil")
+
+    // fixtures
+    let pointsJSON = #"{"properties":{"gridId":"MTR","observationStations":"https://api.weather.gov/gridpoints/MTR/85,105/stations"}}"#
+    let stationsJSON = #"""
+    {"features":[
+      {"geometry":{"type":"Point","coordinates":[-122.28,37.87]},"properties":{"stationIdentifier":"D3169","name":"Berkeley mesonet"}},
+      {"geometry":{"type":"Point","coordinates":[-122.2269,37.7213]},"properties":{"stationIdentifier":"KOAK","name":"Oakland"}},
+      {"geometry":{"type":"Point","coordinates":[-122.3748,37.6188]},"properties":{"stationIdentifier":"KSFO","name":"San Francisco Intl"}},
+      {"geometry":{"type":"Point","coordinates":[-121.9,37.9]},"properties":{"stationIdentifier":"KFAR","name":"far"}},
+      {"geometry":{"type":"Point","coordinates":[-120.0,36.0]},"properties":{"stationIdentifier":"KSJC"}},
+      {"properties":{"stationIdentifier":"NOGEO"}},
+      {"geometry":{"type":"Point","coordinates":[-122.0,37.0]},"properties":{}}]}
+    """#
+    check(NWSParse.stationsURL(points: Data(pointsJSON.utf8))?.absoluteString == "https://api.weather.gov/gridpoints/MTR/85,105/stations", "nws: points → stations URL")
+    check(NWSParse.stationsURL(points: Data(#"{"properties":{"observationStations":"http://evil.example/x"}}"#.utf8)) == nil && NWSParse.stationsURL(points: Data("nope".utf8)) == nil, "nws: points without a (trusted) stations URL = nil")
+    let sts = NWSParse.stations(Data(stationsJSON.utf8))
+    check(sts.map(\.id) == ["D3169", "KOAK", "KSFO", "KFAR", "KSJC"] && sts[1].latitude == 37.7213 && sts[1].longitude == -122.2269, "nws: stations parsed (lon, lat order), bad features skipped")
+
+    let berkeley = WeatherPlace(name: "伯克利", admin: nil, country: nil, latitude: 37.87, longitude: -122.27, timezone: "America/Los_Angeles")
+    let cand = NWSSelect.candidates(sts, near: berkeley).map(\.id)
+    check(cand == ["KOAK", "D3169"], "nws: within 25 km (KSFO, KFAR, KSJC are not), K airports first, then the others (\(cand))")
+    check(NWSSelect.candidates([NWSStation(id: "KXXX", latitude: 38.5, longitude: -122.27)], near: berkeley).isEmpty, "nws: nothing within 25 km = no candidates")
+    check(abs(NWSSelect.distanceKm(37.87, -122.27, 37.7213, -122.2269) - 16.7) < 0.5, "nws: haversine distance")
+    let many = (0..<8).map { NWSStation(id: $0 == 6 ? "KAAA" : "W\($0)", latitude: 37.87 + Double($0) * 0.003, longitude: -122.27) }
+    check(NWSSelect.candidates(many, near: berkeley).map(\.id) == ["W0", "W1", "W2"], "nws: airport beyond the nearest five is not preferred; at most 3 tries")
+
+    @Sendable func obsJSON(_ items: [String]) -> Data { Data(#"{"features":[\#(items.joined(separator: ","))]}"#.utf8) }
+    @Sendable func feature(temp: String, text: String, layers: String = "[]", at: String) -> String {
+        #"{"properties":{"timestamp":"\#(at)","textDescription":"\#(text)","temperature":{"unitCode":"wmoUnit:degC","value":\#(temp)},"cloudLayers":\#(layers)}}"#
+    }
+    let now = NWSParse.date("2026-10-04T20:30:00+00:00")!.timeIntervalSince1970
+    let obs = NWSParse.observations(obsJSON([
+        feature(temp: "null", text: "Clear", at: "2026-10-04T20:25:00+00:00"),
+        feature(temp: "24.4", text: "", layers: #"[{"base":{"value":null},"amount":"CLR"}]"#, at: "2026-10-04T20:20:00+00:00"),
+        feature(temp: "25.0", text: "Mostly Cloudy", at: "2026-10-04T19:56:00+00:00"),
+        feature(temp: "26.0", text: "Clear", at: "2026-10-04T18:00:00+00:00")]), stationId: "KSFO")
+    check(obs.count == 3 && obs[0].temperature == 24.4 && obs[0].condition == .clear, "nws: null temperature dropped; empty text → cloud layers (CLR = clear)")
+    check(NWSSelect.usable(obs, now: now)?.temperature == 24.4, "nws: first fresh reading wins")
+    check(NWSSelect.usable(obs, now: now + 4800)?.temperature == 24.4 && NWSSelect.usable(obs, now: now + 5400) == nil, "nws: a reading counts up to 90 minutes old (20:20 → until 21:50), not after")
+    check(NWSSelect.usable(obs, now: now + 6 * 3600) == nil, "nws: all readings stale = nil")
+    check(NWSSelect.usable([NWSObservation(stationId: "K", temperature: 1, condition: nil, observedAt: now + 3600)], now: now) == nil, "nws: reading from the future is not used")
+    let noSky = NWSParse.observations(obsJSON([feature(temp: "20", text: "", at: "2026-10-04T20:20:00+00:00")]), stationId: "W1")
+    check(noSky.count == 1 && noSky[0].condition == nil, "nws: no text and no layers = unknown sky (kept for the temperature)")
+    check(NWSParse.observations(Data("nope".utf8), stationId: "X").isEmpty && NWSParse.observations(Data(#"{"title":"Not Found"}"#.utf8), stationId: "X").isEmpty, "nws: bad observation json = []")
+    check(NWSParse.date("2026-10-04T20:20:00.123+00:00") != nil, "nws: timestamp with fractional seconds")
+
+    // merge
+    let omSnap = WeatherSnapshot(condition: .cloudy, temperature: 33, high: 34, low: 15, windSpeed: 9, isDay: true, fetchedAt: 7)
+    let merged = WeatherMerge.apply(omSnap, nws: NWSObservation(stationId: "KOAK", temperature: 28, condition: .clear, observedAt: now))
+    check(merged == WeatherSnapshot(condition: .clear, temperature: 28, high: 34, low: 15, windSpeed: 9, isDay: true, fetchedAt: 7), "merge: temperature and sky from NWS, the rest Open-Meteo")
+    check(WeatherMerge.apply(omSnap, nws: NWSObservation(stationId: "W", temperature: 20, condition: nil, observedAt: now)).condition == .cloudy, "merge: no NWS sky keeps Open-Meteo's")
+    check(WeatherMerge.apply(omSnap, nws: nil) == omSnap, "merge: no observation = unchanged")
+    let wide = WeatherMerge.apply(omSnap, nws: NWSObservation(stationId: "W", temperature: 36, condition: nil, observedAt: now))
+    check(wide.high == 36 && wide.low == 15, "merge: high / low widened to include the reading")
+
+    check(NWSSelect.mayBeUS(berkeley) && NWSSelect.mayBeUS(WeatherPlace(name: "Honolulu", admin: nil, country: nil, latitude: 21.3, longitude: -157.86, timezone: "Pacific/Honolulu")), "nws: US places may ask")
+    check(!NWSSelect.mayBeUS(WeatherPlace(name: "上海", admin: nil, country: nil, latitude: 31.23, longitude: 121.47, timezone: "Asia/Shanghai")), "nws: Shanghai never asks")
+    check(NWSClient.userAgent(version: "0.14.1") == "LuluPet/0.14.1 (github.com/richardzhuang0412/LuluPet)", "nws: user agent")
+
+    // NWSClient with fixtures: lookup cached, observation chosen, fallbacks
+    final class Calls: @unchecked Sendable { var urls: [String] = []; let lock = NSLock(); func add(_ u: String) { lock.lock(); urls.append(u); lock.unlock() } }
+    let calls = Calls()
+    let obsFresh = obsJSON([feature(temp: "28", text: "Clear", at: "2026-10-04T20:20:00+00:00")])
+    let obsOld = obsJSON([feature(temp: "28", text: "Clear", at: "2026-10-04T12:00:00+00:00")])
+    let koakFresh: Bool = true
+    let client = NWSClient(fetch: { url in
+        calls.add(url.absoluteString)
+        switch url.absoluteString {
+        case "https://api.weather.gov/points/37.87,-122.27": return Data(pointsJSON.utf8)
+        case "https://api.weather.gov/gridpoints/MTR/85,105/stations": return Data(stationsJSON.utf8)
+        case "https://api.weather.gov/stations/KOAK/observations?limit=3": return koakFresh ? obsFresh : obsOld
+        case "https://api.weather.gov/stations/KSFO/observations?limit=3": return obsOld
+        case "https://api.weather.gov/stations/D3169/observations?limit=3": return obsJSON([feature(temp: "29.4", text: "", at: "2026-10-04T20:15:00+00:00")])
+        case "https://api.weather.gov/points/31.23,121.47": throw WeatherClientError.http(404)
+        default: throw WeatherClientError.http(500)
+        }
+    })
+    let nwsSuite = "lulupet.test-nws-\(UUID().uuidString)"
+    let nwsStore = WeatherStore(defaults: UserDefaults(suiteName: nwsSuite)!)
+    let first = await client.observation(for: berkeley, store: nwsStore, now: now)
+    check(first?.stationId == "KOAK" && first?.temperature == 28 && first?.condition == .clear, "nws client: nearest airport's fresh reading")
+    check(calls.urls.count == 3, "nws client: first refresh = points + stations + one observation (\(calls.urls.count))")
+    let before = calls.urls.count
+    _ = await client.observation(for: berkeley, store: nwsStore, now: now + 1800)
+    check(calls.urls.count - before == 1 && calls.urls.last == "https://api.weather.gov/stations/KOAK/observations?limit=3", "nws client: later refresh = one observation call, lookup cached")
+    check(nwsStore.nwsLookup(for: berkeley)?.isUS == true && nwsStore.nwsLookup(for: berkeley)?.stations.count == 5, "nws client: lookup stored per place")
+    // stale at KOAK/KSFO → falls to the mesonet station within the 3 tries
+    let later = await client.observation(for: berkeley, store: nwsStore, now: NWSParse.date("2026-10-04T22:00:00+00:00")!.timeIntervalSince1970)
+    check(later == nil, "nws client: everything older than 90 minutes = nil (caller falls back)")
+    let third = await client.observation(for: berkeley, store: nwsStore, now: NWSParse.date("2026-10-04T20:40:00+00:00")!.timeIntervalSince1970)
+    check(third?.stationId == "KOAK", "nws client: still fresh at +20 min")
+    // outside coverage: 404 cached as not-US, never asked again within a week
+    let shanghai = WeatherPlace(name: "上海", admin: nil, country: nil, latitude: 31.23, longitude: 121.47, timezone: "Asia/Shanghai")
+    let sh = await client.observation(for: shanghai, store: nwsStore, now: now)
+    check(sh == nil && calls.urls.filter { $0.contains("31.23") }.isEmpty, "nws client: Shanghai never even asks NWS")
+    let rural = WeatherPlace(name: "X", admin: nil, country: nil, latitude: 49.0, longitude: -100.0, timezone: "America/Chicago")   // plausibly US but unknown to the stub: 500
+    let ruralObs = await client.observation(for: rural, store: nwsStore, now: now); check(ruralObs == nil && nwsStore.nwsLookup(for: rural) == nil, "nws client: a server error is not cached (retry next time)")
+    let notUS = NWSClient(fetch: { _ in throw WeatherClientError.http(404) })
+    let canada = WeatherPlace(name: "Toronto", admin: nil, country: nil, latitude: 43.65, longitude: -79.38, timezone: "America/Toronto")
+    let c1 = await notUS.observation(for: canada, store: nwsStore, now: now); check(c1 == nil && nwsStore.nwsLookup(for: canada)?.isUS == false, "nws client: 404 from /points = not US, cached")
+    let refetchCount = Calls()
+    let notUS2 = NWSClient(fetch: { u in refetchCount.add(u.absoluteString); throw WeatherClientError.http(404) })
+    let c2 = await notUS2.observation(for: canada, store: nwsStore, now: now + 86400); check(c2 == nil && refetchCount.urls.isEmpty, "nws client: not-US answer reused for days")
+    let c3 = await notUS2.observation(for: canada, store: nwsStore, now: now + 8 * 86400); check(c3 == nil && refetchCount.urls.count == 1, "nws client: not-US answer expires after a week")
+    // station fails → next station
+    let flaky = NWSClient(fetch: { url in
+        switch url.absoluteString {
+        case "https://api.weather.gov/points/37.87,-122.27": return Data(pointsJSON.utf8)
+        case "https://api.weather.gov/gridpoints/MTR/85,105/stations": return Data(stationsJSON.utf8)
+        case "https://api.weather.gov/stations/D3169/observations?limit=3": return obsJSON([feature(temp: "29.4", text: "", at: "2026-10-04T20:15:00+00:00")])
+        default: throw WeatherClientError.http(503)
+        }
+    })
+    let fl = await flaky.observation(for: berkeley, store: nil, now: now)
+    check(fl?.stationId == "D3169" && fl?.temperature == 29.4 && fl?.condition == nil, "nws client: failing airports → the mesonet station (temperature only)")
+    UserDefaults(suiteName: nwsSuite)!.removePersistentDomain(forName: nwsSuite)
+
+    // sky borrowed from an airport station when the temperature station has none (one extra call at most)
+    let skyStations = (0..<5).map { #"{"geometry":{"coordinates":[-122.27,\#(37.87 + Double($0) * 0.003)]},"properties":{"stationIdentifier":"W\#($0)"}}"# }
+        + [#"{"geometry":{"coordinates":[-122.2269,37.7213]},"properties":{"stationIdentifier":"KOAK"}}"#]
+    let skyStationsJSON = #"{"features":[\#(skyStations.joined(separator: ","))]}"#
+    let skyCalls = Calls()
+    func skyClient(koak: Data) -> NWSClient {
+        NWSClient(fetch: { url in
+            skyCalls.add(url.absoluteString)
+            switch url.absoluteString {
+            case "https://api.weather.gov/points/37.87,-122.27": return Data(pointsJSON.utf8)
+            case "https://api.weather.gov/gridpoints/MTR/85,105/stations": return Data(skyStationsJSON.utf8)
+            case "https://api.weather.gov/stations/W0/observations?limit=3": return obsJSON([feature(temp: "29.4", text: "", at: "2026-10-04T20:15:00+00:00")])
+            case "https://api.weather.gov/stations/KOAK/observations?limit=3": return koak
+            default: throw WeatherClientError.http(503)
+            }
+        })
+    }
+    let withSky = await skyClient(koak: obsJSON([feature(temp: "28", text: "Clear", at: "2026-10-04T20:20:00+00:00")])).observation(for: berkeley, store: nil, now: now)
+    check(withSky?.stationId == "W0" && withSky?.temperature == 29.4 && withSky?.condition == .clear && withSky?.skyStationId == "KOAK", "nws sky: temperature from the first station, sky (Clear) from the airport")
+    check(skyCalls.urls.filter { $0.contains("/observations") }.count == 2, "nws sky: exactly one extra observation call")
+    let noSkyAnywhere = await skyClient(koak: obsJSON([feature(temp: "28", text: "", at: "2026-10-04T20:20:00+00:00")])).observation(for: berkeley, store: nil, now: now)
+    check(noSkyAnywhere?.temperature == 29.4 && noSkyAnywhere?.condition == nil && noSkyAnywhere?.skyStationId == nil, "nws sky: no station has a sky → condition stays nil (Open-Meteo's is used)")
+    let staleSky = await skyClient(koak: obsJSON([feature(temp: "28", text: "Clear", at: "2026-10-04T12:00:00+00:00")])).observation(for: berkeley, store: nil, now: now)
+    check(staleSky?.condition == nil, "nws sky: a stale airport reading is not borrowed")
+    check(NWSSelect.skyStation(sts, near: berkeley, excluding: ["KOAK"]) == nil && NWSSelect.skyStation(sts, near: berkeley, excluding: [])?.id == "KOAK", "nws sky: nearest unasked K station within 25 km")
+
+    // my city: auto flag + location rules
+    let autoSuite = "lulupet.test-auto-\(UUID().uuidString)"
+    let autoStore = WeatherStore(defaults: UserDefaults(suiteName: autoSuite)!)
+    check(!autoStore.myPlaceAuto, "location: auto is off by default")
+    autoStore.myPlaceAuto = true
+    check(autoStore.myPlaceAuto && WeatherStore(defaults: UserDefaults(suiteName: autoSuite)!).myPlaceAuto, "location: auto persists")
+    autoStore.myPlaceAuto = false
+    check(!autoStore.myPlaceAuto, "location: auto off again")
+    UserDefaults(suiteName: autoSuite)!.removePersistentDomain(forName: autoSuite)
+    check(LocationRules.isDue(last: nil, now: 5) && !LocationRules.isDue(last: 1000, now: 1000 + 3 * 3600 - 1) && LocationRules.isDue(last: 1000, now: 1000 + 3 * 3600) && LocationRules.isDue(last: 1000, now: 500), "location: due when never, after 3 h, or when the clock went back")
+    check(LocationRules.deadline(auto: false, last: nil, now: 50) == nil, "location: no deadline while auto is off")
+    check(LocationRules.deadline(auto: true, last: nil, now: 50) == 50 && LocationRules.deadline(auto: true, last: 1000, now: 1500) == 1000 + 10800 && LocationRules.deadline(auto: true, last: 1000, now: 50_000) == 50_000, "location: deadline = last + 3 h, now when overdue")
+    check(LocationRules.needsGeocode(current: nil, latitude: 37.87, longitude: -122.27), "location: no city yet = geocode")
+    check(!LocationRules.needsGeocode(current: berkeley, latitude: 37.88, longitude: -122.26), "location: ~1.4 km move = same city")
+    check(LocationRules.needsGeocode(current: berkeley, latitude: 37.80, longitude: -122.27), "location: ~7.8 km move = geocode again")
+    var lh = HousekeepingDeadlines(); lh.location = 4000
+    check(HousekeepingTask.location.isWallClock && lh[.location] == 4000 && Housekeeping.due(lh, uptime: 1, wall: 4000) == [.location] && HousekeepingDeadlines()[.location] == nil, "housekeeping: location deadline on the wall clock")
+}
+
 try? FileManager.default.removeItem(at: tmp)
 // UserDefaults suites leave their plist behind even after removePersistentDomain; delete test ones.
 let prefsDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Preferences")

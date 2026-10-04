@@ -6,13 +6,82 @@ import SwiftUI
 /// How a city is searched (Open-Meteo geocoding, or `FakeWeather.places` with `--fake-weather`).
 typealias CitySearch = @Sendable (String) async throws -> [WeatherPlace]
 
+/// v0.14.1 how 「使用我现在的位置」 is going (shown under the toggle).
+enum LocationStatus: Equatable {
+    case idle, locating
+    /// No location permission: the hint with the 打开系统设置 button.
+    case denied
+    /// Permitted, but no fix / city name right now.
+    case failed
+}
+
+/// What the 我的城市 section shows; AppDelegate updates it while Settings is open (a located city arrives later).
+@MainActor
+final class CityModel: ObservableObject {
+    @Published var place: WeatherPlace?
+    /// 「使用我现在的位置」 is on (`WeatherStore.myPlaceAuto`).
+    @Published var auto = false
+    @Published var status: LocationStatus = .idle
+}
+
 /// 「我的城市」 for Settings: the current place, how to change it (applies at once), how to search.
 struct CityAccess {
-    var place: WeatherPlace?
+    var model: CityModel
     var set: (WeatherPlace?) -> Void
     var search: CitySearch
     /// TA's city (their presence), read-only; nil = unknown. Shown in paired modes only.
     var partnerPlace: WeatherPlace? = nil
+    /// v0.14.1 the 「使用我现在的位置」 toggle (applies at once).
+    var setAuto: (Bool) -> Void = { _ in }
+    /// Opens 系统设置 → 隐私与安全性 → 定位服务.
+    var openLocationSettings: () -> Void = {}
+}
+
+/// The whole 我的城市 section body: picker, the location toggle with its status line, TA's city, the privacy note.
+struct CitySection: View {
+    let access: CityAccess
+    let paired: Bool
+    @ObservedObject var model: CityModel
+
+    init(access: CityAccess, paired: Bool) {
+        self.access = access
+        self.paired = paired
+        self.model = access.model
+    }
+
+    var body: some View {
+        CityPicker(place: model.place, syncedPlace: model.place, search: access.search, onChange: access.set)
+        Toggle(isOn: Binding(get: { model.auto }, set: { access.setAuto($0) })) {
+            Text("使用我现在的位置").font(.system(size: 12, design: .rounded))
+        }
+        .toggleStyle(.checkbox)
+        if let line = statusLine {
+            Text(line).font(.system(size: 11, design: .rounded))
+                .foregroundStyle(model.status == .denied ? Color.red.opacity(0.8) : Color.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        if model.status == .denied {
+            Button("打开系统设置", action: access.openLocationSettings).controlSize(.small)
+        }
+        if paired {
+            Text(access.partnerPlace.map { "TA 的城市：📍 " + $0.pickerTitle } ?? "TA 还没设置城市")
+                .font(.system(size: 12, design: .rounded))
+                .foregroundStyle(access.partnerPlace == nil ? Color.secondary : Color(white: 0.2))
+                .lineLimit(1)
+        }
+        Text("用来显示天气：TA 能看到你那边的天气和当地时间，只分享城市，不分享精确位置")
+            .font(.system(size: 11, design: .rounded)).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var statusLine: String? {
+        switch model.status {
+        case .locating: return "正在定位…"
+        case .denied: return "定位没打开：系统设置 → 隐私与安全性 → 定位服务 里允许噜噜桌宠"
+        case .failed: return "暂时定位不到，先用现在的城市"
+        case .idle: return model.auto ? "城市会跟着你所在的位置自动更新（手动选城市会关掉它）" : nil
+        }
+    }
 }
 
 extension WeatherPlace {
@@ -26,6 +95,8 @@ extension WeatherPlace {
 struct CityPicker: View {
     let search: CitySearch
     let onChange: (WeatherPlace?) -> Void
+    /// v0.14.1: the city as the app has it; follows changes made elsewhere (a located city arriving). nil in the Welcome window.
+    var syncedPlace: WeatherPlace?
 
     @State private var place: WeatherPlace?
     @State private var query: String
@@ -43,7 +114,8 @@ struct CityPicker: View {
 
     private static let accent = Color(red: 0.91, green: 0.54, blue: 0.29)
 
-    init(place: WeatherPlace?, search: @escaping CitySearch, onChange: @escaping (WeatherPlace?) -> Void) {
+    init(place: WeatherPlace?, syncedPlace: WeatherPlace? = nil, search: @escaping CitySearch, onChange: @escaping (WeatherPlace?) -> Void) {
+        self.syncedPlace = syncedPlace
         self.search = search
         self.onChange = onChange
         _place = State(initialValue: place)
@@ -107,6 +179,11 @@ struct CityPicker: View {
             }
         }
         .task(id: query) { await runSearch() }
+        .onChange(of: syncedPlace) { _, new in
+            guard new != place else { return }
+            place = new
+            if new != nil { changing = false; query = ""; results = []; status = nil } else { changing = true }
+        }
     }
 
     private func choose(_ p: WeatherPlace) {

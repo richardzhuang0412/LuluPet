@@ -96,7 +96,13 @@ final class UpdateController {
         switch result {
         case .failure(let error):
             NSLog("[lulu] update: check failed: %@", error.localizedDescription)
-            if manual { report?(UpdateCopy.checkFailed); if report == nil { say(UpdateCopy.checkFailed) } }
+            if manual {
+                var text = UpdateCopy.checkFailed
+                if case UpdateError.network(let s)? = error as? UpdateError {
+                    text = s == "HTTP 404" ? UpdateCopy.feedNotFound : "\(UpdateCopy.checkFailed)（\(s)）"
+                }
+                report?(text); if report == nil { say(text) }
+            }
         case .success(let release):
             NSLog("[lulu] update: latest is v%@ (mine %@)", release.version.description, current ?? "?")
             guard UpdateRules.isNewer(release, than: current) else {

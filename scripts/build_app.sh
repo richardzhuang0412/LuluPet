@@ -112,6 +112,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSLocationUsageDescription</key>
+    <string>噜噜桌宠只在你打开「使用我现在的位置」时，用你所在的城市来显示天气；精确位置不会离开这台 Mac，也不会分享给 TA。</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>噜噜桌宠只在你打开「使用我现在的位置」时，用你所在的城市来显示天气；精确位置不会离开这台 Mac，也不会分享给 TA。</string>
 ${ICON_KEY}
 </dict>
 </plist>

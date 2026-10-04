@@ -45,6 +45,8 @@
 | | `myPlace`（v0.12，`WeatherPlace` 的 JSON：`{"name", "admin"?, "country"?, "latitude", "longitude", "timezone"}`；经纬度保留两位小数，读取时也会取整；缺省 / 坏数据 = 没设城市） | 我的城市。设了才会查天气，也才会发布到 presence 的 `place`。老版本忽略这个键 |
 | | `weatherWidget`（v0.12，JSON `{"enabled": Bool, "x": Double?, "y": Double?}`；缺省 / 坏数据 = 关闭、没拖动过） | **已弃用（v0.13.3 起不再使用）**：v0.12 桌面天气小组件的开关和位置。v0.13.3 去掉了小组件（天气改在传话面板里），键仍可读、不会删，也不再写。老版本忽略 |
 | | `weatherCache`（v0.12，JSON `{"<纬度两位>,<经度两位>": WeatherSnapshot}`，最多 8 个地点，满了删最旧的；坏数据 = 空） | 每个地点最近一次成功的天气（失败时保留旧数据，显示「x 分钟前」）。老版本忽略 |
+| | `myPlaceAuto`（v0.14.1，Bool；缺省 = false；关掉时直接删除这个键） | 「使用我现在的位置」开关：`true` 表示 `myPlace` 是自动定位出来的。手动选 / 清除城市会把它删掉。老版本忽略这个键（`myPlace` 仍是一个普通城市，老版本照常用） |
+| | `nwsLookups`（v0.14.1，JSON `{"<纬度两位>,<经度两位>": {"isUS": Bool, "stations": [{"id", "latitude", "longitude"}], "checkedAt": Unix 秒}}`，最多 8 个地点；坏数据 = 空） | 美国气象局 `/points` → 附近气象站的查询结果缓存（7 天；`isUS: false` = 不在美国，同样缓存 7 天）。单独一个键，不改 `weatherCache` 的格式。老版本忽略 |
 | （不存） | "隐藏到几点"**故意不保存**：重启 App 一定重新显示 | v0.4 |
 | 本地聊天记录 | `~/Library/Application Support/LuluPet/<profile 或 default>/history.jsonl` | 所有历史消息 |
 | Firebase 路径 | `/pairs/{pairCode}/messages/{pushId}`、`/pairs/{pairCode}/presence/{lulu\|lumei}/lastSeen` | 两个人共用的数据 |
@@ -152,3 +154,11 @@
 - 更新：下载到临时目录 → `ditto -x -k` → 校验（bundle id = `com.lulupet.app`、版本 > 当前、`codesign --verify --deep --strict`）→ 写一个 `/bin/sh` 小脚本并脱离启动：等本进程退出，`ditto` 到 `<App>.new`，旧的改名 `<App>.old`、新的换上去（失败就还原）、`xattr -dr com.apple.quarantine`、`open` 重新打开（带原来的启动参数，`--demo-update*` 除外）。App 随后走正常退出（presence 下线）。只在 App 直接位于 `/Applications` 或 `~/Applications` 时自动更新，其余情况提示「请手动更新」+ 发布页。
 - 用户数据（UserDefaults、Application Support、日志）都在 App 包外，脚本从不碰；确认框里写明「聊天记录和设置不会丢」。更新后的更新日志卡片走 v0.13 已有的 `whatsNewSeen` 逻辑。
 - 隐藏测试参数：`--update-feed <url>`（整个替换 releases/latest 的地址）、`--update-auto-confirm`（跳过确认框）、`--update-allow-dir <dir>`（把该文件夹也当作可自动更新的位置）、`--demo-update-check S`（S 秒后手动检查）、`--demo-update-now S`（S 秒后一键更新）。`--offscreen` 的测试实例没有 `--update-feed` 时不做每日自动检查（测试不碰 GitHub）。
+
+## 11. 天气更准 + 使用当前位置（v0.14.1）
+
+- 研究：docs/research/weather-accuracy.md。纯加字段 / 加键，没有迁移，老版本忽略全部新东西；presence 的 `place` 格式不变（自动定位出来的城市也只是一个取整到两位小数的 `WeatherPlace`，TA 看不出区别，也不会收到精确位置）。
+- 新的本地键：`myPlaceAuto`、`nwsLookups`（见第 1 节表格）。`weatherCache`（`WeatherSnapshot`）格式不变。
+- 网络：除 Open-Meteo 外，**美国坐标**还会访问 `api.weather.gov`（`/points`、`/gridpoints/…/stations`、`/stations/<id>/observations?limit=3`；`User-Agent: LuluPet/<版本> (github.com/richardzhuang0412/LuluPet)`，无 key）。点到站的查询每个地点缓存 7 天，平时每次刷新只多 1 个观测请求（最多 3 个：最近的站没有可用读数时依次试下一个）；中国等明显不在美国的坐标从不请求；`/points` 返回 404 = 不在美国，同样缓存 7 天，服务器报错不缓存。读数要求有温度、不超过 90 分钟、站点在 25 公里内，不满足就退回 Open-Meteo；温度站没有天气描述 / 云层时，再多请求 1 次最近的机场站（K 开头、25 公里内、90 分钟内）借它的天气，都没有才用 Open-Meteo 的；最高 / 最低温一直来自 Open-Meteo。Open-Meteo 的 `current` 多请求一个 `cloud_cover`，WMO 3 只有云量 ≥ 85 才算「阴」，否则是「多云」。
+- 定位（默认关，用户在设置里打开）：`NSLocationUsageDescription` / `NSLocationWhenInUseUsageDescription` 写进 Info.plist（`scripts/build_app.sh`）；`CLLocationManager.requestLocation()` 一次性、公里级精度；授权弹窗只会在用户点「使用我现在的位置」时出现，后台刷新遇到没决定的授权当作没授权，不弹窗。反查城市名：macOS 26 用 `MKReverseGeocodingRequest`，更早用 `CLGeocoder`，都用 zh_CN。刷新时机：启动、唤醒（至少隔 5 分钟）、距上次 3 小时（新的 `HousekeepingTask.location`，挂在已有的 housekeeping 一次性计时器上，没有新计时器；只在 `myPlaceAuto` 为 true 时才有）；位置移动超过 3 公里才重新反查城市名。手动选 / 清除城市会把 `myPlaceAuto` 关掉。精确坐标不落盘、不上传，只有取整后的城市存进 `myPlace`。
+- 隐藏测试参数（不碰真实定位权限）：`--fake-location ok|denied|fail`、`--demo-my-place-auto`、`--demo-location-status denied|failed|locating`。
