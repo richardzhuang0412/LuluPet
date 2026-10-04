@@ -40,6 +40,8 @@
 | | `upgradeNudgedFor`（v0.11.2，String，如 `"0.12.0"`；缺省 = 没提醒过） | 我已经被"TA 升级了"气泡提醒过的那个对方版本（`UpgradeNudge`）：同一个对方版本只弹一次，对方升到更高版本才再弹。老版本忽略这个键 |
 | | `whatsNewSeen`（v0.13，String，如 `"0.13.0"`；缺省 = 没看过） | 最近一次看过更新日志的版本。启动时：没有这个键又没有配置 = 新用户，直接记成当前版本、不弹卡片；没有这个键但已有配置 = 从 0.12.2 及以前升级上来的老用户，弹「升级到 vX 啦」卡片（只汇总最新一条）。老版本忽略这个键 |
 | | `setupTodoDismissed`（v0.13，字符串数组，如 `["city","reminders"]`；缺省 = 空） | 「待设置」里点了「不用了」的项（`city` / `weatherWidget`（v0.13.3 起不再出现） / `reminders` / `partnerUpgrade`），永远不再出现；欢迎窗走完时会写入 `city` 和 `reminders`。老版本忽略 |
+| | `updateLastCheck`（v0.14，Double，Unix 秒；缺省 = 从没检查过） | 一天一次自动检查更新的上次时间（失败的检查也算一次，断网不会连环重试）。读不到就当作该检查了 |
+| | `updateSkipped`（v0.14，String，如 `"0.14.0"`；缺省 = 没跳过） | 在新版本卡片上点了「以后再说」的版本。只有自动检查对它保持安静；手动「检查更新」照常提示，更新的版本也照常提示 |
 | | `myPlace`（v0.12，`WeatherPlace` 的 JSON：`{"name", "admin"?, "country"?, "latitude", "longitude", "timezone"}`；经纬度保留两位小数，读取时也会取整；缺省 / 坏数据 = 没设城市） | 我的城市。设了才会查天气，也才会发布到 presence 的 `place`。老版本忽略这个键 |
 | | `weatherWidget`（v0.12，JSON `{"enabled": Bool, "x": Double?, "y": Double?}`；缺省 / 坏数据 = 关闭、没拖动过） | **已弃用（v0.13.3 起不再使用）**：v0.12 桌面天气小组件的开关和位置。v0.13.3 去掉了小组件（天气改在传话面板里），键仍可读、不会删，也不再写。老版本忽略 |
 | | `weatherCache`（v0.12，JSON `{"<纬度两位>,<经度两位>": WeatherSnapshot}`，最多 8 个地点，满了删最旧的；坏数据 = 空） | 每个地点最近一次成功的天气（失败时保留旧数据，显示「x 分钟前」）。老版本忽略 |
@@ -75,7 +77,7 @@
 - 版本号只在一个地方：仓库根目录的 `VERSION`（例如 `0.1.0`），`scripts/build_app.sh` 把它写进
   `CFBundleShortVersionString`。每次要发给对方前改一下这个文件。
 - `CFBundleVersion`（构建号）= `git rev-list --count HEAD`，自动递增——发版前先提交。
-- 升级方法：把新的 `LuluPet.app` 拖进"应用程序"覆盖旧的即可。配置和聊天记录都不在 App 包里，不受影响。
+- 升级方法：v0.14 起可以在 App 里点「检查更新…」一键更新（见第 10 节，发布到 GitHub Releases，资产名 `LuluPet.zip`）；也可以把新的 `LuluPet.app` 拖进"应用程序"覆盖旧的。配置和聊天记录都不在 App 包里，不受影响。
 
 ## 4. 加新东西时的检查清单（Checklist）
 
@@ -141,3 +143,12 @@
 - 桌面小组件（Task 3）：只用已有的本地键 `weatherWidget`（`enabled` / 左上角坐标 `x`、`y`），没有新键。小组件窗口层级在桌面图标层 +1，跟着全屏自动隐藏一起隐藏；关闭时窗口和每分钟的时钟都不存在。天气刷新只有 `HousekeepingTask.weather` 一个挂点（设了城市且（小组件开 ∨ 面板开 ∨ 角色有天气片段）才存在，失败的尝试也算一次，所以断网不会连环重试）；唤醒后过期就立刻补一次。
 
 - v0.13.3：天气卡片在传话面板里（TA 一行、我一行；单人只有我），不再有桌面小组件；`weatherWidget` 键已弃用（见第 1 节）。天气刷新的条件改为「设了城市 ∧（配对且 TA 有城市 ∨ 面板开 ∨ 角色有天气片段）」。「想 TA」气泡不存任何新键、不上传任何新字段（只读已有的对方 `place` 和天气）。
+
+## 10. 一键更新（v0.14）
+
+- 纯加：两个本地键 `updateLastCheck` / `updateSkipped`（第 1 节表格），没有新的远端字段，没有迁移，老版本忽略。
+- 来源：GitHub Releases `richardzhuang0412/LuluPet` 的 `releases/latest`（不带 token，`User-Agent: LuluPet/<版本>`），按名字找资产 `LuluPet.zip`；`tag_name` 写成 `v0.14.0` 或 `0.14.0` 都行；草稿 / 预发布 / 没有该资产 = 当作没有新版本。**发版时资产名必须是 `LuluPet.zip`（`scripts/build_app.sh` 的产物，原样上传）。**
+- 检查：一天一次（`HousekeepingTask.updateCheck`，挂在已有的 housekeeping 一次性计时器上，没有新的重复计时器；启动后至少 20 秒才查），另有菜单「检查更新…」和更新日志窗口里的按钮。找到新版本：我自己的桌宠冒卡片「有新版本 vX · 更新」（「更新」/「以后再说」），菜单多一行「有新版本 vX」，TA 升级提醒气泡多一个「一键更新」。
+- 更新：下载到临时目录 → `ditto -x -k` → 校验（bundle id = `com.lulupet.app`、版本 > 当前、`codesign --verify --deep --strict`）→ 写一个 `/bin/sh` 小脚本并脱离启动：等本进程退出，`ditto` 到 `<App>.new`，旧的改名 `<App>.old`、新的换上去（失败就还原）、`xattr -dr com.apple.quarantine`、`open` 重新打开（带原来的启动参数，`--demo-update*` 除外）。App 随后走正常退出（presence 下线）。只在 App 直接位于 `/Applications` 或 `~/Applications` 时自动更新，其余情况提示「请手动更新」+ 发布页。
+- 用户数据（UserDefaults、Application Support、日志）都在 App 包外，脚本从不碰；确认框里写明「聊天记录和设置不会丢」。更新后的更新日志卡片走 v0.13 已有的 `whatsNewSeen` 逻辑。
+- 隐藏测试参数：`--update-feed <url>`（整个替换 releases/latest 的地址）、`--update-auto-confirm`（跳过确认框）、`--update-allow-dir <dir>`（把该文件夹也当作可自动更新的位置）、`--demo-update-check S`（S 秒后手动检查）、`--demo-update-now S`（S 秒后一键更新）。`--offscreen` 的测试实例没有 `--update-feed` 时不做每日自动检查（测试不碰 GitHub）。

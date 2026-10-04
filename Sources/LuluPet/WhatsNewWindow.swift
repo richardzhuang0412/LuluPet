@@ -25,6 +25,10 @@ final class WhatsNewModel: ObservableObject {
     var perform: (SetupTodo) -> Void
     /// 「不用了」.
     var dismiss: (String) -> Void
+    /// v0.14 「检查更新」: runs a manual check; the closure gets the one-line result.
+    var checkUpdate: (@escaping (String) -> Void) -> Void = { _ in }
+    @Published var updateStatus: String?
+    @Published var checkingUpdate = false
     /// The list changed (the menu's count follows).
     var onTodosChanged: ([SetupTodo]) -> Void = { _ in }
 
@@ -60,10 +64,16 @@ final class WhatsNewModel: ObservableObject {
         refresh()
     }
 
-    var upgradeHelp: String {
-        let zip = "LuluPet-v\(current ?? "X").zip"
-        return "把桌面上的 \(zip) 发给 TA，TA 解压后，把「应用程序」里的旧版噜噜桌宠替换成新的就行啦。"
+    func runCheckUpdate() {
+        guard !checkingUpdate else { return }
+        checkingUpdate = true
+        updateStatus = "正在检查…"
+        checkUpdate { [weak self] text in
+            DispatchQueue.main.async { self?.updateStatus = text; self?.checkingUpdate = false }
+        }
     }
+
+    var upgradeHelp: String { UpdateCopy.upgradeHelp(version: current) }
 }
 
 final class WhatsNewWindow: NSWindow {
@@ -138,6 +148,15 @@ private struct WhatsNewView: View {
     private var updatesPage: some View {
         VStack(alignment: .leading, spacing: 12) {
             header("🍊", "更新内容", model.current.map { "当前版本 v\($0)" } ?? "噜噜桌宠的新变化")
+            HStack(spacing: 8) {
+                Button("检查更新") { model.runCheckUpdate() }
+                    .controlSize(.small)
+                    .disabled(model.checkingUpdate)
+                if let s = model.updateStatus {
+                    Text(s).font(.system(size: 11, design: .rounded)).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 22)
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if model.entries.isEmpty {

@@ -14,6 +14,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// v0.13: 「更新日志…」 / 「待设置（N）」.
     var onWhatsNew: (() -> Void)?
     var onSetupTodos: (() -> Void)?
+    var onCheckUpdate: (() -> Void)?   // v0.14 检查更新…
+    var onUpdateTapped: (() -> Void)?  // v0.14 「有新版本 vX」
     /// v0.12: 「天气小组件」 toggled (the new state).
     var onTogglePin: (() -> Void)?
     var onGoVisit: (() -> Void)?
@@ -93,6 +95,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// Its key equivalent only shows the global ⌃⌥Q (v0.6.5: no ⌘Q).
     // v0.13 更新日志… + 待设置（N） (only while N > 0)
     private let setupTodosItem = NSMenuItem(title: "待设置", action: #selector(openSetupTodos), keyEquivalent: "")
+    private let checkUpdateItem = NSMenuItem(title: "检查更新…", action: #selector(checkUpdate), keyEquivalent: "")
+    private let updateLine = NSMenuItem(title: "", action: #selector(updateTapped), keyEquivalent: "")
     private let whatsNewItem = NSMenuItem(title: "更新日志…", action: #selector(openWhatsNew), keyEquivalent: "")
     private let quitItem = NSMenuItem(title: "退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
 
@@ -208,6 +212,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         menu.addItem(setupTodosItem)
         whatsNewItem.target = self
         menu.addItem(whatsNewItem)
+        updateLine.target = self
+        updateLine.isHidden = true
+        updateLine.image = NSImage(systemSymbolName: "arrow.down.circle", accessibilityDescription: nil)
+        menu.addItem(updateLine)
+        checkUpdateItem.target = self
+        menu.addItem(checkUpdateItem)
         menu.addItem(.separator())
         quitItem.target = NSApp
         menu.addItem(quitItem)
@@ -575,6 +585,16 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     @objc private func goVisit() { onGoVisit?() }
     @objc private func openSettings() { onSettings?() }
     @objc private func openWhatsNew() { onWhatsNew?() }
+    @objc private func checkUpdate() { onCheckUpdate?() }
+    @objc private func updateTapped() { onUpdateTapped?() }
+
+    /// v0.14: 「有新版本 vX」 (clicking it starts the update); nil = hidden.
+    func setUpdateLine(_ text: String?) {
+        updateLine.title = text ?? ""
+        updateLine.isHidden = text == nil
+    }
+
+    var updateLineTitle: String? { updateLine.isHidden ? nil : updateLine.title }
     @objc private func openSetupTodos() { onSetupTodos?() }
 
     /// v0.13: 「待设置（N）」 is shown only while N > 0 (recomputed whenever the menu opens).

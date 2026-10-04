@@ -2705,6 +2705,92 @@ do {
     check(ThinkRules.flourish(snow) == .snow, "think flourish: snow")
 }
 
+// MARK: v0.14 one-click updater
+do {
+    func json(_ s: String) -> Data { Data(s.utf8) }
+    let good = """
+    {"tag_name":"v0.14.0","html_url":"https://github.com/richardzhuang0412/LuluPet/releases/tag/v0.14.0","body":"notes","draft":false,"prerelease":false,
+     "assets":[{"name":"checksums.txt","browser_download_url":"https://x/checksums.txt"},{"name":"LuluPet.zip","browser_download_url":"https://x/LuluPet.zip"}]}
+    """
+    let r = UpdateFeed.parse(json(good))
+    check(r?.version == AppVersion(0, 14, 0) && r?.tag == "v0.14.0", "update feed: tag with v")
+    check(r?.assetURL.absoluteString == "https://x/LuluPet.zip", "update feed: asset found by name, not position")
+    check(r?.notes == "notes" && r?.pageURL?.absoluteString.hasSuffix("v0.14.0") == true, "update feed: body + page")
+    check(UpdateFeed.parse(json(good.replacingOccurrences(of: "\"tag_name\":\"v0.14.0\"", with: "\"tag_name\":\"0.14.0\"")))?.version == AppVersion(0, 14, 0), "update feed: tag without v")
+    check(UpdateFeed.parse(json(#"{"tag_name":"v0.14.0","assets":[{"name":"other.zip","browser_download_url":"https://x/o.zip"}]}"#)) == nil, "update feed: no LuluPet.zip asset → nil")
+    check(UpdateFeed.parse(json(#"{"tag_name":"nightly","assets":[{"name":"LuluPet.zip","browser_download_url":"https://x/a"}]}"#)) == nil, "update feed: unparseable tag → nil")
+    check(UpdateFeed.parse(json(good.replacingOccurrences(of: #""prerelease":false"#, with: #""prerelease":true"#))) == nil, "update feed: prerelease → nil")
+    check(UpdateFeed.parse(json(good.replacingOccurrences(of: #""draft":false"#, with: #""draft":true"#))) == nil, "update feed: draft → nil")
+    check(UpdateFeed.parse(json(good.replacingOccurrences(of: "https://x/LuluPet.zip", with: "file:///etc/passwd"))) == nil, "update feed: non-http asset URL → nil")
+    check(UpdateFeed.parse(json("not json")) == nil && UpdateFeed.parse(json("[]")) == nil && UpdateFeed.parse(Data()) == nil, "update feed: bad data → nil")
+    check(UpdateFeed.parse(json(#"{"tag_name":"v1.0.0","assets":[{"name":"LuluPet.zip","browser_download_url":"https://x/a"}]}"#))?.notes == "", "update feed: missing body → empty notes")
+
+    check(UpdateFeed.latestURL().absoluteString == "https://api.github.com/repos/richardzhuang0412/LuluPet/releases/latest", "update url: default")
+    check(UpdateFeed.latestURL(override: "http://127.0.0.1:8123/latest.json").absoluteString == "http://127.0.0.1:8123/latest.json", "update url: override")
+    check(UpdateFeed.latestURL(override: "  ").host == "api.github.com" && UpdateFeed.latestURL(override: "ftp://x/y").host == "api.github.com"
+          && UpdateFeed.latestURL(override: "garbage").host == "api.github.com", "update url: bad override → default")
+    check(UpdateFeed.userAgent(version: "0.14.0") == "LuluPet/0.14.0" && UpdateFeed.userAgent(version: nil) == "LuluPet/dev", "update: User-Agent")
+    check(UpdateFeed.headers(version: "0.14.0")["Accept"] == "application/vnd.github+json", "update: Accept header")
+
+    let rel = r!
+    check(UpdateRules.isNewer(rel, than: "0.13.3") && !UpdateRules.isNewer(rel, than: "0.14.0") && !UpdateRules.isNewer(rel, than: "0.15.0"), "update: isNewer")
+    check(UpdateRules.isNewer(rel, than: "0.9.9") && !UpdateRules.isNewer(rel, than: nil) && !UpdateRules.isNewer(rel, than: "junk"), "update: isNewer is numeric; unknown current → false")
+
+    check(UpdateRules.isCheckDue(lastCheck: nil, now: 1000), "update check: never → due")
+    check(!UpdateRules.isCheckDue(lastCheck: 1000, now: 1000 + 86399) && UpdateRules.isCheckDue(lastCheck: 1000, now: 1000 + 86400), "update check: once a day")
+    check(UpdateRules.isCheckDue(lastCheck: 5000, now: 1000), "update check: clock set back → due")
+    check(UpdateRules.nextCheck(lastCheck: nil, now: 50) == 50 && UpdateRules.nextCheck(lastCheck: 100, now: 150) == 100 + 86400 && UpdateRules.nextCheck(lastCheck: 900, now: 50) == 50, "update check: next deadline")
+
+    check(UpdateRules.shouldNotify(rel, current: "0.13.3", skipped: nil, manual: false), "update notify: newer, nothing skipped")
+    check(!UpdateRules.shouldNotify(rel, current: "0.13.3", skipped: "0.14.0", manual: false), "update notify: skipped version stays quiet (auto)")
+    check(UpdateRules.shouldNotify(rel, current: "0.13.3", skipped: "0.14.0", manual: true), "update notify: manual check ignores skip")
+    check(UpdateRules.shouldNotify(rel, current: "0.13.3", skipped: "0.13.9", manual: false), "update notify: newer than the skipped one → tell me")
+    check(!UpdateRules.shouldNotify(rel, current: "0.14.0", skipped: nil, manual: true), "update notify: not newer → never")
+
+    check(UpdateRules.verify(bundleID: "com.lulupet.app", version: "0.14.0", current: "0.13.3") == .ok, "update verify: ok")
+    check(UpdateRules.verify(bundleID: "com.evil.app", version: "0.14.0", current: "0.13.3") == .wrongBundleID, "update verify: wrong bundle id")
+    check(UpdateRules.verify(bundleID: "com.lulupet.app", version: "0.13.3", current: "0.13.3") == .notNewer
+          && UpdateRules.verify(bundleID: "com.lulupet.app", version: "0.13.0", current: "0.13.3") == .notNewer, "update verify: not newer")
+    check(UpdateRules.verify(bundleID: "com.lulupet.app", version: nil, current: "0.13.3") == .unreadable
+          && UpdateRules.verify(bundleID: nil, version: "1.0.0", current: "0.13.3") == .unreadable, "update verify: unreadable")
+
+    let home = "/Users/me"
+    check(UpdateRules.canSelfUpdate(bundlePath: "/Applications/LuluPet.app", home: home), "update location: /Applications")
+    check(UpdateRules.canSelfUpdate(bundlePath: "/Users/me/Applications/LuluPet.app", home: home), "update location: ~/Applications")
+    check(!UpdateRules.canSelfUpdate(bundlePath: "/Users/me/Downloads/LuluPet.app", home: home), "update location: Downloads → manual")
+    check(!UpdateRules.canSelfUpdate(bundlePath: "/Volumes/LuluPet/LuluPet.app", home: home) && !UpdateRules.canSelfUpdate(bundlePath: "/Applications/Sub/LuluPet.app", home: home), "update location: DMG / nested → manual")
+    check(!UpdateRules.canSelfUpdate(bundlePath: "/usr/local/bin/LuluPet", home: home) && !UpdateRules.canSelfUpdate(bundlePath: nil, home: home), "update location: not an .app → manual")
+    check(UpdateRules.canSelfUpdate(bundlePath: "/tmp/t/LuluPet.app", home: home, extraAllowed: ["/tmp/t"]), "update location: test folder")
+
+    let sh = UpdateInstaller.script(pid: 4242, newApp: "/tmp/w/unzipped/LuluPet.app", target: "/Applications/LuluPet.app", workDir: "/tmp/w",
+                                    relaunchArgs: ["--profile", "it's"])
+    check(sh.hasPrefix("#!/bin/sh") && sh.contains("kill -0 4242"), "update script: waits for the pid")
+    check(sh.contains("/usr/bin/ditto '/tmp/w/unzipped/LuluPet.app' '/Applications/LuluPet.app.new'"), "update script: ditto to <app>.new")
+    check(sh.contains("mv '/Applications/LuluPet.app' '/Applications/LuluPet.app.old'") && sh.contains("mv '/Applications/LuluPet.app.new' '/Applications/LuluPet.app'"), "update script: swap with backup")
+    check(sh.contains("xattr -dr com.apple.quarantine '/Applications/LuluPet.app'") && sh.contains("rm -rf '/Applications/LuluPet.app.old'"), "update script: quarantine + cleanup")
+    check(sh.contains("/usr/bin/open '/Applications/LuluPet.app' --args '--profile' 'it'\\''s'"), "update script: relaunch with quoted args")
+    check(!sh.contains("Application Support") && !sh.contains("Preferences") && !sh.contains("defaults"), "update script: never touches user data")
+    check(UpdateInstaller.shQuote("a b'c") == "'a b'\\''c'", "update script: shell quoting")
+
+    check(UpdateCopy.upToDate("0.13.3") == "已经是最新版 v0.13.3" && UpdateCopy.menuLine("0.14.0") == "有新版本 v0.14.0", "update copy: up to date / menu")
+    check(UpdateCopy.downloading(0.371) == "正在下载… 37%" && UpdateCopy.downloading(nil) == "正在下载…" && UpdateCopy.downloading(2) == "正在下载… 100%", "update copy: progress text")
+    check(UpdateCopy.confirmBody.contains("聊天记录和设置不会丢"), "update copy: confirm mentions data is safe")
+    check(UpdateCopy.cardText("0.14.0").contains("有新版本 v0.14.0"), "update copy: card")
+    check(UpdateCopy.upgradeHelp(version: "0.14.0").contains("检查更新") && UpdateCopy.upgradeHelp(version: "0.14.0").contains("LuluPet-v0.14.0.zip"), "update copy: partner upgrade help (check + zip fallback)")
+
+    // store keys + housekeeping hook
+    let us = ConfigStore(profile: "test-\(UUID().uuidString)")
+    check(us.updateLastCheck == nil && us.updateSkipped == nil, "v0.14: update keys default to absent")
+    us.updateLastCheck = 1_800_000_000.5; us.updateSkipped = "0.14.0"
+    check(us.updateLastCheck == 1_800_000_000.5 && us.updateSkipped == "0.14.0", "v0.14: update keys persist")
+    us.updateSkipped = nil; us.updateLastCheck = nil
+    check(us.updateLastCheck == nil && us.updateSkipped == nil, "v0.14: update keys can be cleared")
+    let uh = HousekeepingDeadlines(updateCheck: 3000)
+    check(HousekeepingTask.updateCheck.isWallClock && uh[.updateCheck] == 3000, "housekeeping: updateCheck is a wall-clock task")
+    check(Housekeeping.due(uh, uptime: 1, wall: 3000) == [.updateCheck] && Housekeeping.due(uh, uptime: 1, wall: 2999).isEmpty, "housekeeping: updateCheck due at its deadline")
+    check(HousekeepingDeadlines()[.updateCheck] == nil, "housekeeping: updateCheck not armed by default")
+}
+
 try? FileManager.default.removeItem(at: tmp)
 // UserDefaults suites leave their plist behind even after removePersistentDomain; delete test ones.
 let prefsDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Preferences")

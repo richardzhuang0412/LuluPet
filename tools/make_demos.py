@@ -32,7 +32,7 @@ APP = ROOT / ".build" / "debug" / "LuluPet"
 OUT = ROOT / "docs" / "demo"
 WORK = ROOT / "build" / "demo-work"
 FONT = "/System/Library/Fonts/Hiragino Sans GB.ttc"
-MAX_GIF = 6_000_000
+MAX_GIF = 4_000_000
 PET_WIDTH = 167   # the pet window at size 1.0
 LEFT_LABEL, RIGHT_LABEL = "你的桌面（噜噜）", "TA 的桌面（噜妹）"
 # Every profile this script creates starts with this prefix (never the user's default / demo* / try* profiles).
@@ -43,10 +43,17 @@ PROFILE_PREFIX = "lprec"
 # Each scene: `instances` (role + extra flags; one = single desktop, two = side by side,噜噜 left),
 # `seconds` recorded, `trim` (start, end) seconds kept, `region` (the crop in points: (w, h) at the screen's
 # bottom-right where the pets sit — the same for both desktops — or "auto:minW,minH" around the windows), `fps`, `width` of the GIF, `caption` (README).
-# Flag times are seconds after launch; both instances of a scene are launched together.
+# Optional: `seed` (fake-database paths written before launch), per instance `cfg` (config extras) and `prefs`
+# (defaults keys written as JSON data, e.g. myPlace). Flag times are seconds after launch; both instances of a scene
+# are launched together. Scenes named v0… are internal checks: rendered only when named on the command line.
 
 COMMON = ["--presence-fast", "--fidget-seconds", "600", "--quiet-seconds", "600", "--doze-seconds", "900",
           "--rotate-seconds", "100000"]
+
+# Neutral demo cities (no FakeWeather place: --fake-weather answers ⛅ 20° for them; --demo-think forces the 想 TA weather).
+MY_PLACE = {"name": "杭州", "admin": "浙江", "country": "中国", "latitude": 30.27, "longitude": 120.15, "timezone": "Asia/Shanghai"}
+TA_PLACE = {"name": "伦敦", "admin": "英格兰", "country": "英国", "latitude": 51.51, "longitude": -0.13, "timezone": "Europe/London"}
+CITY_SEED = {"presence/lumei": {"lastSeen": 0, "place": TA_PLACE}}
 
 SCENES = {
     "daily": dict(
@@ -79,9 +86,10 @@ SCENES = {
         seconds=25, trim=(2.5, 24.5), region=(520, 450), pet_right=170, fps=12, width=960),
     "compose": dict(
         caption="传话面板：发爱心、去找 TA、24 个快捷表情；「记录」按天分组，可以一直往回翻",
-        instances=[dict(role="lulu", flags=["--outfit", "classic", "--demo-history", "--demo-compose",
-                                             "--demo-open-history-at", "5"])],
-        seconds=10, trim=(1.0, 9.8), region=(600, 470), pet_right=160, fps=12, width=720, menubar=True),
+        instances=[dict(role="lulu", prefs=dict(myPlace=MY_PLACE), flags=["--outfit", "classic", "--demo-history", "--demo-compose",
+                                             "--demo-open-history-at", "5", "--fake-weather"])],
+        seed=CITY_SEED,
+        seconds=10, trim=(1.0, 9.8), region=(600, 660), pet_right=160, fps=12, width=720, menubar=True),
     "v090_hug_sit": dict(
         caption="v0.9: hug_sit is bound to 我想你了 (hug_missyou)",
         instances=[dict(role="lulu", flags=["--outfit", "classic", "--auto-send", "sticker:missyou@3", "--force-couple", "hug_sit"]),
@@ -103,10 +111,35 @@ SCENES = {
                    dict(role="lumei", flags=["--outfit", "lace", "--demo-ack", "13"])],
         seconds=22, trim=(2.2, 20.5), region=(440, 450), fps=12, width=960),
     "remind": dict(
-        caption="v0.10: 叫 TA 喝水：噜噜跑去 TA 的桌面，TA 的气泡写着「叫你喝水啦」，点「喝了 ✓」，噜噜回家后冒一句「TA 喝啦」",
+        caption="叫 TA 喝水：噜噜跑去 TA 的桌面叫 TA 喝水，TA 点「喝了 ✓」，噜噜回家后冒一句「TA 喝啦」",
         instances=[dict(role="lulu", flags=["--outfit", "classic", "--auto-send", "remind:water@3"]),
                    dict(role="lumei", flags=["--outfit", "lace", "--demo-remind-reply", "comply@11"])],
         seconds=26, trim=(2.2, 25), region=(440, 450), fps=12, width=960),
+    "tools": dict(
+        caption="小工具：番茄钟专注倒计时（宠物捧着书陪你），到点提醒你喝水，点「喝了 ✓」记一杯",
+        # A 10 s focus round from 1 s; the water bubble pops during it, 喝了 at 8 s, 专注完成 at ~11 s.
+        instances=[dict(role="lulu", flags=["--outfit", "classic", "--demo-compose", "--demo-compose-tab", "tools",
+                                             "--demo-pomodoro", "10", "--demo-reminder", "water@4",
+                                             "--demo-remind-reply", "comply@8"])],
+        seconds=16, trim=(1.0, 15.5), region=(600, 640), pet_right=160, fps=12, width=720, menubar=True),
+    "modes": dict(
+        caption="朋友模式：两个人可以选同一个角色，见面一起开心，没有亲密动作",
+        labels=("你的桌面（噜噜）", "朋友的桌面（也是噜噜）"),
+        instances=[dict(role="lulu", cfg=dict(mode="friend", character="lulu"), flags=["--outfit", "classic", "--auto-send", "sticker:run@3"]),
+                   dict(role="lumei", cfg=dict(mode="friend", character="lulu"), flags=["--outfit", "bear", "--demo-ack", "11"])],
+        seconds=22, trim=(2.2, 20), region=(440, 450), fps=12, width=960),
+    "weather": dict(
+        caption="天气：宠物偶尔「想 TA」，头顶冒出 TA 那边的天气；传话面板顶部是你们两边的天气和当地时间",
+        instances=[dict(role="lulu", prefs=dict(myPlace=MY_PLACE), flags=["--outfit", "classic", "--fake-weather",
+                                                                         "--demo-think", "rain@1.5", "--demo-hotkey", "compose@9"])],
+        seed=CITY_SEED,
+        seconds=15, trim=(1.0, 14.8), region=(600, 660), pet_right=160, fps=12, width=720, menubar=True),
+    "whatsnew": dict(
+        caption="更新日志：升级后宠物冒个小卡片，点「看看」就能看到这一版多了什么，还有「待设置」清单",
+        instances=[dict(role="lulu", flags=["--outfit", "classic", "--fake-app-version", "0.13.3",
+                                             "--demo-whatsnew-seen", "0.12.3", "--demo-remind-reply", "comply@5.5"])],
+        # The card's「看看」is its first button (--demo-remind-reply presses a bubble's buttons); the window opens centred.
+        seconds=13, trim=(1.0, 12.8), region="auto:640,520", pet_right=420, fps=12, width=720, menubar=True),
     # v0.11 modes (docs/superpowers/specs/2026-10-05-modes-design.md): config extras (mode / character) per instance.
     # Friends never see intimate clips; two of the same character never get a two-person clip (both play happy + hearts).
     "v011_friend_same": dict(
@@ -191,7 +224,7 @@ def screen_geometry():
     return float(w), float(y)
 
 
-def make_profile(role, db, pair, origin, extra=None):
+def make_profile(role, db, pair, origin, extra=None, prefs=None):
     name = f"{PROFILE_PREFIX}-{role}-{os.getpid()}-{random.randrange(10**6)}"
     assert name.startswith(PROFILE_PREFIX + "-")
     profiles.append(name)
@@ -199,6 +232,10 @@ def make_profile(role, db, pair, origin, extra=None):
     subprocess.run(["defaults", "write", f"lulupet.{name}", "config", "-data", cfg.hex()], check=True)
     # Same spot on both desktops: the pet's centre `pet_right` pt from the right edge, feet on the Dock.
     subprocess.run(["defaults", "write", f"lulupet.{name}", "petOrigin", "-string", "{%d, %d}" % origin], check=True)
+    for key, value in (prefs or {}).items():   # JSON-data defaults (e.g. myPlace)
+        subprocess.run(["defaults", "write", f"lulupet.{name}", key, "-data", json.dumps(value).encode().hex()], check=True)
+    # Offscreen pets must not hide when the user has a full-screen window open (tasks/lessons.md).
+    subprocess.run(["defaults", "write", f"lulupet.{name}", "autoHideFullscreen", "-bool", "false"], check=True)
     # Silent: a recording must never play sounds on the user's speakers.
     for key in ("soundEnabled", "bgmEnabled"):
         subprocess.run(["defaults", "write", f"lulupet.{name}", key, "-bool", "false"], check=True)
@@ -260,7 +297,8 @@ def record(name, scene, work, bg):
     for i, inst in enumerate(scene["instances"]):
         out = work / f"{i}-{inst['role']}"
         sw, bottom = screen_geometry()
-        prof = make_profile(inst["role"], db, pair, (sw - scene.get("pet_right", 230) - PET_WIDTH / 2, bottom + 8), inst.get("cfg"))
+        prof = make_profile(inst["role"], db, pair, (sw - scene.get("pet_right", 230) - PET_WIDTH / 2, bottom + 8),
+                            inst.get("cfg"), inst.get("prefs"))
         flags = [f.replace("@T", f"@{sync_ms}") for f in inst["flags"]]
         cmd = ["nice", "-n", "10", str(APP), "--profile", prof, "--offscreen", *COMMON, *flags,
                "--record", str(out), "--record-fps", str(scene.get("record_fps", 15)),
@@ -366,7 +404,7 @@ def encode(name, frames_dir, fps):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("scenes", nargs="*", help=f"scenes to render (default: all): {', '.join(SCENES)}")
+    ap.add_argument("scenes", nargs="*", help=f"scenes to render (default: the README ones): {', '.join(SCENES)}")
     ap.add_argument("--keep", action="store_true", help="keep the raw frames in build/demo-work/")
     ap.add_argument("--no-build", action="store_true", help="skip `swift build`")
     ap.add_argument("--out", help="output directory (default docs/demo)")
@@ -374,7 +412,7 @@ def main():
     if args.out:
         global OUT
         OUT = Path(args.out).resolve()
-    names = args.scenes or list(SCENES)
+    names = args.scenes or [n for n in SCENES if not n.startswith("v0")]
     for n in names:
         if n not in SCENES:
             sys.exit(f"unknown scene {n!r}; known: {', '.join(SCENES)}")

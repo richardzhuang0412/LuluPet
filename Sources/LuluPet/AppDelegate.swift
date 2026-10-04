@@ -107,6 +107,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var demoWhatsNew: WhatsNewModel.Page?   // --demo-whatsnew [updates|todos]: open the 更新日志 window at 0.5 s
         var demoWhatsNewSeen: String?      // --demo-whatsnew-seen X: set whatsNewSeen to X before the launch check (temp profiles)
         var demoWhatsNewHelp = false       // --demo-whatsnew-help: 待设置 page, partner pretended older, its explanation unfolded
+        // v0.14 one-click updater (all hidden, for tests)
+        var update = UpdateOptions()       // --update-feed URL / --update-auto-confirm / --update-allow-dir DIR
+        var demoUpdateCheck: TimeInterval?  // --demo-update-check S: a manual 检查更新 at S s (card / 已经是最新版)
+        var demoUpdateNow: TimeInterval?    // --demo-update-now S: 「一键更新」 at S s (check, confirm, install, restart)
 
         init(_ args: [String]) {
             var it = args.dropFirst().makeIterator()
@@ -229,6 +233,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     let next = args.firstIndex(of: a).flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
                     demoWhatsNew = next == "todos" ? .todos : .updates   // an unknown following arg is ignored by the loop
                 case "--demo-whatsnew-seen": demoWhatsNewSeen = it.next()
+                case "--update-feed": update.feed = it.next()
+                case "--update-auto-confirm": update.autoConfirm = true
+                case "--update-allow-dir": update.allowDir = it.next()
+                case "--demo-update-check": demoUpdateCheck = it.next().flatMap(TimeInterval.init) ?? 1.5
+                case "--demo-update-now": demoUpdateNow = it.next().flatMap(TimeInterval.init) ?? 1.5
                 case "--demo-whatsnew-help": demoWhatsNewHelp = true; demoWhatsNew = .todos
                 case "--demo-welcome": demoWelcome = it.next().flatMap(Int.init) ?? 1
                 case "--mode": demoMode = it.next().flatMap(PairMode.init(rawValue:))
@@ -299,6 +308,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var compose: ComposeWindow?
     private var settings: SettingsWindow?
     private var whatsNewWindow: WhatsNewWindow?   // v0.13
+    /// v0.14 one-click updater (daily check = housekeeping `.updateCheck`).
+    private lazy var updater = UpdateController(env: .init(
+        store: store, options: options.update,
+        petRect: { [weak self] in self?.pet?.spriteScreenRect },
+        bubble: bubble, notice: notice,
+        bubbleFree: { [weak self] in self.map { $0.pet != nil && !$0.windowsHidden && !$0.dndOn && !$0.holdingForFocus } ?? false },
+        menuLine: { [weak self] in self?.statusMenu.setUpdateLine($0) },
+        needsArm: { [weak self] in self?.housekeeping.setNeedsArm() },
+        terminate: { NSApp.terminate(nil) }))
     /// v0.13: the launch check decided on a card for this many new items; shown when the pet is free.
     private var pendingUpgradeCard: Int?
     private lazy var changelog: [ChangelogEntry] =
@@ -388,6 +406,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusMenu.onGoVisit = { [weak self] in self?.goVisit() }
         statusMenu.onWhatsNew = { [weak self] in self?.openWhatsNew(page: .updates) }   // v0.13
         statusMenu.onSetupTodos = { [weak self] in self?.openWhatsNew(page: .todos) }
+        statusMenu.onCheckUpdate = { [weak self] in self?.updater.check(manual: true) }   // v0.14
+        statusMenu.onUpdateTapped = { [weak self] in self?.updater.updateTapped() }
         statusMenu.onOpen = { [weak self] in
             self?.syncSetupTodoMenu()   // v0.13: recomputed each time the menu opens
             self?.checkDNDExpiry(reason: "menu")
@@ -517,6 +537,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         syncSetupTodoMenu()
         if let page = options.demoWhatsNew {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.openWhatsNew(page: page) }
+        }
+        if let t = options.demoUpdateCheck {
+            DispatchQueue.main.asyncAfter(deadline: .now() + t) { [weak self] in self?.updater.check(manual: true) }
+        }
+        if let t = options.demoUpdateNow {
+            DispatchQueue.main.asyncAfter(deadline: .now() + t) { [weak self] in self?.updater.updateTapped() }
         }
 
         if options.demoBubble || options.demoSticker { runDemoBubbles(text: options.demoBubble) }
@@ -881,6 +907,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The「升级到 vX 啦」card from my own pet, once the pet is on screen and nothing (hidden / 勿扰 / focus round)
     /// holds bubbles back; retried whenever one of those ends. Dismissing it or 「看看」 records the version.
     private func showUpgradeCardIfFree() {
+        defer { updater.showCardIfFree() }   // v0.14: a found update waits for the same moments
         guard let n = pendingUpgradeCard, let current = AppVersionSource.current, pet != nil,
               !windowsHidden, !dndOn, !holdingForFocus else { return }
         pendingUpgradeCard = nil
@@ -907,6 +934,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSLog("[lulu] whatsnew: to-do %@ dismissed", id)
             })
         model.showUpgradeHelp = options.demoWhatsNewHelp
+        model.checkUpdate = { [weak self] report in self?.updater.check(manual: true, report: report) }   // v0.14
         model.onTodosChanged = { [weak self] todos in self?.statusMenu.setSetupTodoCount(todos.count) }
         if let current { store.whatsNewSeen = current }   // opening the log = seen (the 「新」 badges use the value from before)
         let w = WhatsNewWindow(model: model)
@@ -951,9 +979,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             upgradeBubbleQueued = v
             store.upgradeNudgedFor = v   // once per partner version: persisted when the bubble is shown
             NSLog("[lulu] upgrade nudge: partner is on v%@, mine v%@ — bubble", v, mine ?? "?")
-            bubble.enqueueAtHome(BubbleItem(header: partnerName, content: .text("\(partnerName)已经升级到 v\(v) 啦，你也升级一下吧～（找 TA 要新安装包）"),
+            bubble.enqueueAtHome(BubbleItem(header: partnerName, content: .text("\(partnerName)已经升级到 v\(v) 啦，你也升级一下吧～点「一键更新」就行"),
                                       message: nil,
-                                      buttons: [BubbleButton(title: "知道啦", action: {})]))
+                                      buttons: [BubbleButton(title: "一键更新", action: { [weak self] in self?.updater.updateTapped() }),   // v0.14
+                                                BubbleButton(title: "知道啦", action: {})]))
         }
     }
 
@@ -1158,6 +1187,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                       dndEnd: dndEnd, hideEnd: hideEnd)
         tools.fill(&d)   // v0.10 pomodoro / water / stand
         d.weather = weatherDeadline()   // v0.12
+        d.updateCheck = updater.deadline()   // v0.14
         return d
     }
 
@@ -1171,6 +1201,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .hideEnd: hideTimeUp()
         case .pomodoro, .water, .stand: tools.run(task)   // v0.10
         case .weather: refreshWeather(force: true)   // v0.12: the job only exists (and is only due) when weather is needed
+        case .updateCheck: updater.runAuto()   // v0.14: the daily update check
         }
     }
 

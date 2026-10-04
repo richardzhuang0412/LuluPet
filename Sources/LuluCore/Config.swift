@@ -109,6 +109,23 @@ public struct ConfigStore: @unchecked Sendable {
         }
     }
 
+    /// v0.14: when the daily update check last ran (`updateLastCheck`, Unix seconds as Double; absent = never).
+    public var updateLastCheck: TimeInterval? {
+        get { defaults.object(forKey: "updateLastCheck") as? Double }
+        nonmutating set {
+            if let newValue { defaults.set(newValue, forKey: "updateLastCheck") } else { defaults.removeObject(forKey: "updateLastCheck") }
+        }
+    }
+
+    /// v0.14: the release version I tapped 以后再说 on (`updateSkipped`, String like "0.14.0"; absent = none). Only the
+    /// automatic check stays quiet about it; a newer release is announced again.
+    public var updateSkipped: String? {
+        get { defaults.string(forKey: "updateSkipped") }
+        nonmutating set {
+            if let newValue { defaults.set(newValue, forKey: "updateSkipped") } else { defaults.removeObject(forKey: "updateSkipped") }
+        }
+    }
+
     /// v0.13: ids of the 待设置 items I tapped 不用了 on (`setupTodoDismissed`, array of strings; absent = none).
     public var setupTodoDismissed: Set<String> {
         get { Set(defaults.stringArray(forKey: "setupTodoDismissed") ?? []) }

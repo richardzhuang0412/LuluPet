@@ -21,16 +21,15 @@ App 里的动作、互动和表情，是从下面这些公开发布的二创作�
   求表情网（qiubiaoqing.com）、新浪（sinaimg.cn）、堆糖（duitang.com / dtstatic.com）、爱给网（aigei.com）、
   知乎（zhimg.com）等。
 
-**每个文件的具体出处**（视频 BV 号、截取的时间段、原图链接）见：
+**每个文件的具体出处**（视频 BV 号、截取的时间段、原图链接）见
+[`assets/gifs/SOURCES.txt`](assets/gifs/SOURCES.txt)（App 实际用到的 GIF）。
+作者另外整理的素材库不公开分发。
 
-- [`assets/gifs/SOURCES.txt`](assets/gifs/SOURCES.txt) —— App 实际用到的 GIF；
-- [`assets/library/INDEX.md`](assets/library/INDEX.md) —— 完整素材库的索引。
-
-以上名单根据 SOURCES.txt 和 INDEX.md 里记录的视频标题整理，如有遗漏或写错，欢迎指正。
+以上名单根据记录的视频标题整理，如有遗漏或写错，欢迎指正。
 
 ## 使用范围
 
-- 素材只供**个人、粉丝向、非商业**使用（比如自己和对象装在电脑上玩）。
+- 素材只供**个人、粉丝向、非商业**使用（比如两个人装在自己电脑上玩）。
 - 请不要把素材或包含素材的安装包拿去**售卖、商业推广、上架应用商店**，也不要声称是官方作品。
 - 如果你要基于本项目再发布，请保留这份 NOTICE，并同样注明素材出处。
 
