@@ -1,0 +1,536 @@
+{
+ "arrive": [
+  {
+   "file": "arrive_01.m4a",
+   "duration": 1.35,
+   "note": "噜噜原声“噜噜噜~”三连（噜噜亲亲），句间几乎无底噪，可当登场呼唤",
+   "ranking": 1,
+   "source": "https://www.bilibili.com/video/BV1UYtCzoEzB",
+   "time": "0.01-1.36s",
+   "floor_db_rel_peak": -28.7,
+   "lufs_target": -18
+  },
+  {
+   "file": "arrive_02.m4a",
+   "duration": 0.65,
+   "note": "噜噜撒娇“噜噜~”一声，干净（前后近乎静音）",
+   "ranking": 2,
+   "source": "https://www.bilibili.com/video/BV1w6hy6kEB2",
+   "time": "0.51-1.16s",
+   "floor_db_rel_peak": -11.5,
+   "lufs_target": -18
+  },
+  {
+   "file": "arrive_03.m4a",
+   "duration": 1.72,
+   "note": "卡通奔跑“哒哒哒”脚步（8号披萨音效库，纯音效无人声）",
+   "ranking": 3,
+   "source": "https://www.bilibili.com/video/BV1yU4y1d7Pb",
+   "time": "0.96-2.68s",
+   "floor_db_rel_peak": -24.9,
+   "lufs_target": -18
+  },
+  {
+   "file": "arrive_04.m4a",
+   "duration": 2.21,
+   "note": "卡通走路脚步 4 步（纯音效）",
+   "ranking": 4,
+   "source": "https://www.bilibili.com/video/BV13W4y1U7kG",
+   "time": "0.54-2.75s",
+   "floor_db_rel_peak": -60.0,
+   "lufs_target": -18
+  },
+  {
+   "file": "arrive_05.m4a",
+   "duration": 1.96,
+   "note": "卡通“Wee~”欢叫（纯音效，可作冲进来的兴奋声）",
+   "ranking": 5,
+   "source": "https://www.bilibili.com/video/BV1mM4y1A7qD",
+   "time": "1.84-3.80s",
+   "floor_db_rel_peak": -11.9,
+   "lufs_target": -18
+  }
+ ],
+ "poke": [
+  {
+   "file": "poke_01.m4a",
+   "duration": 0.43,
+   "note": "“噜噜啵啵”绿幕整蛊素材：噜噜声+啵，前后纯静音，最贴 IP",
+   "ranking": 1,
+   "source": "https://www.bilibili.com/video/BV1rqtA6QEZW",
+   "time": "0.12-0.55s",
+   "floor_db_rel_peak": -28.8,
+   "lufs_target": -18
+  },
+  {
+   "file": "poke_02.m4a",
+   "duration": 0.13,
+   "note": "啵 02：短促软“啵”（纯音效）",
+   "ranking": 2,
+   "source": "https://www.bilibili.com/video/BV1Jf4y1E75D",
+   "time": "1.26-1.39s",
+   "floor_db_rel_peak": -33.5,
+   "lufs_target": -18
+  },
+  {
+   "file": "poke_03.m4a",
+   "duration": 0.18,
+   "note": "卡通字幕“啵”（纯音效）",
+   "ranking": 3,
+   "source": "https://www.bilibili.com/video/BV1Xg411K7yp",
+   "time": "1.33-1.52s",
+   "floor_db_rel_peak": -37.3,
+   "lufs_target": -18
+  },
+  {
+   "file": "poke_04.m4a",
+   "duration": 0.09,
+   "note": "啵 #04（纯音效，最短最脆）",
+   "ranking": 4,
+   "source": "https://www.bilibili.com/video/BV1MG4y1h7cs",
+   "time": "1.19-1.28s",
+   "floor_db_rel_peak": -39.7,
+   "lufs_target": -18
+  },
+  {
+   "file": "poke_05.m4a",
+   "duration": 0.36,
+   "note": "卡通泡泡“啵”#03（纯音效，较闷软）",
+   "ranking": 5,
+   "source": "https://www.bilibili.com/video/BV1bV41137kd",
+   "time": "1.12-1.48s",
+   "floor_db_rel_peak": -32.3,
+   "lufs_target": -18
+  }
+ ],
+ "hug": [
+  {
+   "file": "hug_02.m4a",
+   "duration": 1.3,
+   "note": "噜噜“噜噜噜”第二句（静音后起，干净）",
+   "ranking": 1,
+   "source": "https://www.bilibili.com/video/BV1UYtCzoEzB",
+   "time": "3.71-5.01s",
+   "floor_db_rel_peak": -27.8,
+   "lufs_target": -18
+  },
+  {
+   "file": "hug_01.m4a",
+   "duration": 1.35,
+   "note": "噜噜撒娇求抱抱“噜噜噜~”长音（底噪约 -48dB，很干净）",
+   "ranking": 2,
+   "source": "https://www.bilibili.com/video/BV1w6hy6kEB2",
+   "time": "3.00-4.35s",
+   "floor_db_rel_peak": -9.3,
+   "lufs_target": -18
+  },
+  {
+   "file": "hug_03.m4a",
+   "duration": 1.28,
+   "note": "噜噜撒娇“噜噜噜”（底下有轻微 BGM，约低 25–30dB）",
+   "ranking": 3,
+   "source": "https://www.bilibili.com/video/BV1Hjer6GEaD",
+   "time": "1.52-2.80s",
+   "floor_db_rel_peak": -26.3,
+   "lufs_target": -18
+  }
+ ],
+ "kiss": [
+  {
+   "file": "kiss_01.m4a",
+   "duration": 1.09,
+   "note": "人声“mua~”亲亲（可爱女声，非噜噜本声）",
+   "ranking": 1,
+   "source": "https://www.bilibili.com/video/BV1DU4y1C7sh",
+   "time": "0.11-1.20s",
+   "floor_db_rel_peak": -17.2,
+   "lufs_target": -18
+  },
+  {
+   "file": "kiss_02.m4a",
+   "duration": 0.95,
+   "note": "亲吻“啵唧”唇印（纯音效）",
+   "ranking": 2,
+   "source": "https://www.bilibili.com/video/BV1s341127Zt",
+   "time": "1.59-2.54s",
+   "floor_db_rel_peak": -23.4,
+   "lufs_target": -18
+  },
+  {
+   "file": "kiss_03.m4a",
+   "duration": 0.38,
+   "note": "亲吻 smack 短促（纯音效）",
+   "ranking": 3,
+   "source": "https://www.bilibili.com/video/BV1Yb4y187As",
+   "time": "4.52-4.90s",
+   "floor_db_rel_peak": -47.1,
+   "lufs_target": -18
+  },
+  {
+   "file": "kiss_04.m4a",
+   "duration": 0.9,
+   "note": "亲吻 smack 较长带吸气（纯音效）",
+   "ranking": 4,
+   "source": "https://www.bilibili.com/video/BV1Yb4y187As",
+   "time": "3.00-3.90s",
+   "floor_db_rel_peak": -21.7,
+   "lufs_target": -18
+  },
+  {
+   "file": "kiss_05.m4a",
+   "duration": 1.34,
+   "note": "亲吻+闪亮唇印音效（高频较多，偏亮）",
+   "ranking": 5,
+   "source": "https://www.bilibili.com/video/BV1ZY4y1J7Dw",
+   "time": "0.21-1.55s",
+   "floor_db_rel_peak": -18.2,
+   "lufs_target": -18
+  }
+ ],
+ "nuzzle": [
+  {
+   "file": "nuzzle_01.m4a",
+   "duration": 0.68,
+   "note": "噜噜撒娇“噜噜~”短一声（轻微 BGM）",
+   "ranking": 1,
+   "source": "https://www.bilibili.com/video/BV1Hjer6GEaD",
+   "time": "0.30-0.98s",
+   "floor_db_rel_peak": -29.7,
+   "lufs_target": -18
+  },
+  {
+   "file": "nuzzle_02.m4a",
+   "duration": 2.05,
+   "note": "“哇~爱了”惊喜感叹（纯音效，众人声）",
+   "ranking": 2,
+   "source": "https://www.bilibili.com/video/BV1dR4y1t7FT",
+   "time": "0.70-2.75s",
+   "floor_db_rel_peak": -13.3,
+   "lufs_target": -18
+  },
+  {
+   "file": "nuzzle_03.m4a",
+   "duration": 0.55,
+   "note": "噜噜轻哼一声（很短，干净）",
+   "ranking": 3,
+   "source": "https://www.bilibili.com/video/BV1w6hy6kEB2",
+   "time": "1.50-2.05s",
+   "floor_db_rel_peak": -10.8,
+   "lufs_target": -18
+  }
+ ],
+ "bubble": [
+  {
+   "file": "bubble_01.m4a",
+   "duration": 1.5,
+   "note": "“叮~”清脆提示音（音效素材合集）",
+   "ranking": 1,
+   "source": "https://www.bilibili.com/video/BV1GE411F7bQ",
+   "time": "9.70-11.20s",
+   "floor_db_rel_peak": -23.8,
+   "lufs_target": -18
+  },
+  {
+   "file": "bubble_02.m4a",
+   "duration": 0.39,
+   "note": "手机收到信息“叮”（纯音效）",
+   "ranking": 2,
+   "source": "https://www.bilibili.com/video/BV1p3411r7rJ",
+   "time": "1.65-2.04s",
+   "floor_db_rel_peak": -32.5,
+   "lufs_target": -18
+  },
+  {
+   "file": "bubble_03.m4a",
+   "duration": 1.21,
+   "note": "叮 闪亮 点子（金属感，稍长）",
+   "ranking": 3,
+   "source": "https://www.bilibili.com/video/BV1FU4y1A7B8",
+   "time": "0.79-2.00s",
+   "floor_db_rel_peak": -28.5,
+   "lufs_target": -18
+  },
+  {
+   "file": "bubble_04.m4a",
+   "duration": 0.26,
+   "note": "卡通泡泡“啵”（冒泡感）",
+   "ranking": 4,
+   "source": "https://www.bilibili.com/video/BV1yP4y117ej",
+   "time": "0.91-1.17s",
+   "floor_db_rel_peak": -18.6,
+   "lufs_target": -18
+  },
+  {
+   "file": "bubble_05.m4a",
+   "duration": 0.52,
+   "note": "“正确”提示音（叮咚，偏游戏）",
+   "ranking": 5,
+   "source": "https://www.bilibili.com/video/BV1Xf4y1V7Yv",
+   "time": "0.85-1.37s",
+   "floor_db_rel_peak": -9.8,
+   "lufs_target": -18
+  }
+ ],
+ "angry": [
+  {
+   "file": "angry_01.m4a",
+   "duration": 1.42,
+   "note": "噜噜“哼哼哼！”（别跟噜噜说话；下有 BGM，约低 30dB）",
+   "ranking": 1,
+   "source": "https://www.bilibili.com/video/BV13vez6HEHR",
+   "time": "0.00-1.42s",
+   "floor_db_rel_peak": -14.9,
+   "lufs_target": -18
+  },
+  {
+   "file": "angry_02.m4a",
+   "duration": 0.6,
+   "note": "噜妹“哼。”一声（底噪约 -42dB）",
+   "ranking": 2,
+   "source": "https://www.bilibili.com/video/BV1xwYM6SEFT",
+   "time": "5.20-5.80s",
+   "floor_db_rel_peak": -24.7,
+   "lufs_target": -18
+  },
+  {
+   "file": "angry_03.m4a",
+   "duration": 0.7,
+   "note": "噜噜结尾“哼。”（下有 BGM）",
+   "ranking": 3,
+   "source": "https://www.bilibili.com/video/BV13vez6HEHR",
+   "time": "14.30-15.00s",
+   "floor_db_rel_peak": -28.6,
+   "lufs_target": -18
+  }
+ ],
+ "cry": [
+  {
+   "file": "cry_01.m4a",
+   "duration": 2.37,
+   "note": "噜噜“呜呜呜~”委屈哭（下有 BGM，约低 20dB）",
+   "ranking": 1,
+   "source": "https://www.bilibili.com/video/BV1txbE6uEVX",
+   "time": "0.03-2.40s",
+   "floor_db_rel_peak": -15.4,
+   "lufs_target": -18
+  },
+  {
+   "file": "cry_02.m4a",
+   "duration": 2.08,
+   "note": "噜噜“呜呜呜”带回声（噜噜和回声干起来了）",
+   "ranking": 2,
+   "source": "https://www.bilibili.com/video/BV1pthB64Ey9",
+   "time": "0.12-2.20s",
+   "floor_db_rel_peak": -11.3,
+   "lufs_target": -18
+  },
+  {
+   "file": "cry_03.m4a",
+   "duration": 2.37,
+   "note": "水豚噜噜“哭哭”（噜噜不怕哭；可能混 BGM）",
+   "ranking": 3,
+   "source": "https://www.bilibili.com/video/BV1tLjbzXE7w",
+   "time": "0.03-2.40s",
+   "floor_db_rel_peak": -13.9,
+   "lufs_target": -18
+  },
+  {
+   "file": "cry_04.m4a",
+   "duration": 2.03,
+   "note": "小宝宝哭声（纯音效，非噜噜，较真实）",
+   "ranking": 4,
+   "source": "https://www.bilibili.com/video/BV1J44y1e7Af",
+   "time": "0.92-2.95s",
+   "floor_db_rel_peak": -37.5,
+   "lufs_target": -18
+  }
+ ],
+ "happy": [
+  {
+   "file": "happy_01.m4a",
+   "duration": 1.3,
+   "note": "噜噜“yeah~”欢呼（带回声）",
+   "ranking": 1,
+   "source": "https://www.bilibili.com/video/BV1pthB64Ey9",
+   "time": "2.65-3.95s",
+   "floor_db_rel_peak": -19.6,
+   "lufs_target": -18
+  },
+  {
+   "file": "happy_02.m4a",
+   "duration": 1.62,
+   "note": "卡通“Wee~”第二声（纯音效）",
+   "ranking": 2,
+   "source": "https://www.bilibili.com/video/BV1mM4y1A7qD",
+   "time": "4.63-6.25s",
+   "floor_db_rel_peak": -17.8,
+   "lufs_target": -18
+  },
+  {
+   "file": "happy_03.m4a",
+   "duration": 2.5,
+   "note": "观众掌声欢呼（纯音效，渐入渐出）",
+   "ranking": 3,
+   "source": "https://www.bilibili.com/video/BV1c44y1v7Zx",
+   "time": "1.30-3.80s",
+   "floor_db_rel_peak": -10.5,
+   "lufs_target": -18
+  },
+  {
+   "file": "happy_04.m4a",
+   "duration": 2.05,
+   "note": "“哇~”惊喜欢呼（纯音效，与 nuzzle_02 同源）",
+   "ranking": 4,
+   "source": "https://www.bilibili.com/video/BV1dR4y1t7FT",
+   "time": "0.70-2.75s",
+   "floor_db_rel_peak": -13.3,
+   "lufs_target": -18
+  },
+  {
+   "file": "happy_05.m4a",
+   "duration": 1.8,
+   "note": "观众笑声（纯音效）",
+   "ranking": 5,
+   "source": "https://www.bilibili.com/video/BV1bq4y1u7ib",
+   "time": "0.60-2.40s",
+   "floor_db_rel_peak": -8.8,
+   "lufs_target": -18
+  }
+ ],
+ "doze": [
+  {
+   "file": "doze_01.m4a",
+   "duration": 1.6,
+   "note": "卡通打呼：吸气呼噜+呼气哨音（很轻）",
+   "ranking": 1,
+   "source": "https://www.bilibili.com/video/BV18R4y1N7sp",
+   "time": "0.58-2.18s",
+   "floor_db_rel_peak": -43.5,
+   "lufs_target": -24
+  },
+  {
+   "file": "doze_02.m4a",
+   "duration": 1.52,
+   "note": "轻柔真实打呼一次（打呼 #20）",
+   "ranking": 2,
+   "source": "https://www.bilibili.com/video/BV1qA4y1D7sc",
+   "time": "1.43-2.95s",
+   "floor_db_rel_peak": -17.2,
+   "lufs_target": -24
+  },
+  {
+   "file": "doze_03.m4a",
+   "duration": 2.25,
+   "note": "外网梗“mimimi”卡通睡觉音",
+   "ranking": 3,
+   "source": "https://www.bilibili.com/video/BV1Y841137eR",
+   "time": "0.25-2.50s",
+   "floor_db_rel_peak": -15.8,
+   "lufs_target": -24
+  },
+  {
+   "file": "doze_04.m4a",
+   "duration": 1.11,
+   "note": "打呼 #13 一次呼噜（较实）",
+   "ranking": 4,
+   "source": "https://www.bilibili.com/video/BV1pa411Y7cu",
+   "time": "0.44-1.55s",
+   "floor_db_rel_peak": -8.9,
+   "lufs_target": -24
+  }
+ ],
+ "awaySummary": [
+  {
+   "file": "awaySummary_01.m4a",
+   "duration": 2.96,
+   "note": "“摸摸噜噜~”歌曲开头（噜噜梗曲，带人声）",
+   "ranking": 1,
+   "source": "https://www.bilibili.com/video/BV1gEGs6nEn4",
+   "time": "0.04-3.00s",
+   "floor_db_rel_peak": -25.3,
+   "lufs_target": -18
+  },
+  {
+   "file": "awaySummary_02.m4a",
+   "duration": 3.57,
+   "note": "植物大战僵尸胜利小调（游戏音效）",
+   "ranking": 2,
+   "source": "https://www.bilibili.com/video/BV1Ypbe64EXA",
+   "time": "1.73-5.30s",
+   "floor_db_rel_peak": -12.8,
+   "lufs_target": -18
+  },
+  {
+   "file": "awaySummary_03.m4a",
+   "duration": 3.16,
+   "note": "“从前有座饽饽山”洗脑歌开头（噜总日志）",
+   "ranking": 3,
+   "source": "https://www.bilibili.com/video/BV1gw4r6TEqV",
+   "time": "0.14-3.30s",
+   "floor_db_rel_peak": -17.3,
+   "lufs_target": -18
+  },
+  {
+   "file": "awaySummary_04.m4a",
+   "duration": 3.5,
+   "note": "水豚噜噜 BBA 进行曲开头",
+   "ranking": 4,
+   "source": "https://www.bilibili.com/video/BV1DEv8BsEiD",
+   "time": "0.00-3.50s",
+   "floor_db_rel_peak": -14.4,
+   "lufs_target": -18
+  },
+  {
+   "file": "awaySummary_05.m4a",
+   "duration": 1.46,
+   "note": "小号“达成！”短号角（纯音效，1.5s 偏短）",
+   "ranking": 5,
+   "source": "https://www.bilibili.com/video/BV1sU4y1N7uP",
+   "time": "0.82-2.28s",
+   "floor_db_rel_peak": -13.1,
+   "lufs_target": -18
+  }
+ ],
+ "bgm": [
+  {
+   "file": "bgm_01.m4a",
+   "duration": 28.5,
+   "note": "噜噜主题曲 前奏段（纯器乐，30s 后才有英文人声）",
+   "ranking": 1,
+   "source": "https://www.bilibili.com/video/BV1Dk3Az6E6m",
+   "time": "1.00-29.50s",
+   "floor_db_rel_peak": -19.3,
+   "lufs_target": -23
+  },
+  {
+   "file": "bgm_02.m4a",
+   "duration": 17.2,
+   "note": "“噜噜大王”配乐（器乐）",
+   "ranking": 2,
+   "source": "https://www.bilibili.com/video/BV1NhSnB4EMf",
+   "time": "0.40-17.60s",
+   "floor_db_rel_peak": -16.4,
+   "lufs_target": -23
+  },
+  {
+   "file": "bgm_03.m4a",
+   "duration": 24.0,
+   "note": "Capybara 卡皮吧啦《水豚之歌》开头（33s 后有“噜噜”人声）",
+   "ranking": 3,
+   "source": "https://www.bilibili.com/video/BV18w411B7vd",
+   "time": "0.00-24.00s",
+   "floor_db_rel_peak": -27.0,
+   "lufs_target": -23
+  },
+  {
+   "file": "bgm_04.m4a",
+   "duration": 20.0,
+   "note": "“摸摸噜噜 萌萌噜噜”循环歌（带人声 momo）",
+   "ranking": 4,
+   "source": "https://www.bilibili.com/video/BV1Ljug6yEti",
+   "time": "0.00-20.00s",
+   "floor_db_rel_peak": -18.2,
+   "lufs_target": -23
+  }
+ ]
+}

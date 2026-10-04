@@ -1,0 +1,10 @@
+build/
+.build/
+*.app
+tools/cutout
+.DS_Store
+dist/
+.claude/worktrees/
+# Raw material library (~665MB, local only; clips used by the app are copied into assets/gifs)
+assets/library/*.gif
+__pycache__/

@@ -1,0 +1,305 @@
+{
+ "*": {
+  "couple": [
+   "hug",
+   "kiss",
+   "kiss_2",
+   "nuzzle",
+   "happy",
+   "dance",
+   "wink",
+   "kiss_sit",
+   "hug_sit",
+   "dance_q",
+   "dance_2",
+   "hug_stand",
+   "hug_kneel",
+   "sniff",
+   "lean",
+   "hug_bed"
+  ]
+ },
+ "missyou": {
+  "couple": [
+   "hug",
+   "nuzzle",
+   "kiss",
+   "kiss_2",
+   "hug_stand",
+   "hug_kneel",
+   "hug_sit",
+   "comfort",
+   "cuddle_bed"
+  ],
+  "visitor": {
+   "lumei": "lumei_more_07",
+   "lulu": "vid_07"
+  }
+ },
+ "hug": {
+  "couple": [
+   "hug",
+   "hug_slow",
+   "hug_sit",
+   "hug_stand",
+   "hug_kneel",
+   "hug_bed",
+   "comfort"
+  ]
+ },
+ "kiss": {
+  "couple": [
+   "kiss",
+   "kiss_2",
+   "kiss_sit"
+  ],
+  "visitor": {
+   "lumei": [
+    "lumei_more_07",
+    "lumei_shy_03"
+   ],
+   "lulu": "vid_07"
+  }
+ },
+ "nuzzle": {
+  "couple": [
+   "nuzzle",
+   "cuddle_bed",
+   "sniff",
+   "lean"
+  ],
+  "visitor": {
+   "lulu": "lulu_shy_02"
+  }
+ },
+ "flower": {
+  "couple": "flowers",
+  "visitor": {
+   "lumei": "lumei_clap_01",
+   "lulu": "lulu_clap_01"
+  }
+ },
+ "night": {
+  "couple": [
+   "hug_slow",
+   "nuzzle",
+   "cuddle_bed",
+   "lean"
+  ],
+  "visitor": {
+   "lulu": "lulu_wave_03"
+  }
+ },
+ "morning": {
+  "couple": "none",
+  "visitor": {
+   "lumei": [
+    "lumei_more_08",
+    "lumei_stretch_01"
+   ],
+   "lulu": "lulu_celebrate_01"
+  }
+ },
+ "run": {
+  "couple": [
+   "hug",
+   "happy",
+   "dance",
+   "hug_stand",
+   "hug_kneel"
+  ]
+ },
+ "heart": {
+  "couple": "none",
+  "visitor": {
+   "lumei": "lumei_more_07",
+   "lulu": "vid_08"
+  }
+ },
+ "shy": {
+  "couple": "none",
+  "visitor": {
+   "lumei": [
+    "lumei_more_07",
+    "lumei_shy_03"
+   ],
+   "lulu": "vid_07"
+  }
+ },
+ "angry": {
+  "couple": "angry",
+  "visitor": {
+   "lumei": [
+    "lumei_pout_01",
+    "lumei_stomp_01"
+   ],
+   "lulu": "lulu_angry_01"
+  }
+ },
+ "cry": {
+  "couple": [
+   "hug_soft",
+   "nuzzle",
+   "comfort"
+  ],
+  "visitor": {
+   "lumei": "lumei_pout_01",
+   "lulu": "lulu_think_03"
+  }
+ },
+ "happy": {
+  "couple": "happy",
+  "visitor": {
+   "lumei": "lumei_happy_01",
+   "lulu": "vid_09"
+  }
+ },
+ "dance": {
+  "couple": [
+   "dance",
+   "dance_q",
+   "dance_2",
+   "dance_3"
+  ],
+  "visitor": {
+   "lumei": "lumei_dance_01",
+   "lulu": "lulu_dance_04"
+  }
+ },
+ "eat": {
+  "couple": "none",
+  "visitor": {
+   "lumei": [
+    "lumei_eat_01",
+    "lumei_icecream_01"
+   ],
+   "lulu": "lulu_drink_02"
+  }
+ },
+ "milktea": {
+  "couple": "bench",
+  "visitor": {
+   "lulu": "lulu_drink_02"
+  }
+ },
+ "remind_water": {
+  "couple": "none",
+  "visitor": {
+   "lumei": [
+    "tool_W04",
+    "tool_W06",
+    "tool_W09"
+   ],
+   "lulu": [
+    "lulu_drink_02",
+    "sohu_107",
+    "baidu_019",
+    "tool_W05",
+    "tool_W07"
+   ]
+  }
+ },
+ "remind_stand": {
+  "couple": "none",
+  "visitor": {
+   "lumei": "lumei_stretch_01",
+   "lulu": [
+    "baidu_069",
+    "lulu_walk_03",
+    "lulu_walk_02",
+    "tool_S07",
+    "tool_S08"
+   ]
+  }
+ },
+ "focus": {
+  "couple": "none",
+  "visitor": {
+   "lulu": "tool_F01"
+  }
+ },
+ "holdhands": {
+  "couple": "walk"
+ },
+ "sleeptogether": {
+  "couple": [
+   "hug_slow",
+   "nuzzle",
+   "cuddle_bed",
+   "lean"
+  ]
+ },
+ "whatsup": {
+  "couple": "none",
+  "visitor": {
+   "lumei": [
+    "lumei_more_08",
+    "lumei_stretch_01"
+   ],
+   "lulu": "lulu_think_03"
+  }
+ },
+ "goodgirl": {
+  "couple": [
+   "nuzzle",
+   "cuddle_bed",
+   "sniff",
+   "lean"
+  ],
+  "visitor": {
+   "lumei": [
+    "lumei_more_08",
+    "lumei_idle_03"
+   ],
+   "lulu": "lulu_shy_02"
+  }
+ },
+ "celebrate": {
+  "couple": [
+   "happy",
+   "dance_q"
+  ],
+  "visitor": {
+   "lumei": "lumei_clap_01",
+   "lulu": "lulu_celebrate_01"
+  }
+ },
+ "bleh": {
+  "couple": "none",
+  "visitor": {
+   "lumei": "lumei_celebrate_01"
+  }
+ },
+ "hi": {
+  "couple": "none",
+  "visitor": {
+   "lulu": "lulu_comein_01"
+  }
+ },
+ "wink": {
+  "couple": "wink"
+ },
+ "poke": {
+  "visitor": {
+   "lulu": [
+    "lulu_fart_01",
+    "vid_09"
+   ]
+  }
+ },
+ "click": {
+  "visitor": {
+   "lulu": "lulu_fart_01"
+  }
+ },
+ "visit": {
+  "couple": [
+   "none",
+   "hug",
+   "hug_stand"
+  ],
+  "visitor": {
+   "lulu": "lulu_comein_01"
+  }
+ }
+}

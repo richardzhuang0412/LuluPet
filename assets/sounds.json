@@ -1,0 +1,21 @@
+{
+  "arrive": ["arrive_03.m4a", "arrive_04.m4a", "arrive_05.m4a", "v2/arrive_01.m4a", "v2/arrive_02.m4a", "v2/arrive_03.m4a", "v2/arrive_04.m4a",
+            {"file": "v4/S01.m4a", "visitor": "lulu"}, {"file": "v4/S02.m4a", "visitor": "lulu", "intimate": true}],
+  "goVisit": [{"file": "v4/S01.m4a", "visitor": "lulu"}],
+  "poke": ["poke_05.m4a", "v2/poke_01.m4a", "v2/poke_03.m4a", "v4/S03.m4a"],
+  "hug": ["hug_01.m4a", "v2/hug_01.m4a", "v2/hug_02.m4a", {"file": "v4/S06.m4a", "intimate": true}],
+  "kiss": ["kiss_02.m4a"],
+  "bubble": ["bubble_01.m4a", "bubble_04.m4a"],
+  "angry": ["angry_01.m4a", "angry_03.m4a", "v2/angry_04.m4a", "v4/S10.m4a"],
+  "cry": ["v2/cry_01.m4a", "v4/S08.m4a"],
+  "happy": ["happy_01.m4a"],
+  "doze": ["doze_01.m4a", "doze_02.m4a", "v2/doze_01.m4a", "v2/doze_03.m4a", "v4/S38.m4a", "v4/S39.m4a"],
+  "awaySummary": ["v2/awaySummary_01.m4a", "v2/awaySummary_02.m4a"],
+  "bgm": ["bgm_04.m4a"],
+  "nuzzle": ["v3/nuzzle_01.m4a", "v3/nuzzle_02.m4a", "v3/nuzzle_03.m4a"],
+  "hug_missyou": [{"file": "v4/S06.m4a", "intimate": true}],
+  "comfort_missyou": [{"file": "v4/S06.m4a", "intimate": true}],
+  "angry_hmph": ["v4/S10.m4a"],
+  "dance_lalala": ["v4/S05.m4a"],
+  "lulu_comein": ["v4/lulu_comein.m4a"]
+}

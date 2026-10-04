@@ -1,0 +1,447 @@
+{
+ "*": {
+  "couple": [
+   "hug",
+   "kiss",
+   "kiss_2",
+   "nuzzle",
+   "happy",
+   "dance",
+   "wink",
+   "kiss_sit",
+   "hug_sit",
+   "dance_q",
+   "dance_2",
+   "hug_stand",
+   "hug_kneel",
+   "sniff",
+   "lean",
+   "hug_bed"
+  ]
+ },
+ "missyou": {
+  "couple": [
+   "hug",
+   "nuzzle",
+   "kiss",
+   "kiss_2",
+   "hug_stand",
+   "hug_kneel",
+   "hug_sit",
+   "comfort",
+   "cuddle_bed"
+  ],
+  "visitor": {
+   "lumei": {
+    "gif": "lumei_more_07",
+    "speed": 0.7
+   },
+   "lulu": {
+    "gif": "vid_07",
+    "speed": 0.6
+   }
+  }
+ },
+ "hug": {
+  "couple": [
+   "hug",
+   "hug_slow",
+   "hug_sit",
+   "hug_stand",
+   "hug_kneel",
+   "hug_bed",
+   "comfort"
+  ]
+ },
+ "kiss": {
+  "couple": [
+   "kiss",
+   "kiss_2",
+   "kiss_sit"
+  ],
+  "visitor": {
+   "lumei": [
+    {
+     "gif": "lumei_more_07",
+     "speed": 0.7
+    },
+    {
+     "gif": "lumei_shy_03",
+     "speed": 0.7
+    }
+   ],
+   "lulu": {
+    "gif": "vid_07",
+    "speed": 0.6
+   }
+  }
+ },
+ "nuzzle": {
+  "couple": [
+   "nuzzle",
+   "cuddle_bed",
+   "sniff",
+   "lean"
+  ],
+  "visitor": {
+   "lulu": {
+    "gif": "lulu_shy_02",
+    "speed": 0.6
+   }
+  }
+ },
+ "flower": {
+  "couple": "flowers",
+  "visitor": {
+   "lumei": {
+    "gif": "lumei_clap_01",
+    "speed": 0.7
+   },
+   "lulu": {
+    "gif": "lulu_clap_01",
+    "speed": 0.6
+   }
+  }
+ },
+ "night": {
+  "couple": [
+   "hug_slow",
+   "nuzzle",
+   "cuddle_bed",
+   "lean"
+  ],
+  "visitor": {
+   "lulu": {
+    "gif": "lulu_wave_03",
+    "speed": 0.6
+   }
+  }
+ },
+ "morning": {
+  "couple": "none",
+  "visitor": {
+   "lumei": [
+    {
+     "gif": "lumei_more_08",
+     "speed": 0.7
+    },
+    {
+     "gif": "lumei_stretch_01",
+     "speed": 0.7
+    }
+   ],
+   "lulu": {
+    "gif": "lulu_celebrate_01",
+    "speed": 0.6
+   }
+  }
+ },
+ "run": {
+  "couple": [
+   "hug",
+   "happy",
+   "dance",
+   "hug_stand",
+   "hug_kneel"
+  ]
+ },
+ "heart": {
+  "couple": "none",
+  "visitor": {
+   "lumei": {
+    "gif": "lumei_more_07",
+    "speed": 0.7
+   },
+   "lulu": {
+    "gif": "vid_08",
+    "speed": 0.6
+   }
+  }
+ },
+ "shy": {
+  "couple": "none",
+  "visitor": {
+   "lumei": [
+    {
+     "gif": "lumei_more_07",
+     "speed": 0.7
+    },
+    {
+     "gif": "lumei_shy_03",
+     "speed": 0.7
+    }
+   ],
+   "lulu": {
+    "gif": "vid_07",
+    "speed": 0.6
+   }
+  }
+ },
+ "angry": {
+  "couple": [
+   "angry"
+  ],
+  "visitor": {
+   "lumei": [
+    {
+     "gif": "lumei_pout_01",
+     "speed": 0.7
+    },
+    {
+     "gif": "lumei_stomp_01",
+     "speed": 0.8
+    }
+   ],
+   "lulu": {
+    "gif": "lulu_angry_01",
+    "speed": 0.7,
+    "frames": [
+     0,
+     39
+    ]
+   }
+  }
+ },
+ "cry": {
+  "couple": [
+   "hug_soft",
+   "nuzzle",
+   "comfort"
+  ],
+  "visitor": {
+   "lumei": {
+    "gif": "lumei_pout_01",
+    "speed": 0.6
+   },
+   "lulu": {
+    "gif": "lulu_think_03",
+    "speed": 0.5
+   }
+  }
+ },
+ "happy": {
+  "couple": "happy",
+  "visitor": {
+   "lumei": {
+    "gif": "lumei_happy_01",
+    "speed": 0.6
+   },
+   "lulu": {
+    "gif": "vid_09",
+    "speed": 0.6
+   }
+  }
+ },
+ "dance": {
+  "couple": [
+   "dance",
+   "dance_q",
+   "dance_2",
+   "dance_3"
+  ],
+  "visitor": {
+   "lumei": {
+    "gif": "lumei_dance_01",
+    "speed": 0.6
+   },
+   "lulu": {
+    "gif": "lulu_dance_04",
+    "speed": 0.6
+   }
+  }
+ },
+ "eat": {
+  "couple": "none",
+  "visitor": {
+   "lumei": [
+    {
+     "gif": "lumei_eat_01",
+     "speed": 0.7,
+     "scale": 0.78
+    },
+    {
+     "gif": "lumei_icecream_01",
+     "speed": 0.8,
+     "scale": 0.85
+    }
+   ],
+   "lulu": {
+    "gif": "lulu_drink_02",
+    "speed": 0.7
+   }
+  }
+ },
+ "milktea": {
+  "couple": "bench",
+  "visitor": {
+   "lulu": {
+    "gif": "lulu_drink_02",
+    "speed": 0.7
+   }
+  }
+ },
+ "remind_water": {
+  "couple": "none",
+  "visitor": {
+   "lumei": [
+      {"gif": "tool_W04", "speed": 0.7, "scale": 0.82},
+      {"gif": "tool_W06", "speed": 0.7, "scale": 0.9},
+      {"gif": "tool_W09", "speed": 0.7, "scale": 0.9}
+    ],
+   "lulu": [
+      {"gif": "lulu_drink_02", "speed": 0.7},
+      {"gif": "sohu_107", "speed": 0.7, "scale": 0.8},
+      {"gif": "baidu_019", "speed": 0.7},
+      {"gif": "tool_W05", "speed": 0.7},
+      {"gif": "tool_W07", "speed": 0.7}
+    ]
+  }
+ },
+ "remind_stand": {
+  "couple": "none",
+  "visitor": {
+   "lumei": {"gif": "lumei_stretch_01", "speed": 0.7},
+   "lulu": [
+      {"gif": "baidu_069", "speed": 0.7},
+      {"gif": "lulu_walk_03", "speed": 0.7},
+      {"gif": "lulu_walk_02", "speed": 0.7},
+      {"gif": "tool_S07", "speed": 0.7},
+      {"gif": "tool_S08", "speed": 0.7}
+    ]
+  }
+ },
+ "focus": {
+  "couple": "none",
+  "visitor": {
+   "lulu": {"gif": "tool_F01", "speed": 0.8}
+  },
+  "note": "v0.12: not a sticker reaction; 噜噜's book-reading loop, played by PersonalToolsController during a pomodoro focus round"
+ },
+ "holdhands": {
+  "couple": "walk"
+ },
+ "sleeptogether": {
+  "couple": [
+   "hug_slow",
+   "nuzzle",
+   "cuddle_bed",
+   "lean"
+  ]
+ },
+ "whatsup": {
+  "couple": "none",
+  "visitor": {
+   "lumei": [
+    {
+     "gif": "lumei_more_08",
+     "speed": 0.7
+    },
+    {
+     "gif": "lumei_stretch_01",
+     "speed": 0.7
+    }
+   ],
+   "lulu": {
+    "gif": "lulu_think_03",
+    "speed": 0.6
+   }
+  }
+ },
+ "goodgirl": {
+  "couple": [
+   "nuzzle",
+   "cuddle_bed",
+   "sniff",
+   "lean"
+  ],
+  "visitor": {
+   "lumei": [
+    {
+     "gif": "lumei_more_08",
+     "speed": 0.7
+    },
+    {
+     "gif": "lumei_idle_03",
+     "speed": 0.7
+    }
+   ],
+   "lulu": {
+    "gif": "lulu_shy_02",
+    "speed": 0.6
+   }
+  }
+ },
+ "celebrate": {
+  "couple": [
+   "happy",
+   "dance_q"
+  ],
+  "visitor": {
+   "lumei": {
+    "gif": "lumei_clap_01",
+    "speed": 0.7
+   },
+   "lulu": {
+    "gif": "lulu_celebrate_01",
+    "speed": 0.6
+   }
+  }
+ },
+ "bleh": {
+  "couple": "none",
+  "visitor": {
+   "lumei": {
+    "gif": "lumei_celebrate_01",
+    "speed": 0.6
+   }
+  }
+ },
+ "hi": {
+  "couple": "none",
+  "visitor": {
+   "lulu": {
+    "gif": "lulu_comein_01",
+    "speed": 1.0,
+    "sound": "lulu_comein"
+   }
+  }
+ },
+ "wink": {
+  "couple": "wink"
+ },
+ "poke": {
+  "visitor": {
+   "lulu": [
+    {
+     "gif": "lulu_fart_01",
+     "speed": 0.8,
+     "scale": 0.8
+    },
+    "vid_09"
+   ]
+  }
+ },
+ "click": {
+  "visitor": {
+   "lulu": {
+    "gif": "lulu_fart_01",
+    "speed": 0.8,
+    "scale": 0.8
+   }
+  }
+ },
+ "visit": {
+  "couple": [
+   "none",
+   "hug",
+   "hug_stand"
+  ],
+  "visitor": {
+   "lulu": {
+    "gif": "lulu_comein_01",
+    "speed": 1.0,
+    "sound": "lulu_comein"
+   }
+  }
+ }
+}

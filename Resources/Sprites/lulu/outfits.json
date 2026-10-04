@@ -1,0 +1,37 @@
+{
+ "classic": {
+  "label": "经典"
+ },
+ "bear": {
+  "label": "小熊"
+ },
+ "panda": {
+  "label": "熊猫"
+ },
+ "bee": {
+  "label": "小蜜蜂"
+ },
+ "cherry": {
+  "label": "樱桃奶油帽"
+ },
+ "xingshi": {
+  "season": "springFestival",
+  "label": "醒狮新年"
+ },
+ "pajama": {
+  "label": "印花睡衣"
+ },
+ "caishen": {
+  "label": "八方来财"
+ },
+ "xmastree": {
+  "season": "christmas",
+  "label": "圣诞树"
+ },
+ "dog": {
+  "label": "小狗帽"
+ },
+ "yellowhat": {
+  "label": "小黄帽"
+ }
+}

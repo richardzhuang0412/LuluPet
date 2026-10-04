@@ -1,0 +1,315 @@
+{
+  "lumei": {
+    "lace": {
+      "label": "蕾丝帽",
+      "reactionClips": {"exclude": ["lumei_shy_03", "lumei_idle_03", "lumei_stretch_01"]},
+      "idle": "lumei_more_01",
+      "quiet": {"gif": "lumei_more_01", "frame": 0},
+      "react": "lumei_more_07",
+      "happy": "lumei_more_08",
+      "doze": {"gif": "lumei_spin_01", "frame": 0},
+      "fidgets": [
+        {"gif": "lumei_spin_01", "speed": 0.7},
+        {"gif": "lumei_celebrate_01", "speed": 0.6, "scale": 0.93},
+        {"gif": "lumei_dance_01", "speed": 0.6},
+        {"gif": "lumei_pout_01", "speed": 0.7, "scale": 0.9},
+        {"gif": "lumei_more_08", "speed": 0.7}
+      ],
+      "stay": [
+        {"gif": "lumei_clap_01", "speed": 0.7},
+        {"gif": "lumei_more_07", "speed": 0.7},
+        {"gif": "lumei_idle_02", "speed": 0.6, "scale": 0.88}
+      ]
+    },
+    "xiaoxiang": {
+      "label": "小香风",
+      "idle": {"gif": "costume_lumei_xiaoxiang_idle_01", "speed": 0.6},
+      "quiet": {"gif": "costume_lumei_xiaoxiang_idle_01", "frame": 0},
+      "react": {"gif": "costume_lumei_xiaoxiang_react_01", "speed": 0.7},
+      "happy": {"gif": "costume_lumei_xiaoxiang_happy_01", "speed": 0.65},
+      "fidgets": [
+        {"gif": "costume_lumei_xiaoxiang_fidget_01", "speed": 0.6},
+        {"gif": "costume_lumei_xiaoxiang_fidget_02", "speed": 0.6}
+      ],
+      "stay": [
+        {"gif": "costume_lumei_xiaoxiang_fidget_01", "speed": 0.6}
+      ]
+    },
+    "maid": {
+      "label": "女仆",
+      "idle": {"gif": "lumei_idle_03", "speed": 0.6},
+      "quiet": {"gif": "lumei_idle_03", "frame": 0},
+      "react": {"gif": "costume_lumei_maid_react_01", "speed": 0.7},
+      "happy": {"gif": "lumei_stretch_01", "speed": 0.7},
+      "fidgets": [
+        {"gif": "lumei_shy_03", "speed": 0.7},
+        {"gif": "lulu_shy_01", "speed": 0.7},
+        {"gif": "lulu_shy_03", "speed": 0.7}
+      ],
+      "stay": [
+        {"gif": "lumei_shy_03", "speed": 0.7}
+      ]
+    },
+    "bluedress": {
+      "label": "蓝睡帽小裙",
+      "idle": {"gif": "costume_lumei_bluedress_idle_01", "speed": 0.6},
+      "quiet": {"gif": "costume_lumei_bluedress_idle_01", "frame": 0},
+      "react": {"gif": "costume_lumei_bluedress_react_01", "speed": 0.7},
+      "happy": {"gif": "costume_lumei_bluedress_happy_01", "speed": 0.7},
+      "fidgets": [
+        {"gif": "costume_lumei_bluedress_fidget_01", "speed": 0.6},
+        {"gif": "costume_lumei_bluedress_fidget_02", "speed": 0.6},
+        {"gif": "costume_lumei_bluedress_fidget_03", "speed": 0.6},
+        {"gif": "costume_lumei_bluedress_fidget_04", "speed": 0.6},
+        {"gif": "lulu_tongue_02", "speed": 0.6}
+      ],
+      "stay": [
+        {"gif": "costume_lumei_bluedress_stay_01", "speed": 0.6},
+        {"gif": "costume_lumei_bluedress_stay_02", "speed": 0.6},
+        {"gif": "costume_lumei_bluedress_stay_03", "speed": 0.6}
+      ]
+    },
+    "lion": {
+      "label": "小狮子蝴蝶结",
+      "idle": {"gif": "costume_lumei_lion_idle_01", "speed": 0.6},
+      "quiet": {"gif": "costume_lumei_lion_idle_01", "frame": 16},
+      "react": {"gif": "costume_lumei_lion_react_01", "speed": 0.7},
+      "happy": {"gif": "costume_lumei_lion_happy_01", "speed": 0.7},
+      "fidgets": [
+        {"gif": "costume_lumei_lion_fidget_01", "speed": 0.6},
+        {"gif": "costume_lumei_lion_fidget_02", "speed": 0.6},
+        {"gif": "costume_lumei_lion_fidget_03", "speed": 0.6}
+      ],
+      "stay": [
+        {"gif": "costume_lumei_lion_fidget_01", "speed": 0.6}
+      ]
+    },
+    "bonnet": {
+      "label": "蓝色花边帽",
+      "idle": {"gif": "costume_lumei_bonnet_idle_01", "speed": 0.55},
+      "quiet": {"gif": "costume_lumei_bonnet_idle_01", "frame": 12},
+      "react": {"gif": "costume_lumei_bonnet_react_01", "speed": 0.7},
+      "happy": {"gif": "costume_lumei_bonnet_happy_01", "speed": 0.7},
+      "fidgets": [
+        {"gif": "costume_lumei_bonnet_fidget_01", "speed": 0.6},
+        {"gif": "costume_lumei_bonnet_fidget_02", "speed": 0.6},
+        {"gif": "costume_lumei_bonnet_fidget_03", "speed": 0.6}
+      ],
+      "stay": [
+        {"gif": "costume_lumei_bonnet_fidget_02", "speed": 0.6}
+      ]
+    },
+    "angel": {
+      "label": "小天使",
+      "idle": {"gif": "costume_lumei_angel_idle_01", "speed": 0.6, "scale": 0.9},
+      "quiet": {"gif": "costume_lumei_angel_idle_01", "frame": 30},
+      "react": {"gif": "costume_lumei_angel_react_01", "speed": 0.7, "scale": 0.9},
+      "happy": {"gif": "costume_lumei_angel_happy_01", "speed": 0.7, "scale": 0.9},
+      "fidgets": [
+        {"gif": "costume_lumei_angel_fidget_01", "speed": 0.6, "scale": 0.9}
+      ],
+      "stay": [
+        {"gif": "costume_lumei_angel_idle_01", "speed": 0.6, "scale": 0.9}
+      ]
+    },
+    "pinkbow": {
+      "label": "粉蝴蝶结毛线帽",
+      "idle": {"gif": "costume_lumei_pinkbow_idle_01", "speed": 0.55, "scale": 0.95},
+      "quiet": {"gif": "costume_lumei_pinkbow_idle_01", "frame": 22},
+      "react": {"gif": "costume_lumei_pinkbow_react_01", "speed": 0.7, "scale": 0.95},
+      "happy": {"gif": "costume_lumei_pinkbow_happy_01", "speed": 0.7, "scale": 0.95},
+      "fidgets": [],
+      "stay": [
+        {"gif": "costume_lumei_pinkbow_idle_01", "speed": 0.6, "scale": 0.95}
+      ]
+    },
+    "pinkhood": {
+      "label": "粉兜帽",
+      "idle": {"gif": "costume_lumei_pinkhood_idle_01", "speed": 0.55},
+      "quiet": {"gif": "costume_lumei_pinkhood_idle_01", "frame": 0},
+      "react": {"gif": "costume_lumei_pinkhood_react_01", "speed": 0.7},
+      "happy": {"gif": "costume_lumei_pinkhood_happy_01", "speed": 0.7},
+      "fidgets": [],
+      "stay": []
+    },
+    "weather": {
+      "rain": [{"gif": "wx_LR02", "scale": 0.85}, {"gif": "wx_LR04", "scale": 1.15}],
+      "hot": [{"gif": "lumei_icecream_01", "scale": 0.8}],
+      "cold": ["wx_C07", "wx_C08", "wx_C09"]
+    }
+  },
+  "lulu": {
+    "classic": {
+      "label": "经典",
+      "reactionClips": true,
+      "idle": {"gif": "lulu_vid_01", "speed": 0.5},
+      "quiet": {"gif": "lulu_vid_01", "frame": 0},
+      "react": {"gif": "lulu_vid_03", "speed": 0.7},
+      "happy": {"gif": "vid_02", "speed": 0.7},
+      "doze": {"gif": "lulu_blink_01", "frame": 4},
+      "fidgets": [
+        {"gif": "lulu_blink_01", "speed": 0.5},
+        {"gif": "lulu_wave_03", "speed": 0.6, "scale": 1.05},
+        {"gif": "lulu_think_03", "speed": 0.6},
+        {"gif": "lulu_spin_01", "speed": 0.7, "scale": 0.93},
+        {"gif": "lulu_celebrate_01", "speed": 0.6, "scale": 1.05},
+        {"gif": "lulu_dance_04", "speed": 0.6, "scale": 1.05},
+        {"gif": "lulu_wave_05", "speed": 0.6},
+        {"gif": "vid_09", "speed": 0.6}
+      ],
+      "stay": [
+        {"gif": "vid_08", "speed": 0.6},
+        {"gif": "vid_07", "speed": 0.6},
+        {"gif": "lulu_clap_01", "speed": 0.6}
+      ]
+    },
+    "bear": {
+      "label": "小熊",
+      "idle": {"gif": "costume_lulu_bear_idle_01", "speed": 0.6},
+      "quiet": {"gif": "costume_lulu_bear_idle_01", "frame": 0},
+      "react": {"gif": "costume_lulu_bear_react_01", "speed": 0.7},
+      "happy": {"gif": "costume_lulu_bear_happy_01", "speed": 0.7},
+      "fidgets": [
+        {"gif": "costume_lulu_bear_fidget_01", "speed": 0.6},
+        {"gif": "costume_lulu_bear_fidget_02", "speed": 0.6}
+      ],
+      "stay": [
+        {"gif": "costume_lulu_bear_fidget_01", "speed": 0.6}
+      ]
+    },
+    "panda": {
+      "label": "熊猫",
+      "idle": {"gif": "costume_lulu_panda_idle_01", "speed": 0.6},
+      "quiet": {"gif": "costume_lulu_panda_idle_01", "frame": 0},
+      "react": {"gif": "costume_lulu_panda_react_01", "speed": 0.7},
+      "happy": {"gif": "costume_lulu_panda_happy_01", "speed": 0.7},
+      "fidgets": [
+        {"gif": "costume_lulu_panda_fidget_01", "speed": 0.6},
+        {"gif": "costume_lulu_panda_fidget_02", "speed": 0.6}
+      ],
+      "stay": [
+        {"gif": "costume_lulu_panda_fidget_01", "speed": 0.6}
+      ]
+    },
+    "bee": {
+      "label": "小蜜蜂",
+      "idle": {"gif": "costume_lulu_bee_idle_01", "speed": 0.6},
+      "quiet": {"gif": "costume_lulu_bee_idle_01", "frame": 0},
+      "react": {"gif": "costume_lulu_bee_react_01", "speed": 0.7},
+      "happy": {"gif": "costume_lulu_bee_happy_01", "speed": 0.7},
+      "fidgets": [
+        {"gif": "costume_lulu_bee_fidget_01", "speed": 0.6}
+      ],
+      "stay": [
+        {"gif": "costume_lulu_bee_fidget_01", "speed": 0.6}
+      ]
+    },
+    "cherry": {
+      "label": "樱桃奶油帽",
+      "idle": {"gif": "costume_lulu_cherry_idle_01", "speed": 0.6, "scale": 0.95},
+      "quiet": {"gif": "costume_lulu_cherry_idle_01", "frame": 0},
+      "react": {"gif": "costume_lulu_cherry_react_01", "speed": 0.7, "scale": 0.95},
+      "happy": {"gif": "costume_lulu_cherry_happy_01", "speed": 0.7, "scale": 0.95},
+      "fidgets": [
+        {"gif": "costume_lulu_cherry_fidget_01", "speed": 0.6, "scale": 0.95},
+        {"gif": "costume_lulu_cherry_fidget_02", "speed": 0.6, "scale": 0.95},
+        {"gif": "costume_lulu_cherry_fidget_03", "speed": 0.6, "scale": 0.95},
+        {"gif": "costume_lulu_cherry_fidget_04", "speed": 0.6, "scale": 0.95}
+      ],
+      "stay": [
+        {"gif": "costume_lulu_cherry_stay_01", "speed": 0.6, "scale": 0.95},
+        {"gif": "costume_lulu_cherry_stay_02", "speed": 0.6, "scale": 0.95}
+      ]
+    },
+    "xingshi": {
+      "label": "醒狮新年",
+      "season": "springFestival",
+      "idle": {"gif": "costume_lulu_xingshi_idle_01", "speed": 0.6, "scale": 0.9},
+      "quiet": {"gif": "costume_lulu_xingshi_idle_01", "frame": 14},
+      "react": {"gif": "costume_lulu_xingshi_react_01", "speed": 0.7, "scale": 0.9},
+      "happy": {"gif": "costume_lulu_xingshi_happy_01", "speed": 0.7, "scale": 0.9},
+      "fidgets": [
+        {"gif": "costume_lulu_xingshi_fidget_01", "speed": 0.6, "scale": 0.9},
+        {"gif": "costume_lulu_xingshi_fidget_02", "speed": 0.6, "scale": 0.9}
+      ],
+      "stay": [
+        {"gif": "costume_lulu_xingshi_fidget_01", "speed": 0.6, "scale": 0.9}
+      ]
+    },
+    "pajama": {
+      "label": "印花睡衣",
+      "idle": {"gif": "costume_lulu_pajama_idle_01", "speed": 0.6},
+      "quiet": {"gif": "costume_lulu_pajama_idle_01", "frame": 0},
+      "react": {"gif": "vid_14", "speed": 0.7},
+      "happy": {"gif": "lulu_heart_01", "speed": 0.7},
+      "fidgets": [
+        {"gif": "lulu_think_02", "speed": 0.6},
+        {"gif": "lulu_wave_02", "speed": 0.6}
+      ],
+      "stay": [
+        {"gif": "lulu_wave_02", "speed": 0.6}
+      ]
+    },
+    "caishen": {
+      "label": "八方来财",
+      "idle": {"gif": "costume_lulu_caishen_idle_01", "speed": 0.55},
+      "quiet": {"gif": "costume_lulu_caishen_idle_01", "frame": 18},
+      "react": {"gif": "costume_lulu_caishen_react_01", "speed": 0.65},
+      "happy": {"gif": "costume_lulu_caishen_happy_01", "speed": 0.65},
+      "fidgets": [
+        {"gif": "costume_lulu_caishen_fidget_01", "speed": 0.6},
+        {"gif": "costume_lulu_caishen_fidget_02", "speed": 0.6}
+      ],
+      "stay": [
+        {"gif": "costume_lulu_caishen_fidget_02", "speed": 0.6}
+      ]
+    },
+    "xmastree": {
+      "label": "圣诞树",
+      "season": "christmas",
+      "idle": {"gif": "costume_lulu_xmastree_idle_01", "speed": 0.6},
+      "quiet": {"gif": "costume_lulu_xmastree_idle_01", "frame": 0},
+      "react": {"gif": "costume_lulu_xmastree_react_01", "speed": 0.7},
+      "happy": {"gif": "costume_lulu_xmastree_happy_01", "speed": 0.7},
+      "fidgets": [
+        {"gif": "costume_lulu_xmastree_fidget_01", "speed": 0.6}
+      ],
+      "stay": [
+        {"gif": "costume_lulu_xmastree_fidget_01", "speed": 0.6}
+      ]
+    },
+    "dog": {
+      "label": "小狗帽",
+      "idle": {"gif": "costume_lulu_dog_idle_01", "speed": 0.55},
+      "quiet": {"gif": "costume_lulu_dog_idle_01", "frame": 21},
+      "react": {"gif": "costume_lulu_dog_react_01", "speed": 0.7},
+      "happy": {"gif": "costume_lulu_dog_happy_01", "speed": 0.7},
+      "fidgets": [
+        {"gif": "costume_lulu_dog_fidget_01", "speed": 0.6}
+      ],
+      "stay": [
+        {"gif": "costume_lulu_dog_idle_01", "speed": 0.6}
+      ]
+    },
+    "yellowhat": {
+      "label": "小黄帽",
+      "idle": {"gif": "costume_lulu_yellowhat_idle_01", "speed": 0.6},
+      "quiet": {"gif": "costume_lulu_yellowhat_idle_01", "frame": 0},
+      "react": {"gif": "costume_lulu_yellowhat_react_01", "speed": 0.7},
+      "happy": {"gif": "costume_lulu_yellowhat_happy_01", "speed": 0.7},
+      "fidgets": [
+        {"gif": "costume_lulu_yellowhat_fidget_01", "speed": 0.6}
+      ],
+      "stay": [
+        {"gif": "costume_lulu_yellowhat_fidget_01", "speed": 0.6}
+      ]
+    },
+    "weather": {
+      "rain": ["sohu_152", "baidu_108", "wx_R04"],
+      "hot": ["baidu_005", "sohu_093", "tenor_054", {"gif": "sohu_125", "frames": [0, 16]}, "baidu_022", "wx_H08", "wx_H09"],
+      "cold": ["wx_C01", "wx_C02", "baidu_049", "wx_C05", "wx_C06", {"gif": "wx_C10", "scale": 0.9}],
+      "windy": ["wx_G01", "wx_G02"],
+      "cloudy": [{"gif": "baidu_041", "scale": 0.88}]
+    }
+  }
+}

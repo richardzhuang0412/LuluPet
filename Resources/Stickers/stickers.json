@@ -1,0 +1,128 @@
+[
+ {
+  "id": "missyou",
+  "label": "想你了",
+  "file": "missyou.gif"
+ },
+ {
+  "id": "hug",
+  "label": "抱抱",
+  "file": "hug.gif",
+  "intimate": true
+ },
+ {
+  "id": "kiss",
+  "label": "亲亲",
+  "file": "kiss.gif",
+  "intimate": true
+ },
+ {
+  "id": "nuzzle",
+  "label": "贴贴",
+  "file": "nuzzle.gif",
+  "intimate": true
+ },
+ {
+  "id": "flower",
+  "label": "送你花",
+  "file": "flower.gif"
+ },
+ {
+  "id": "night",
+  "label": "晚安",
+  "file": "night.gif"
+ },
+ {
+  "id": "morning",
+  "label": "早安",
+  "file": "morning.gif"
+ },
+ {
+  "id": "run",
+  "label": "奔向你",
+  "file": "run.gif"
+ },
+ {
+  "id": "heart",
+  "label": "比心",
+  "file": "heart.gif"
+ },
+ {
+  "id": "shy",
+  "label": "害羞",
+  "file": "shy.gif"
+ },
+ {
+  "id": "angry",
+  "label": "生气",
+  "file": "angry.gif"
+ },
+ {
+  "id": "cry",
+  "label": "哭哭",
+  "file": "cry.gif"
+ },
+ {
+  "id": "happy",
+  "label": "开心",
+  "file": "happy.gif"
+ },
+ {
+  "id": "dance",
+  "label": "跳舞",
+  "file": "dance.gif"
+ },
+ {
+  "id": "eat",
+  "label": "吃饭啦",
+  "file": "eat.gif"
+ },
+ {
+  "id": "milktea",
+  "label": "喝奶茶",
+  "file": "milktea.gif"
+ },
+ {
+  "id": "holdhands",
+  "label": "牵手",
+  "file": "holdhands.gif",
+  "intimate": true
+ },
+ {
+  "id": "sleeptogether",
+  "label": "一起睡",
+  "file": "sleeptogether.gif",
+  "intimate": true
+ },
+ {
+  "id": "whatsup",
+  "label": "在干嘛",
+  "file": "whatsup.gif"
+ },
+ {
+  "id": "goodgirl",
+  "label": "乖乖",
+  "file": "goodgirl.gif"
+ },
+ {
+  "id": "celebrate",
+  "label": "撒花",
+  "file": "celebrate.gif"
+ },
+ {
+  "id": "bleh",
+  "label": "略略略",
+  "file": "bleh.gif"
+ },
+ {
+  "id": "hi",
+  "label": "你好呀",
+  "file": "hi.gif"
+ },
+ {
+  "id": "wink",
+  "label": "放电",
+  "file": "wink.gif",
+  "intimate": true
+ }
+]
