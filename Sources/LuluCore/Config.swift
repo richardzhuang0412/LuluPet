@@ -225,6 +225,20 @@ public struct ConfigStore: @unchecked Sendable {
         nonmutating set { defaults.set(newValue, forKey: "stickerRecent") }
     }
 
+    /// v0.15.1 快捷栏 (`stickerQuickBar`, ordered array of sticker ids, at most 8); nil = not seeded yet.
+    /// Ids the current mode hides (friend mode: intimate stickers) stay stored.
+    public var stickerQuickBar: [String]? {
+        get { defaults.stringArray(forKey: "stickerQuickBar") }
+        nonmutating set { defaults.set(newValue, forKey: "stickerQuickBar") }
+    }
+
+    /// v0.15.1 how many times I sent / acted out each sticker (`stickerSendCounts`, `{id: Int}`); nil = not built yet
+    /// (built once from `history.jsonl`, then bumped on every send). Orders the automatic 常用.
+    public var stickerSendCounts: [String: Int]? {
+        get { (defaults.dictionary(forKey: "stickerSendCounts") as? [String: Any])?.compactMapValues { ($0 as? NSNumber)?.intValue } }
+        nonmutating set { defaults.set(newValue, forKey: "stickerSendCounts") }
+    }
+
     // MARK: v0.5 sound (new keys, see docs/upgrade-compat.md)
 
     /// Sound on / off (`soundEnabled`; absent = `SoundDefaults.enabled`).

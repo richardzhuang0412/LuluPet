@@ -226,6 +226,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case "--demo-menu-tools": demoMenuTools = it.next()
                 case "--demo-snooze-delay": demoSnoozeDelay = it.next().flatMap(TimeInterval.init)
                 case "--demo-settings-tools": SettingsWindow.demoToolsPage = true
+                case "--demo-settings-stickers": SettingsWindow.demoStickersPage = true
                 case "--demo-solo-compose": demoSoloCompose = true
                 case "--demo-compose-tab": demoComposeTab = it.next()
                 case "--demo-seat-clash": demoSeatClash = it.next().flatMap(TimeInterval.init) ?? 1
@@ -307,6 +308,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let options = Options(CommandLine.arguments)
     private lazy var store = ConfigStore(profile: options.profile)
     private lazy var history = HistoryStore(directory: HistoryStore.defaultDirectory(profile: options.profile))
+    /// v0.15.2 快捷栏 + send counts, shared by the compose panel and the Settings 「表情」 page (counts are built from history once).
+    private lazy var stickerPrefs = StickerPrefsModel(store: store, library: stickers.stickers.map(\.id), scanHistory: { [unowned self] in
+        self.role.map { StickerPanel.sendCounts(from: self.history.all(), me: $0) } ?? [:]
+    })
     private let sprites = SpriteCatalog(root: resourcesRoot().appendingPathComponent("Sprites"))
     private let stickers = StickerCatalog(root: resourcesRoot().appendingPathComponent("Stickers"))
     private let couples = CoupleCatalog(root: resourcesRoot().appendingPathComponent("Couples"))
@@ -2295,7 +2300,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notice.dismiss()
         DispatchQueue.main.async { [weak self] in self?.refreshWeather(force: false) }   // v0.12: after the panel is up (it is a reason to refresh)
         let c = ComposeWindow(partnerName: myName, stickers: stickers, tab: tab, policy: contentPolicy, solo: true, tools: tools.panel,
-                              weather: composeWeatherCard(), stickerStore: store)
+                              weather: composeWeatherCard(), stickerPrefs: stickerPrefs)
         c.onOpenSettings = { [weak self] in self?.openSettings() }
         c.onOpenToolsSettings = { [weak self] in self?.tools.onOpenSettings?() }
         c.onSendSticker = { [weak self] id in self?.playSoloSticker(id, seat: role) }
@@ -2336,7 +2341,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                               partnerApp: partnerOnline == true ? channel?.partnerPresence?.app.flatMap { AppVersion($0)?.description } : nil,
                               history: .init(store: history, me: role, away: unseenAway, dndSpans: store.dndLog, awayTitle: unseenAwayTitle,
                                              awaySincerity: unseenAwayTitle.hasPrefix("🔕")), tab: tab,
-                              policy: contentPolicy, tools: tools.panel, weather: composeWeatherCard(), stickerStore: store)
+                              policy: contentPolicy, tools: tools.panel, weather: composeWeatherCard(), stickerPrefs: stickerPrefs)
         c.onOpenSettings = { [weak self] in self?.openSettings() }
         c.onOpenToolsSettings = { [weak self] in self?.tools.onOpenSettings?() }
         c.onHistorySeen = { [weak self] in
@@ -2398,7 +2403,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             confirmSeatMove: { [weak self] character in self?.confirmSeatMove(to: character) ?? true },
             city: CityAccess(model: cityModel, set: { [weak self] in self?.setMyPlace($0) }, search: citySearch, partnerPlace: weather.partnerPlace,
                              setAuto: { [weak self] in self?.setAutoLocation($0) },
-                             openLocationSettings: { [weak self] in self?.openLocationSettings() }))   // v0.12 / v0.14.1
+                             openLocationSettings: { [weak self] in self?.openLocationSettings() }),   // v0.12 / v0.14.1
+            stickers: StickerSettingsAccess(model: stickerPrefs, choices: ComposeWindow.choices(stickers, policy: contentPolicy)))   // v0.15.2
         let w = SettingsWindow(initial: config ?? store.load(), defaultRole: options.role ?? .lulu, warning: warning, prefs: prefs)
         w.onSave = { [weak self] cfg in
             guard let self else { return }

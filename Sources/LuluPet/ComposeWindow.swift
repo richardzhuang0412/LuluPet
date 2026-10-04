@@ -53,45 +53,10 @@ final class ComposeWindow: NSPanel {
         var isWide: Bool { thumbnail.map { $0.size.height > 0 && $0.size.width / $0.size.height >= 1.85 } ?? false }
     }
 
-    /// v0.15 the user's 常用 list and use times (`stickerFavorites` / `stickerRecent` of the profile), shared by the
-    /// panel's grids. Without a store (tests, snapshots of a throwaway profile) it is in memory only.
-    @MainActor final class StickerPrefsModel: ObservableObject {
-        private let store: ConfigStore?
-        @Published var pinned: [String]?
-        @Published var recent: [String: Int64]
-        /// A short confirmation (「已加入常用」) shown beside the 常用 title for a moment.
-        @Published var toast: String?
-        /// 「更多表情…」 is open. Remembered while the app runs (not saved): the next panel opens the same way.
-        @Published var moreExpanded = StickerPrefsModel.expandedThisSession {
-            didSet { StickerPrefsModel.expandedThisSession = moreExpanded }
-        }
-        nonisolated(unsafe) static var expandedThisSession = false
-        private var toastGeneration = 0
-
-        init(store: ConfigStore?) {
-            self.store = store
-            pinned = store?.stickerFavorites
-            recent = store?.stickerRecent ?? [:]
-        }
-
-        /// A sticker was sent (or acted out in solo): it moves to the front of 常用 next time.
-        func use(_ id: String) {
-            recent = StickerPanel.recorded(id, at: nowMs(), in: recent)
-            store?.stickerRecent = recent
-        }
-
-        /// 加入常用 / 移出常用 (nothing happens when 常用 is full).
-        func toggle(_ id: String, visible: [String]) {
-            let removing = StickerPanel.favorites(pinned: pinned, recent: [:], visible: visible).contains(id)
-            guard removing || StickerPanel.canAdd(pinned: pinned, visible: visible) else { return }
-            pinned = StickerPanel.toggled(id, pinned: pinned)
-            store?.stickerFavorites = pinned
-            toastGeneration += 1
-            let mine = toastGeneration
-            toast = removing ? "已移出常用" : "已加入常用 ★"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in
-                if self?.toastGeneration == mine { self?.toast = nil }
-            }
+    /// Sticker tiles for the library, minus what `policy` hides (kiss / hug and the like in friend mode).
+    static func choices(_ stickers: StickerCatalog, policy: ContentPolicy) -> [StickerChoice] {
+        stickers.stickers.filter { policy.allowsSticker(intimate: $0.intimate) }.map { s in
+            StickerChoice(id: s.id, label: s.label, thumbnail: stickers.url(for: s.id).flatMap(Self.firstFrame), group: s.group)
         }
     }
 
@@ -115,7 +80,7 @@ final class ComposeWindow: NSPanel {
     init(partnerName: String, stickers: StickerCatalog, partnerFocusNote: String? = nil, statusNote: String? = nil, partnerApp: String? = nil,
          history: HistorySource? = nil, tab: Tab = .compose,
          policy: ContentPolicy = .couple, solo: Bool = false, tools: ToolsPanelModel? = nil, weather: WeatherCardData = WeatherCardData(),
-         stickerStore: ConfigStore? = nil) {
+         stickerPrefs sprefs: StickerPrefsModel) {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 300, height: 240),
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         appearance = NSAppearance(named: .aqua)   // our panels are drawn light (cream / orange); keep them light in Dark Mode
@@ -128,16 +93,13 @@ final class ComposeWindow: NSPanel {
         isReleasedWhenClosed = false
 
         // v0.11: kiss / hug stickers are hidden when the policy (friend mode) does not allow intimate content.
-        let choices = stickers.stickers.filter { policy.allowsSticker(intimate: $0.intimate) }.map { s in
-            StickerChoice(id: s.id, label: s.label, thumbnail: stickers.url(for: s.id).flatMap(Self.firstFrame), group: s.group)
-        }
+        let choices = Self.choices(stickers, policy: policy)
         NSLog("[lulu] compose: %ld stickers (%@), policy %@%@", choices.count, choices.map(\.id).joined(separator: ","),
               policy.mode.rawValue, solo ? ", solo panel" : "")
         let thumbs = Dictionary(choices.compactMap { c in c.thumbnail.map { (c.id, $0) } }, uniquingKeysWith: { a, _ in a })
         let labels = Dictionary(choices.map { ($0.id, $0.label) }, uniquingKeysWith: { a, _ in a })
         let model = solo ? nil : history.map { HistoryModel(source: $0, thumbnails: thumbs, labels: labels) }
         weatherModel.data = weather
-        let sprefs = StickerPrefsModel(store: stickerStore)
         stickerPrefs = sprefs
         let view = ComposeView(
             weather: weatherModel,
@@ -244,7 +206,7 @@ private struct ComposeView: View {
     /// v0.11.2: the partner's app version when known (shown tiny next to mine).
     let partnerApp: String?
     let stickers: [ComposeWindow.StickerChoice]
-    @ObservedObject var prefs: ComposeWindow.StickerPrefsModel
+    @ObservedObject var prefs: StickerPrefsModel
     let history: HistoryModel?
     let tools: ToolsPanelModel?
     let initialTab: ComposeWindow.Tab
@@ -461,19 +423,21 @@ private struct ComposeView: View {
     private static let cellHeight: CGFloat = 66
     private static let gridSpacing: CGFloat = 6
 
-    /// v0.15: 「常用」 grid, then a「更多表情…」 row that opens the whole library by emotion (remembered while the app runs).
-
+    /// v0.15.1: 快捷栏 (8 slots the user picked), then the automatic 「常用」 grid (by how often I sent them), then a
+    /// 「更多表情…」 row that opens the whole library by emotion (remembered while the app runs).
     private var stickerGrid: some View {
         let visibleIDs = stickers.map(\.id)
-        let favIDs = StickerPanel.favorites(pinned: prefs.pinned, recent: prefs.recent, visible: visibleIDs)
+        let barIDs = StickerPanel.quickBar(stored: prefs.quickBar, visible: visibleIDs)
         let byID = Dictionary(stickers.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        let favs = favIDs.compactMap { byID[$0] }
-        let hasMore = stickers.count > favs.count
+        let freqIDs = StickerPanel.frequent(quickBar: prefs.quickBar, counts: prefs.counts, recent: prefs.recent, visible: visibleIDs)
+        let freq = freqIDs.compactMap { byID[$0] }
+        let hasMore = stickers.count > barIDs.count + freq.count
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Text("常用")
+                Text("快捷栏")
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
                     .foregroundStyle(Self.accent.opacity(0.85))
+                    .help("在 设置 →「表情」里挑 8 个最爱，也可以右键表情放进来")
                 Spacer(minLength: 0)
                 if let toast = prefs.toast {
                     Text(toast)
@@ -482,21 +446,72 @@ private struct ComposeView: View {
                         .transition(.opacity)
                 }
             }
-            if favs.isEmpty {
-                Text("还没有常用表情：右键（或长按）表情，选「加入常用」")
-                    .font(.system(size: 10, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                gridBlock(favs, visibleRows: prefs.moreExpanded && hasMore ? 2 : Self.visibleRows, favIDs: Set(favIDs))
+            quickBarRow(barIDs.compactMap { byID[$0] })
+            if !freq.isEmpty {
+                Text("常用")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Self.accent.opacity(0.85))
+                    .help("按你发过的次数自动排序")
+                    .padding(.top, 2)
+                gridBlock(freq, visibleRows: prefs.moreExpanded && hasMore ? 2 : Self.visibleRows, barIDs: Set(barIDs))
             }
             if hasMore {
                 moreToggle
-                if prefs.moreExpanded { moreSection(favIDs: Set(favIDs), canAdd: favIDs.count < StickerPanel.maxFavorites) }
+                if prefs.moreExpanded { moreSection(barIDs: Set(barIDs)) }
             }
         }
         .animation(.easeOut(duration: 0.15), value: prefs.toast)
     }
+
+    /// One row of `StickerPanel.maxQuickBar` slots; empty ones are dashed outlines.
+    private func quickBarRow(_ items: [ComposeWindow.StickerChoice]) -> some View {
+        HStack(spacing: 3) {
+            ForEach(0..<StickerPanel.maxQuickBar, id: \.self) { i in
+                if i < items.count {
+                    quickCell(items[i])
+                } else {
+                    RoundedRectangle(cornerRadius: 7)
+                        .strokeBorder(Self.accent.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                        .frame(maxWidth: .infinity, minHeight: Self.quickHeight, maxHeight: Self.quickHeight)
+                }
+            }
+        }
+    }
+
+    private static let quickHeight: CGFloat = 44
+
+    /// A compact quick-bar tile: tap = send (solo: act it out); right-click or long-press = 从快捷栏拿下.
+    private func quickCell(_ s: ComposeWindow.StickerChoice) -> some View {
+        VStack(spacing: 1) {
+            Group {
+                if let img = s.thumbnail {
+                    Image(nsImage: img).resizable().aspectRatio(contentMode: s.isWide ? .fit : .fill)
+                } else {
+                    Color.gray.opacity(0.15)
+                }
+            }
+            .frame(width: 27, height: 22)
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+            Text(s.label)
+                .font(.system(size: 8, weight: .medium, design: .rounded))
+                .foregroundStyle(Color(white: 0.3))
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+        }
+        .padding(.horizontal, 1)
+        .frame(maxWidth: .infinity, minHeight: Self.quickHeight, maxHeight: Self.quickHeight)
+        .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(0.9)))
+        .overlay(RoundedRectangle(cornerRadius: 7).stroke(Self.accent.opacity(0.3), lineWidth: 1))
+        .contentShape(Rectangle())
+        .onTapGesture { prefs.use(s.id); onSendSticker(s.id) }
+        .onLongPressGesture(minimumDuration: 0.6) { toggleQuickBar(s.id) }
+        .contextMenu { Button("从快捷栏拿下") { toggleQuickBar(s.id) } }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(s.label)
+        .accessibilityAddTraits(.isButton)
+        .help((solo ? "让它演「\(s.label)」" : "发送「\(s.label)」") + "（右键：从快捷栏拿下）")
+    }
+
 
     /// 「更多表情」 sections (StickerGroup order; anything without a known group last, as 「其他」).
     private var sections: [(title: String, items: [ComposeWindow.StickerChoice])] {
@@ -510,9 +525,9 @@ private struct ComposeView: View {
         return out
     }
 
-    private func toggleFavorite(_ id: String) {
-        prefs.toggle(id, visible: stickers.map(\.id))
-        DispatchQueue.main.async { onTabChanged(.compose) }   // 常用 may have gained / lost a row: refit the panel
+    private func toggleQuickBar(_ id: String) {
+        prefs.toggleQuickBar(id)
+        DispatchQueue.main.async { onTabChanged(.compose) }   // the grids below may have changed: refit the panel
     }
 
     private var moreToggle: some View {
@@ -536,7 +551,7 @@ private struct ComposeView: View {
     }
 
     /// The whole library by emotion inside one scroll area (a ★ marks what is already in 常用).
-    private func moreSection(favIDs: Set<String>, canAdd: Bool) -> some View {
+    private func moreSection(barIDs: Set<String>) -> some View {
         let height = 2.4 * Self.cellHeight + 2 * Self.gridSpacing + 24   // two rows + a sliver of the next + a group title
         return ScrollView(.vertical, showsIndicators: true) {
             VStack(alignment: .leading, spacing: 8) {
@@ -545,7 +560,7 @@ private struct ComposeView: View {
                         Text(section.title)
                             .font(.system(size: 10, weight: .semibold, design: .rounded))
                             .foregroundStyle(Color(white: 0.45))
-                        gridBlock(section.items, visibleRows: nil, favIDs: favIDs, markFavorites: true)
+                        gridBlock(section.items, visibleRows: nil, barIDs: barIDs, markQuickBar: true)
                     }
                 }
             }
@@ -556,11 +571,11 @@ private struct ComposeView: View {
 
     /// A 4-column grid of cells; `visibleRows` (nil = all) more rows scroll inside a fixed-height area.
     @ViewBuilder
-    private func gridBlock(_ items: [ComposeWindow.StickerChoice], visibleRows: Int?, favIDs: Set<String>, markFavorites: Bool = false) -> some View {
+    private func gridBlock(_ items: [ComposeWindow.StickerChoice], visibleRows: Int?, barIDs: Set<String>, markQuickBar: Bool = false) -> some View {
         let rows = (items.count + Self.columns - 1) / Self.columns
         let grid = LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Self.gridSpacing), count: Self.columns),
                              spacing: Self.gridSpacing) {
-            ForEach(items) { s in cell(s, isFavorite: favIDs.contains(s.id), mark: markFavorites, canAdd: favIDs.count < StickerPanel.maxFavorites) }
+            ForEach(items) { s in cell(s, onBar: barIDs.contains(s.id), mark: markQuickBar) }
         }
         if let visibleRows, rows > visibleRows {
             // When scrolling, a sliver of the next row peeks out so it's obvious there are more.
@@ -574,8 +589,8 @@ private struct ComposeView: View {
         }
     }
 
-    /// One sticker. Tap = send (solo: act it out); right-click or long-press = 加入 / 移出常用.
-    private func cell(_ s: ComposeWindow.StickerChoice, isFavorite: Bool, mark: Bool, canAdd: Bool) -> some View {
+    /// One sticker. Tap = send (solo: act it out); right-click or long-press = 放进 / 拿下快捷栏.
+    private func cell(_ s: ComposeWindow.StickerChoice, onBar: Bool, mark: Bool) -> some View {
         VStack(spacing: 2) {
             Group {
                 if let img = s.thumbnail {
@@ -588,7 +603,7 @@ private struct ComposeView: View {
             .frame(width: 50, height: 40)
             .clipShape(RoundedRectangle(cornerRadius: 7))
             .overlay(alignment: .topTrailing) {
-                if mark && isFavorite {
+                if mark && onBar {
                     Text("★").font(.system(size: 9)).foregroundStyle(Self.accent).padding(1)
                 }
             }
@@ -603,20 +618,20 @@ private struct ComposeView: View {
         .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(0.85)))
         .contentShape(Rectangle())
         .onTapGesture { prefs.use(s.id); onSendSticker(s.id) }
-        .onLongPressGesture(minimumDuration: 0.6) { toggleFavorite(s.id) }
+        .onLongPressGesture(minimumDuration: 0.6) { toggleQuickBar(s.id) }
         .contextMenu {
-            if isFavorite {
-                Button("移出常用") { toggleFavorite(s.id) }
-            } else if canAdd {
-                Button("加入常用") { toggleFavorite(s.id) }
+            if onBar {
+                Button("从快捷栏拿下") { toggleQuickBar(s.id) }
+            } else if !prefs.barIsFull {
+                Button("放进快捷栏") { toggleQuickBar(s.id) }
             } else {
-                Button("常用已满（最多 \(StickerPanel.maxFavorites) 个）") {}.disabled(true)
+                Button("快捷栏满了，先拿下一个") {}.disabled(true)
             }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(s.label)
         .accessibilityAddTraits(.isButton)
-        .help((solo ? "让它演「\(s.label)」" : "发送「\(s.label)」") + "（右键：加入 / 移出常用）")
+        .help((solo ? "让它演「\(s.label)」" : "发送「\(s.label)」") + "（右键：放进 / 拿下快捷栏）")
     }
 
     private func quickButton(_ title: String, filled: Bool, help: String, action: @escaping () -> Void) -> some View {

@@ -39,7 +39,12 @@ final class SettingsWindow: NSWindow {
         var confirmSeatMove: (PetCharacter) -> Bool = { _ in true }
         /// v0.12 「我的城市」 (applies immediately); nil hides the row.
         var city: CityAccess? = nil
+        /// v0.15.2 「表情」 page (快捷栏); nil hides the page.
+        var stickers: StickerSettingsAccess? = nil
     }
+
+    /// Hidden `--demo-settings-stickers`: open on the 表情 page (snapshots).
+    nonisolated(unsafe) static var demoStickersPage = false
 
     /// Hidden `--demo-settings-tools`: open on the 小工具 page (snapshots).
     nonisolated(unsafe) static var demoToolsPage = false
@@ -62,6 +67,7 @@ final class SettingsWindow: NSWindow {
             firstLaunch: initial?.isComplete != true,
             prefs: model,
             tools: prefs.tools.map { ToolsPrefsModel($0) },
+            stickers: prefs.stickers,
             applyMode: prefs.applyMode,
             confirmSeatMove: prefs.confirmSeatMove,
             city: prefs.city,
@@ -116,6 +122,8 @@ private struct SettingsView: View {
     @ObservedObject var prefs: ShortcutPrefsModel
     /// v0.10 小工具 page; nil = no such page.
     let tools: ToolsPrefsModel?
+    /// v0.15.2 表情 page; nil = no such page.
+    let stickers: StickerSettingsAccess?
     /// v0.11: mode / character picker changed.
     let applyMode: (AppConfig) -> Void
     /// v0.11 couple: changing 我的角色 moves the seat; false = cancelled.
@@ -127,9 +135,9 @@ private struct SettingsView: View {
     let onSave: (AppConfig) -> Void
 
     @State private var revertingCharacter = false
-    @State private var page: Page = SettingsWindow.demoToolsPage ? .tools : .general
+    @State private var page: Page = SettingsWindow.demoStickersPage ? .stickers : SettingsWindow.demoToolsPage ? .tools : .general
 
-    private enum Page { case general, tools }
+    private enum Page { case general, tools, stickers }
 
     private static let accent = Color(red: 0.91, green: 0.54, blue: 0.29)
 
@@ -138,18 +146,21 @@ private struct SettingsView: View {
     private var petName: String { draft.character.displayName }
 
     var body: some View {
-        if let tools {
+        if tools != nil || stickers != nil {
             VStack(alignment: .leading, spacing: 12) {
                 Picker("", selection: $page) {
                     Text("通用").tag(Page.general)
-                    Text("小工具").tag(Page.tools)
+                    if tools != nil { Text("小工具").tag(Page.tools) }
+                    if stickers != nil { Text("表情").tag(Page.stickers) }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .padding(.horizontal, 22)
                 .padding(.top, 16)
-                if page == .tools {
+                if page == .tools, let tools {
                     ToolsPage(model: tools)
+                } else if page == .stickers, let stickers {
+                    StickersPage(model: stickers.model, choices: stickers.choices)
                 } else {
                     generalScrolling
                 }

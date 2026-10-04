@@ -3155,7 +3155,68 @@ do {
     ps.stickerRecent = ["mwah": 1759000000000]
     check(ps.stickerFavorites == ["hug", "mwah"] && ps.stickerRecent == ["mwah": 1759000000000], "stickerFavorites / stickerRecent round trip")
     check((ps.defaults.array(forKey: "stickerFavorites") as? [String]) == ["hug", "mwah"] && (ps.defaults.dictionary(forKey: "stickerRecent") as? [String: Int64]) == ["mwah": 1759000000000], "sticker prefs wire shape")
+
+    // v0.15.1 快捷栏 + 按发送次数排的常用
+    check(ps.stickerQuickBar == nil && ps.stickerSendCounts == nil, "stickerQuickBar / stickerSendCounts default: absent")
+    ps.stickerQuickBar = ["hug", "mwah"]
+    ps.stickerSendCounts = ["hug": 3, "mwah": 1]
+    check(ps.stickerQuickBar == ["hug", "mwah"] && ps.stickerSendCounts == ["hug": 3, "mwah": 1], "stickerQuickBar / stickerSendCounts round trip")
+    check((ps.defaults.array(forKey: "stickerQuickBar") as? [String]) == ["hug", "mwah"] && (ps.defaults.dictionary(forKey: "stickerSendCounts") as? [String: Int]) == ["hug": 3, "mwah": 1], "quick bar prefs wire shape")
     ps.wipe()
+
+    // count cache built from a fixture history.jsonl (only my own sticker messages)
+    let fxDir = FileManager.default.temporaryDirectory.appendingPathComponent("lulu-stk-\(UUID().uuidString)")
+    let fx = HistoryStore(directory: fxDir)
+    var fxMsgs: [Message] = []
+    var t: Int64 = 1_000
+    func fxAdd(_ m: Message) { fxMsgs.append(m) }
+    for (id, n) in [("chigua", 5), ("xiaosi", 3), ("hug", 3), ("mwah", 1)] { for _ in 0..<n { t += 1; fxAdd(.sticker(id, from: .lulu, ts: t)) } }
+    for _ in 0..<9 { t += 1; fxAdd(.sticker("wow", from: .lumei, ts: t)) }   // TA's sends do not count
+    fxAdd(.text("hi", from: .lulu, ts: t + 1))
+    fx.merge(fxMsgs)
+    let fxCounts = StickerPanel.sendCounts(from: HistoryStore(directory: fxDir).all(), me: .lulu)
+    check(fxCounts == ["chigua": 5, "xiaosi": 3, "hug": 3, "mwah": 1], "send counts: my sticker messages only, from history.jsonl")
+    try? FileManager.default.removeItem(at: fxDir)
+
+    // ranking
+    let rankRecent: [String: Int64] = ["xiaosi": 50, "hug": 40]
+    let rk = StickerPanel.ranked(counts: fxCounts, recent: rankRecent, visible: vis)
+    check(Array(rk.prefix(4)) == ["chigua", "xiaosi", "hug", "mwah"], "ranking: count desc, ties by recency (xiaosi newer than hug)")
+    check(rk.count == 77 && Set(rk).count == 77, "ranking covers every visible sticker once")
+    check(StickerPanel.ranked(counts: [:], recent: [:], visible: vis).prefix(24).elementsEqual(StickerPanel.defaultFavorites), "ranking: no history = default original order")
+    check(StickerPanel.ranked(counts: ["hug": 2], recent: [:], visible: friendIDs).first == StickerPanel.defaultFavorites[0] && !StickerPanel.ranked(counts: ["hug": 2], recent: [:], visible: friendIDs).contains("hug"), "ranking: friend filter drops intimate even when most-sent")
+    let freq0 = StickerPanel.frequent(quickBar: [], counts: [:], recent: [:], visible: vis)
+    check(freq0.count == 16 && freq0.elementsEqual(StickerPanel.defaultFavorites.prefix(16)), "常用: new user = first 16 of the default order")
+    let freq1 = StickerPanel.frequent(quickBar: ["chigua", "missyou"], counts: fxCounts, recent: rankRecent, visible: vis)
+    check(freq1.count == 16 && !freq1.contains("chigua") && !freq1.contains("missyou") && Array(freq1.prefix(3)) == ["xiaosi", "hug", "mwah"], "常用: excludes the quick bar, max 16, most-sent first")
+    check(StickerPanel.frequent(quickBar: [], counts: fxCounts, recent: [:], visible: ["a", "b"]).count == 2, "常用: fewer stickers than 16 is fine")
+
+    // quick bar: cap / order / friend filter
+    check(StickerPanel.quickBar(stored: ids, visible: vis).count == 8, "quick bar: capped at 8")
+    check(StickerPanel.quickBar(stored: ["a", "b", "a", "gone", "c"], visible: ["a", "b", "c"]) == ["a", "b", "c"], "quick bar: order kept, duplicates and unknown ids dropped")
+    let barWithIntimate = ["missyou", "hug", "kiss", "flower", "night"]
+    check(StickerPanel.quickBar(stored: barWithIntimate, visible: friendIDs) == ["missyou", "flower", "night"] && barWithIntimate.count == 5, "quick bar: friend mode hides intimate stickers, stored list untouched")
+    check(StickerPanel.equipped("x", in: ["a", "b"], visible: ["a", "b", "x"]).list == ["a", "b", "x"], "quick bar: equip appends")
+    let full8 = ["a", "b", "c", "d", "e", "f", "g", "h"]
+    let eq = StickerPanel.equipped("x", in: full8, visible: full8 + ["x"])
+    check(eq.list == ["a", "b", "c", "d", "e", "f", "g", "x"] && eq.replaced == "h", "quick bar: full → replaces the last slot and says which")
+    check(StickerPanel.equipped("c", in: full8, visible: full8).list == full8, "quick bar: equipping a member changes nothing")
+    let eqHidden = StickerPanel.equipped("x", in: ["a", "b", "c", "d", "e", "f", "g", "hidden"], visible: ["a", "b", "c", "d", "e", "f", "g", "x"])
+    check(eqHidden.replaced == "g" && eqHidden.list.last == "hidden", "quick bar: full + hidden last slot → replaces the last slot shown")
+    check(StickerPanel.removed("b", from: ["a", "b", "c"]) == ["a", "c"], "quick bar: remove shifts left")
+    check(StickerPanel.moved("c", by: -1, in: ["a", "b", "c"], visible: ["a", "b", "c"]) == ["a", "c", "b"], "quick bar: move left")
+    check(StickerPanel.moved("a", by: -1, in: ["a", "b"], visible: ["a", "b"]) == ["a", "b"] && StickerPanel.moved("b", by: 1, in: ["a", "b"], visible: ["a", "b"]) == ["a", "b"], "quick bar: move at the edge is a no-op")
+    check(StickerPanel.moved("c", by: -1, in: ["a", "hid", "c"], visible: ["a", "c"]) == ["c", "hid", "a"], "quick bar: move skips hidden slots, hidden id keeps its place")
+    check(StickerPanel.recommended(stored: ["a"], counts: fxCounts, recent: rankRecent, visible: vis).count == 8 && StickerPanel.recommended(stored: ["a"], counts: fxCounts, recent: rankRecent, visible: vis).prefix(4).elementsEqual(["chigua", "xiaosi", "hug", "mwah"]), "按常用推荐: top 8 by sends")
+    check(StickerPanel.recommended(stored: ["hug", "missyou"], counts: fxCounts, recent: rankRecent, visible: friendIDs) == Array(StickerPanel.ranked(counts: fxCounts, recent: rankRecent, visible: friendIDs).prefix(7)) + ["hug"], "按常用推荐: a hidden stored sticker keeps its slot")
+
+    // migration seeding
+    let lib = vis
+    check(StickerPanel.seedQuickBar(favorites: nil, counts: [:], recent: [:], library: lib) == Array(StickerPanel.defaultFavorites.prefix(8)), "seed: new user, no history = first 8 of the default order")
+    check(StickerPanel.seedQuickBar(favorites: StickerPanel.defaultFavorites, counts: [:], recent: [:], library: lib) == Array(StickerPanel.defaultFavorites.prefix(8)), "seed: untouched default favorites = same as none")
+    check(StickerPanel.seedQuickBar(favorites: nil, counts: fxCounts, recent: rankRecent, library: lib) == ["chigua", "xiaosi", "hug", "mwah"] + StickerPanel.defaultFavorites.filter { !["chigua", "xiaosi", "hug", "mwah"].contains($0) }.prefix(4), "seed: most-sent first, then default order")
+    check(StickerPanel.seedQuickBar(favorites: ["heart", "gone", "cry"], counts: fxCounts, recent: rankRecent, library: lib) == ["heart", "cry", "chigua", "xiaosi", "hug", "mwah", "missyou", "kiss"], "seed: customized favorites first, then most-sent, then default order")
+    check(StickerPanel.seedQuickBar(favorites: Array(ids.reversed()), counts: [:], recent: [:], library: lib) == Array(ids.reversed().prefix(8)), "seed: many customized favorites are cut at 8")
 
     // label fallback in `text`
     let fm = Message.sticker("mwah", from: .lulu, ts: 1, label: "么么哒")
