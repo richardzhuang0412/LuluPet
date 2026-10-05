@@ -50,8 +50,22 @@ public final class FirebaseClient: Sendable {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = m.firebasePayload()
+        req.timeoutInterval = Self.sendTimeout
         let body = try await data(for: req)
         return (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["name"] as? String
+    }
+
+    /// prelaunch-A: idempotent send. Writes the message under its own (client-generated, push-style) key, so a retry
+    /// after a timeout can never create a duplicate: the second PUT just rewrites the same child. Clients that read
+    /// `orderBy="ts"` see exactly what a POST would have produced.
+    public func put(_ m: Message) async throws {
+        let key = m.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? m.id
+        var req = URLRequest(url: try Self.url(databaseURL: databaseURL, pairCode: pairCode, path: "messages/\(key)"))
+        req.httpMethod = "PUT"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = Self.sendTimeout
+        req.httpBody = m.firebasePayload()
+        _ = try await data(for: req)
     }
 
     /// Full message history of the pair (plain JSON GET, not a stream), sorted by ts.
@@ -117,8 +131,9 @@ public final class FirebaseClient: Sendable {
                     let (bytes, response) = try await session.bytes(for: req)
                     try Self.checkStatus(response)
                     var parser = SSEParser()
-                    for try await line in bytes.lines {
-                        guard let ev = parser.feed(line: line) else { continue }
+                    var splitter = SSELineSplitter()   // prelaunch-A: `bytes.lines` would also split on U+2028 / U+2029 / U+0085
+                    for try await byte in bytes {
+                        guard let line = splitter.feed(byte), let ev = parser.feed(line: line) else { continue }
                         if FirebaseDecode.isAuthRevoked(ev) { throw FirebaseError.cancelled }
                         continuation.yield(ev)
                     }
@@ -136,6 +151,8 @@ public final class FirebaseClient: Sendable {
     /// v0.8.1: heartbeat / presence reads share one loop, so a stalled request must not hold it for the
     /// 60 s URLSession default (it would delay the next heartbeat past the 75 s offline threshold).
     static let presenceTimeout: TimeInterval = 10
+    /// prelaunch-A: a message write that hangs is abandoned and retried (the PUT is idempotent).
+    static let sendTimeout: TimeInterval = 20
 
     private func data(for req: URLRequest) async throws -> Data {
         let (body, response) = try await session.data(for: req)

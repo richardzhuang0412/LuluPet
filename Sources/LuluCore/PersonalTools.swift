@@ -81,7 +81,19 @@ public struct PomodoroState: Codable, Equatable, Sendable {
         until = try? c.decodeIfPresent(TimeInterval.self, forKey: .until)
         pausedRemaining = try? c.decodeIfPresent(TimeInterval.self, forKey: .pausedRemaining)
         completedFocus = (try? c.decodeIfPresent(Int.self, forKey: .completedFocus)) ?? 0
+        // B13: a running phase with neither a deadline nor a paused remainder is corrupt (it would focus forever): idle.
+        if phase != .idle, until == nil, pausedRemaining == nil { self = .idle }
     }
+
+    /// B17: a phase that ended more than `grace` seconds ago (the app was off / the Mac slept) is moved on silently
+    /// at launch instead of celebrating it with a 「专注完成」 bubble. False while paused / idle / not yet due.
+    public func endedLongAgo(now: TimeInterval, grace: TimeInterval = PomodoroState.launchGrace) -> Bool {
+        guard phase != .idle, let until, now >= until else { return false }
+        return now - until > grace
+    }
+
+    /// How late a phase end may be and still be announced at launch.
+    public static let launchGrace: TimeInterval = 600
 
     public var isPaused: Bool { phase != .idle && until == nil && pausedRemaining != nil }
 
@@ -171,6 +183,8 @@ public struct ActiveTimeReminder: Codable, Equatable, Sendable {
 
     public static let awayThreshold: TimeInterval = 300
     public static let snoozeDelay: TimeInterval = 600
+    /// Extra time beyond `awayThreshold` between two ticks before the gap counts as sleep.
+    public static let sleepSlack: TimeInterval = 120
 
     public init(interval: TimeInterval) {
         self.interval = interval
@@ -195,9 +209,13 @@ public struct ActiveTimeReminder: Codable, Equatable, Sendable {
     /// pending until a later tick finds it unblocked.
     public mutating func tick(now: TimeInterval, idleSeconds: TimeInterval, blocked: Bool) -> Bool {
         let cap = max(120, 2 * secondsUntilNextCheck())
-        let dt = lastTick.map { min(max(0, now - $0), cap) } ?? 0
+        let gap = lastTick.map { max(0, now - $0) }
+        let dt = gap.map { min($0, cap) } ?? 0
         lastTick = now
-        if idleSeconds >= Self.awayThreshold {
+        // B2: a gap longer than the away threshold plus slack means the Mac slept (or the app was off): that time was
+        // not work, and the person was away from the computer, so the cycle starts over.
+        let slept = (gap ?? 0) > Self.awayThreshold + Self.sleepSlack
+        if idleSeconds >= Self.awayThreshold || slept {
             activeSeconds = 0
             snoozeUntil = nil
             return false
@@ -207,6 +225,17 @@ public struct ActiveTimeReminder: Codable, Equatable, Sendable {
         guard due, !blocked, !showing else { return false }
         showing = true
         return true
+    }
+
+    /// B2: called when a saved reminder is loaded at launch. The last tick is forgotten (the first tick after launch
+    /// adds nothing), and if the app was off longer than a normal check gap the cycle starts over.
+    public mutating func resume(now: TimeInterval) {
+        if let last = lastTick, now - last > Self.awayThreshold + Self.sleepSlack || now < last {
+            activeSeconds = 0
+            snoozeUntil = nil
+        }
+        lastTick = nil
+        showing = false
     }
 
     /// 「喝了 / 好的」 or the bubble was dismissed: start over.

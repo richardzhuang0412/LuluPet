@@ -48,7 +48,10 @@ public struct Message: Codable, Equatable, Sendable, Identifiable {
         }
     }
 
-    public static let maxTextLength = 500
+    /// Max text length in UTF-16 code units (the Firebase rules' `.length`), not Characters.
+    public static let maxTextLength = WireLimits.maxText
+    /// `text` cut to `maxTextLength` UTF-16 units without splitting a character.
+    public static func clampText(_ text: String) -> String { WireLimits.clipUTF16(text, max: maxTextLength) }
     /// Written as `v` on send; a message without `v` is version 1.
     public static let currentSchemaVersion = 1
     /// Shown instead of a message whose kind this version doesn't understand.
@@ -110,7 +113,7 @@ public struct Message: Codable, Equatable, Sendable, Identifiable {
         self.id = id
         self.from = from
         self.kind = kind
-        self.text = text.map { String($0.prefix(Message.maxTextLength)) }
+        self.text = text.map { Message.clampText($0) }   // prelaunch-A: UTF-16 units, like the Firebase rules
         self.stickerId = stickerId
         self.ts = ts
         self.v = v
@@ -226,12 +229,24 @@ public struct Message: Codable, Equatable, Sendable, Identifiable {
     }
 
     /// Decodes one Firebase child (`value` of `/messages/<key>`); nil if it lacks from/kind/ts.
-    public static func decode(firebaseKey key: String, value: Any) -> Message? {
+    /// prelaunch-A: partner data is untrusted — nil also for a `ts` more than a day ahead of `now` (it would
+    /// stall the unread cursor) and for a child over 4 KB; text is cut to 500 UTF-16 units and the short id-like
+    /// fields (stickerId / outfit / trip / remind / ackOf / answer) must be at most 64, else they read as absent.
+    public static func decode(firebaseKey key: String, value: Any, now: Int64 = nowMs()) -> Message? {
         guard JSONSerialization.isValidJSONObject(value),
               let json = try? JSONSerialization.data(withJSONObject: value),
-              var m = try? JSONDecoder().decode(Message.self, from: json) else { return nil }
+              json.count <= WireLimits.maxEncodedMessageBytes,
+              var m = try? JSONDecoder().decode(Message.self, from: json),
+              !WireLimits.isFuture(ts: m.ts, now: now) else { return nil }
         m.id = key
         m.localId = nil
+        if let t = m.text { m.text = Message.clampText(t) }
+        m.stickerId = WireLimits.field(m.stickerId)
+        m.outfit = WireLimits.field(m.outfit)
+        m.trip = WireLimits.field(m.trip)
+        m.remindRaw = WireLimits.field(m.remindRaw)
+        m.ackOf = WireLimits.field(m.ackOf)
+        m.answer = WireLimits.field(m.answer)
         return m
     }
 }

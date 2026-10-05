@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import LuluCore
 import LuluSync
 
@@ -28,6 +29,8 @@ final class PersonalToolsController {
     struct SettingsAccess {
         var get: () -> ToolsSettings
         var set: (ToolsSettings) -> Void
+        /// B12: fires (before the change) whenever the live settings change, from any source (menu, panel, Settings).
+        var changed: AnyPublisher<Void, Never>
     }
 
     /// The compose panel's 小工具 tab reads and edits through this (refreshed with the menu).
@@ -47,6 +50,11 @@ final class PersonalToolsController {
     /// `--demo-pomodoro`: short phases for this run (not saved).
     private var demoPomodoroConfig: PomodoroConfig?
     private var observers: [NSObjectProtocol] = []
+    /// `start` is loading the saved reminders (as opposed to a settings change reloading one).
+    private var launching = false
+    /// B17: the reminder bubble that is up per kind (its id); only that bubble's buttons act, and a second one is never queued.
+    private var liveBubble: [ReminderKind: Int] = [:]
+    private var bubbleSerial = 0
 
     // Deadlines (see `fill`).
     private var pomodoroDue: TimeInterval?
@@ -65,7 +73,8 @@ final class PersonalToolsController {
 
     var settingsAccess: SettingsAccess {
         SettingsAccess(get: { [weak self] in self?.settings ?? ToolsSettings() },
-                       set: { [weak self] in self?.apply(settings: $0) })
+                       set: { [weak self] in self?.apply(settings: $0) },
+                       changed: panel.objectWillChange.map { _ in () }.eraseToAnyPublisher())
     }
 
     init(store: PersonalToolsStore, env: Environment) {
@@ -78,6 +87,7 @@ final class PersonalToolsController {
         panel.act = { [weak self] in self?.menuAction($0) }
         panel.openSettings = { [weak self] in self?.onOpenSettings?() }
         panel.cycleLine = { [weak self] kind in self?.cycleLine(kind) }
+        panel.todayCups = { [weak self] in self?.waterLog.cups(on: Date()) ?? 0 }
         panel.update(settings: settings, pomodoro: pomodoro, cups: waterLog.cups(on: Date()))
     }
 
@@ -102,7 +112,9 @@ final class PersonalToolsController {
             MainActor.assumeIsolated { if let kind { self?.partnerReminderSnoozed(kind, ackOf: ackOf) } }
         })
 
+        launching = true
         for kind in ReminderKind.allCases { loadReminder(kind) }
+        launching = false
         if pomodoro.phase != .idle { NSLog("[lulu] tools: pomodoro restored: %@", describe(pomodoro)) }
         pomodoroStep(reason: "launch")
         refreshMenu()
@@ -185,10 +197,12 @@ final class PersonalToolsController {
 
     /// Advances the saved pomodoro (a phase may have ended, also while the Mac slept), then re-arms.
     private func pomodoroStep(reason: String) {
+        // B17: a phase that ended long ago (app off / Mac asleep) moves on silently: no 「专注完成」 hours late.
+        let stale = pomodoro.endedLongAgo(now: wall)
         let event = pomodoro.advance(now: wall, config: pomodoroConfig)
         if let event {
-            NSLog("[lulu] tools: pomodoro %@ (%@) → %@", String(describing: event), reason, describe(pomodoro))
-            phaseEnded(event)
+            NSLog("[lulu] tools: pomodoro %@ (%@%@) → %@", String(describing: event), reason, stale ? ", stale: silent" : "", describe(pomodoro))
+            if !stale { phaseEnded(event) }
         }
         commitPomodoro()
     }
@@ -300,11 +314,15 @@ final class PersonalToolsController {
         guard isEnabled(kind) else {
             reminders[kind] = nil
             reminderDue[kind] = nil
+            store.setRemindSnooze(nil, for: kind)   // B17: a switched-off reminder has no 「等会儿」 origin
             return
         }
         var r = store.reminder(kind) ?? ActiveTimeReminder(interval: interval(kind))
         r.interval = interval(kind)
-        r.showing = false
+        // B2: forget the last tick; an app that was off longer than a normal check gap starts the cycle over.
+        // (Switching the reminder on / changing its interval while running keeps the count: that isn't a launch.)
+        if launching { r.resume(now: wall) } else { r.showing = false }
+        if r.snoozeUntil == nil { store.setRemindSnooze(nil, for: kind) }
         reminders[kind] = r
         store.setReminder(r, for: kind)
         scheduleReminder(kind)
@@ -322,6 +340,7 @@ final class PersonalToolsController {
         let fire = r.tick(now: wall, idleSeconds: Self.idleSeconds(), blocked: env.blocked() || isFocusing)
         reminders[kind] = r
         store.setReminder(r, for: kind)
+        if r.snoozeUntil == nil { store.setRemindSnooze(nil, for: kind) }   // B17: away reset ends the 「等会儿」 too
         if fire { showReminder(kind) }
         scheduleReminder(kind)
         env.needsArm()
@@ -350,6 +369,14 @@ final class PersonalToolsController {
     }
 
     private func showReminder(_ kind: ReminderKind) {
+        // B17: `showing` was reset from outside while the bubble is still up: don't stack a second one (two cups).
+        if liveBubble[kind] != nil {
+            NSLog("[lulu] tools: %@ reminder already showing, not queued twice", kind.rawValue)
+            return
+        }
+        bubbleSerial += 1
+        let id = bubbleSerial
+        liveBubble[kind] = id
         let water = kind == .water
         if let pet = env.pet(), !pet.isBusy, !playToolClip(water ? .water : .stand) {
             pet.playOnce(.happy)
@@ -358,11 +385,21 @@ final class PersonalToolsController {
             header: water ? "💧 喝水" : "🧍 站立",
             content: .text(water ? "该喝水啦 💧" : "站起来动一动～"),
             message: nil,
-            buttons: [BubbleButton(title: water ? "喝了 ✓" : "好的 ✓", action: { [weak self] in self?.complied(kind) }),
-                      BubbleButton(title: "等会儿", action: { [weak self] in self?.snoozed(kind) })],
-            onClose: { [weak self] in self?.dismissed(kind) })   // clicked away: start over, no cup
+            buttons: [BubbleButton(title: water ? "喝了 ✓" : "好的 ✓", action: { [weak self] in
+                          if self?.claimBubble(kind, id) == true { self?.complied(kind) } }),
+                      BubbleButton(title: "等会儿", action: { [weak self] in
+                          if self?.claimBubble(kind, id) == true { self?.snoozed(kind) } })],
+            onClose: { [weak self] in
+                if self?.claimBubble(kind, id) == true { self?.dismissed(kind) } })   // clicked away: start over, no cup
         env.bubble.enqueueAtHome(item)
         NSLog("[lulu] tools: %@ reminder shown", kind.rawValue)
+    }
+
+    /// True once per bubble: the first button / close of the bubble that is still the live one.
+    private func claimBubble(_ kind: ReminderKind, _ id: Int) -> Bool {
+        guard liveBubble[kind] == id else { return false }
+        liveBubble[kind] = nil
+        return true
     }
 
     /// 「喝了 ✓ / 好的 ✓」.
@@ -401,6 +438,7 @@ final class PersonalToolsController {
     private func partnerReminderAccepted(_ kind: ReminderKind) {
         NSLog("[lulu] tools: partner %@ reminder accepted", kind.rawValue)
         if kind == .water { addCup() }
+        liveBubble[kind] = nil   // a local bubble still up must not count the same drink again
         store.setRemindSnooze(nil, for: kind)
         resetReminder(kind)
     }

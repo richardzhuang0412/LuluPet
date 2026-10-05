@@ -3,8 +3,9 @@ import ImageIO
 import LuluCore
 
 /// Plays a `SpriteClip` (image sequence: WebP / PNG frames) in a CALayer (v0.8: animated by Core Animation), bottom-centred in the view.
-/// Decoded frames are cached per file URL only for the clips a pet `retain`s (its current outfit), see
-/// `retain(_:owner:)`; other clips (couple clips) are decoded for one playback. The sprite can be mirrored horizontally
+/// Decoded frames are cached per file URL only for the core clips a pet `retain`s (its current outfit), see
+/// `retain(_:owner:)`; fidget / stay / extra clips come through the lazy LRU (`prefetch`); other clips (couple
+/// clips) are decoded for one playback. The sprite can be mirrored horizontally
 /// (layer transform, no duplicated frames) and lifted by `verticalOffset` (run fallback bob).
 final class SpritePlayer: NSView {
     /// Points per source pixel; the pet window sets this so the idle clip is 170 pt tall.
@@ -50,17 +51,20 @@ final class SpritePlayer: NSView {
 
     override var isFlipped: Bool { false }
 
-    /// v0.5 memory: `owner` (a pet window) now needs exactly `clips` (its current outfit). Their frames
-    /// are decoded ahead of time so playback never stutters, and frames no pet needs any more (the
-    /// previous outfit's) are dropped from the cache. With ~20 outfits only the home pet's and the
-    /// visitor's current outfits stay in memory.
+    /// v0.5 memory: `owner` (a pet window) now needs exactly `clips` (its core clips: idle / happy / react / sleep /
+    /// quiet ...). Their frames are decoded ahead of time so playback never stutters, and frames no pet needs any
+    /// more (the previous outfit's) are dropped. prelaunch-F: the rarely played clips (fidgets, stays, extras) are
+    /// not retained; they are decoded on demand (`prefetch`) into a small per-owner LRU.
     static func retain(_ clips: [SpriteClip], owner: AnyObject) {
         let mine = Set(clips.flatMap(\.frames))
         retained[ObjectIdentifier(owner)] = mine
+        lazyOrder[ObjectIdentifier(owner)] = nil   // a new outfit: the old lazy clips are not needed
+        pinned[ObjectIdentifier(owner)] = nil
         let keep = retained.values.reduce(into: Set<URL>()) { $0.formUnion($1) }
         let before = cache.count
         cache = cache.filter { keep.contains($0.key) }
         let dropped = before - cache.count
+        pruneLazy()
         for url in mine where cache[url] == nil { cache[url] = decode(url) }
         let mb = Double(cache.values.reduce(0) { $0 + $1.bytesPerRow * $1.height }) / 1_048_576
         NSLog("[lulu] frames: %ld decoded (%.0f MB), %ld released", cache.count, mb, dropped)
@@ -71,10 +75,82 @@ final class SpritePlayer: NSView {
         return CGImageSourceCreateImageAtIndex(src, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
     }
 
-    /// Cached frames of a retained clip; anything else is decoded now and not cached (the player holds
-    /// the images only while the clip plays).
+    // MARK: prelaunch-F lazy clips
+
+    /// Decoded non-core clips, keyed by the clip's first frame URL (content-addressed ids make that unique).
+    private static var lazyClips: [URL: [CGImage]] = [:]
+    /// Per owner, the lazy clips in least-recently-used order (last = newest), at most `lazyLimit` (pinned excluded).
+    private static var lazyOrder: [ObjectIdentifier: [URL]] = [:]
+    /// Per owner, one clip kept decoded until unpinned (the visitor's current `stay` pose).
+    private static var pinned: [ObjectIdentifier: URL] = [:]
+    private static var inflight: [URL: [() -> Void]] = [:]
+    static let lazyLimit = 3
+
+    private struct Decoded: @unchecked Sendable { let images: [CGImage?] }
+
+    private static func pruneLazy() {
+        var keep = Set(pinned.values)
+        for list in lazyOrder.values { keep.formUnion(list) }
+        lazyClips = lazyClips.filter { keep.contains($0.key) }
+    }
+
+    private static func touch(_ key: URL, owner: ObjectIdentifier) {
+        var list = lazyOrder[owner] ?? []
+        list.removeAll { $0 == key }
+        list.append(key)
+        let pin = pinned[owner]
+        while list.filter({ $0 != pin }).count > lazyLimit, let i = list.firstIndex(where: { $0 != pin }) { list.remove(at: i) }
+        lazyOrder[owner] = list
+        pruneLazy()
+    }
+
+    /// True when `clip` can start without decoding anything (core frames, or a decoded lazy clip).
+    static func isReady(_ clip: SpriteClip) -> Bool {
+        guard let first = clip.frames.first else { return true }
+        return lazyClips[first] != nil || clip.frames.allSatisfy { cache[$0] != nil }
+    }
+
+    /// Decodes `clip` off the main thread (reusing any frames already cached), keeps it in `owner`'s LRU (or
+    /// pinned), then calls `ready` on the main thread. Calls `ready` at once when it is decoded already.
+    static func prefetch(_ clip: SpriteClip, owner: AnyObject, pin: Bool = false, ready: (() -> Void)? = nil) {
+        let oid = ObjectIdentifier(owner)
+        guard let first = clip.frames.first else { ready?(); return }
+        if pin { pinned[oid] = first }
+        if isReady(clip) {
+            if lazyClips[first] != nil { touch(first, owner: oid) }
+            ready?()
+            return
+        }
+        let waiting = inflight[first] != nil
+        inflight[first, default: []].append { ready?() }
+        if waiting { return }
+        let urls = clip.frames
+        let known = urls.map { cache[$0] }
+        let t0 = CACurrentMediaTime()
+        DispatchQueue.global(qos: .utility).async {
+            let imgs = Decoded(images: zip(urls, known).map { $1 ?? decode($0) })
+            DispatchQueue.main.async {
+                lazyClips[first] = imgs.images.compactMap { $0 }
+                touch(first, owner: oid)
+                let waiters = inflight.removeValue(forKey: first) ?? []
+                NSLog("[lulu] lazy clip %@ decoded in %.0f ms (%ld frames)", first.deletingLastPathComponent().lastPathComponent,
+                      (CACurrentMediaTime() - t0) * 1000, urls.count)
+                waiters.forEach { $0() }
+            }
+        }
+    }
+
+    /// Lets go of `owner`'s pinned clip.
+    static func unpin(owner: AnyObject) {
+        guard pinned.removeValue(forKey: ObjectIdentifier(owner)) != nil else { return }
+        pruneLazy()
+    }
+
+    /// Frames of `clip`: retained core frames, a decoded lazy clip, else decoded now (for one playback; the
+    /// player holds the images only while the clip plays).
     private static func images(for clip: SpriteClip) -> [CGImage] {
-        clip.frames.compactMap { cache[$0] ?? decode($0) }
+        if let first = clip.frames.first, let lazy = lazyClips[first] { return lazy }
+        return clip.frames.compactMap { cache[$0] ?? decode($0) }
     }
 
     /// Plays `clip`; when `loop` is false, `completion` runs after the last frame.

@@ -24,6 +24,8 @@ struct StickersPage: View {
     var body: some View {
         let barIDs = StickerPanel.quickBar(stored: model.quickBar, visible: visible)
         let onBar = Set(barIDs)
+        // B17: slots held by stickers this mode hides (friend mode) are not free: say so instead of drawing them empty.
+        let hiddenCount = StickerPanel.hiddenOnBar(stored: model.quickBar, visible: visible)
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Text("🧸").font(.system(size: 26))
@@ -51,6 +53,12 @@ struct StickersPage: View {
                         if i < barIDs.count, let s = byID[barIDs[i]] {
                             barTile(s, index: i, count: barIDs.count)
                                 .onDrag { NSItemProvider(object: s.id as NSString) }
+                        } else if i < barIDs.count + hiddenCount {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.gray.opacity(0.12))
+                                .overlay(Text("🔒").font(.system(size: 14)))
+                                .frame(maxWidth: .infinity, minHeight: 54, maxHeight: 54)
+                                .help("这一格被朋友模式下隐藏的表情占着")
                         } else {
                             RoundedRectangle(cornerRadius: 8)
                                 .strokeBorder(Self.accent.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
@@ -68,6 +76,12 @@ struct StickersPage: View {
                         return true
                     }
                 }
+            }
+
+            if hiddenCount > 0 {
+                Text("朋友模式下隐藏了 \(hiddenCount) 个表情，它们还占着快捷栏的格子（换回情侣模式就会出现）")
+                    .font(.system(size: 11, design: .rounded)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Text(message ?? "点下面的表情装上快捷栏（也可以直接拖到某一格），再点一下拿下；拖动或 ◀ ▶ 调顺序，✕ 拿下。发过的表情会按次数自动排进传话面板的「常用」。")

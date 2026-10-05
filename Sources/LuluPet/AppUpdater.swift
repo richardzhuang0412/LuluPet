@@ -27,6 +27,7 @@ enum UpdateError: Error, LocalizedError {
 /// One download with progress; the file lands at `dest`.
 private final class DownloadJob: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
     private let dest: URL
+    private let allowLoopback: Bool
     private let onProgress: @Sendable (Double?) -> Void
     private var continuation: CheckedContinuation<Void, Error>?
     private var task: URLSessionDownloadTask?
@@ -34,12 +35,14 @@ private final class DownloadJob: NSObject, URLSessionDownloadDelegate, @unchecke
     private var moveError: Error?
     private var finished = false
 
-    init(dest: URL, onProgress: @escaping @Sendable (Double?) -> Void) {
+    init(dest: URL, allowLoopback: Bool, onProgress: @escaping @Sendable (Double?) -> Void) {
         self.dest = dest
+        self.allowLoopback = allowLoopback
         self.onProgress = onProgress
     }
 
     func run(_ url: URL, userAgent: String) async throws {
+        guard UpdateURLPolicy.isTrustedAsset(url, allowLoopback: allowLoopback) else { throw UpdateError.verification(UpdateCopy.badURL) }
         var req = URLRequest(url: url, timeoutInterval: 60)
         req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         let queue = OperationQueue()
@@ -57,6 +60,18 @@ private final class DownloadJob: NSObject, URLSessionDownloadDelegate, @unchecke
         } onCancel: { t.cancel() }
     }
 
+    /// Every redirect hop must stay on an allowed host (github.com → release-assets.githubusercontent.com today).
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        if let u = request.url, UpdateURLPolicy.isTrustedAsset(u, allowLoopback: allowLoopback) {
+            completionHandler(request)
+        } else {
+            NSLog("[lulu] update: refusing redirect to %@", request.url?.host ?? "?")
+            moveError = UpdateError.verification(UpdateCopy.badURL)
+            completionHandler(nil)   // the 3xx becomes the final response; didFinishDownloading reports moveError
+        }
+    }
+
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
                     totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         onProgress(totalBytesExpectedToWrite > 0 ? Double(totalBytesWritten) / Double(totalBytesExpectedToWrite) : nil)
@@ -64,7 +79,7 @@ private final class DownloadJob: NSObject, URLSessionDownloadDelegate, @unchecke
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         if let http = downloadTask.response as? HTTPURLResponse, http.statusCode != 200 {
-            moveError = UpdateError.badDownload("HTTP \(http.statusCode)")
+            if moveError == nil { moveError = UpdateError.badDownload("HTTP \(http.statusCode)") }
             return
         }
         do {
@@ -98,8 +113,13 @@ enum AppUpdater {
         do { (data, resp) = try await URLSession.shared.data(for: req) }
         catch { throw UpdateError.network(error.localizedDescription) }
         if let http = resp as? HTTPURLResponse, http.statusCode != 200 { throw UpdateError.network("HTTP \(http.statusCode)") }
-        guard let info = UpdateFeed.parse(data) else { throw UpdateError.badFeed }
+        guard let info = UpdateFeed.parse(data, allowLoopback: allowsLoopbackAssets(feedOverride: override)) else { throw UpdateError.badFeed }
         return info
+    }
+
+    /// A test feed on this Mac (`--update-feed http://127.0.0.1:…`) may point at assets on this Mac as well.
+    static func allowsLoopbackAssets(feedOverride: String?) -> Bool {
+        UpdateFeed.sanitizedOverride(feedOverride)?.host.map(UpdateURLPolicy.isLoopback) ?? false
     }
 
     /// A fresh scratch folder for one update attempt.
@@ -109,31 +129,49 @@ enum AppUpdater {
         return dir
     }
 
-    /// Downloads the asset to `<workDir>/LuluPet.zip`.
-    static func download(_ release: ReleaseInfo, into workDir: URL, progress: @escaping @Sendable (Double?) -> Void) async throws -> URL {
+    /// Downloads the signature (small, first: an unsigned release is refused before the big download) and the zip
+    /// to `<workDir>/LuluPet.zip.sig` / `<workDir>/LuluPet.zip`.
+    static func download(_ release: ReleaseInfo, into workDir: URL, allowLoopback: Bool,
+                         progress: @escaping @Sendable (Double?) -> Void) async throws -> (zip: URL, sig: URL) {
+        guard let sigURL = release.sigURL else { throw UpdateError.verification(UpdateCopy.badSignature) }
+        let ua = UpdateFeed.userAgent(version: AppVersionSource.current)
+        let sigDest = workDir.appendingPathComponent(UpdateFeed.sigAssetName)
+        try await DownloadJob(dest: sigDest, allowLoopback: allowLoopback, onProgress: { _ in }).run(sigURL, userAgent: ua)
         let dest = workDir.appendingPathComponent(UpdateFeed.assetName)
-        try await DownloadJob(dest: dest, onProgress: progress).run(release.assetURL, userAgent: UpdateFeed.userAgent(version: AppVersionSource.current))
-        return dest
+        try await DownloadJob(dest: dest, allowLoopback: allowLoopback, onProgress: progress).run(release.assetURL, userAgent: ua)
+        return (dest, sigDest)
     }
 
+    /// Runs a tool and collects stdout+stderr. The pipe is drained WHILE the process runs (a tool writing more than the
+    /// 64 KB pipe buffer would otherwise block forever, waiting for a reader that only starts at exit).
     private static func runTool(_ path: String, _ args: [String]) async -> (status: Int32, output: String) {
         await withCheckedContinuation { c in
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: path)
-            p.arguments = args
-            let pipe = Pipe()
-            p.standardOutput = pipe
-            p.standardError = pipe
-            p.terminationHandler = { proc in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let p = Process()
+                p.executableURL = URL(fileURLWithPath: path)
+                p.arguments = args
+                let pipe = Pipe()
+                p.standardOutput = pipe
+                p.standardError = pipe
+                do { try p.run() } catch { c.resume(returning: (-1, "\(error)")); return }
+                try? pipe.fileHandleForWriting.close()   // our copy: EOF arrives when the child exits
                 let d = pipe.fileHandleForReading.readDataToEndOfFile()
-                c.resume(returning: (proc.terminationStatus, String(decoding: d, as: UTF8.self)))
+                p.waitUntilExit()
+                c.resume(returning: (p.terminationStatus, String(decoding: d, as: UTF8.self)))
             }
-            do { try p.run() } catch { c.resume(returning: (-1, "\(error)")) }
         }
     }
 
-    /// Unzips with ditto and checks the app: bundle id, version > mine, `codesign --verify --deep --strict`.
-    static func stage(zip: URL, in workDir: URL, current: String?) async throws -> URL {
+    /// Checks the Ed25519 signature over the downloaded zip's exact bytes, THEN unzips with ditto and checks the app:
+    /// bundle id, version > mine, `codesign --verify --deep --strict`.
+    static func stage(zip: URL, sig: URL, in workDir: URL, current: String?) async throws -> URL {
+        let zipData = try Data(contentsOf: zip, options: .mappedIfSafe)
+        let sigText = try? String(contentsOf: sig, encoding: .utf8)
+        let verdict = UpdateSignature.verify(zip: zipData, signatureBase64: sigText)
+        guard verdict == .ok else {
+            NSLog("[lulu] update: signature check failed: %@", String(describing: verdict))
+            throw UpdateError.verification(UpdateCopy.badSignature)
+        }
         let out = workDir.appendingPathComponent("unzipped")
         let unzip = await runTool("/usr/bin/ditto", ["-x", "-k", zip.path, out.path])
         guard unzip.status == 0 else { throw UpdateError.verification("安装包解压失败") }
@@ -179,19 +217,5 @@ enum AppUpdater {
         } catch {
             throw UpdateError.install(error.localizedDescription)
         }
-    }
-
-    /// The launch arguments the new instance should get (a profile / test flags survive the restart; the one-shot
-    /// `--demo-update*` triggers do not).
-    static func relaunchArguments(_ all: [String]) -> [String] {
-        var out: [String] = []
-        var skipValue = false
-        for a in all.dropFirst() {
-            if skipValue { skipValue = false; if !a.hasPrefix("-") { continue } }
-            if a.hasPrefix("--demo-update") { skipValue = true; continue }
-            if a.hasPrefix("-psn_") { continue }
-            out.append(a)
-        }
-        return out
     }
 }

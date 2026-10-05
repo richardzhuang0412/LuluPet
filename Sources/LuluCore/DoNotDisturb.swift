@@ -88,7 +88,7 @@ public struct DNDStatus: Equatable, Sendable {
     /// Tolerant: needs an object; a missing / odd `mood` becomes "" (no reason), a missing `until` 0.
     public init?(json: Any?) {
         guard let d = json as? [String: Any] else { return nil }
-        mood = d["mood"] as? String ?? ""
+        mood = WireLimits.clipped(d["mood"] as? String) ?? ""   // prelaunch-A: partner data, capped
         untilMs = (d["until"] as? NSNumber)?.int64Value ?? 0
     }
 }
@@ -111,6 +111,13 @@ public struct DNDState: Equatable, Sendable {
     public func isOn(now: Double) -> Bool {
         guard let until else { return false }
         return until == 0 || now < until
+    }
+
+    /// When the housekeeping timer must fire to end a timed 勿扰: the stored end, independent of `isOn`
+    /// (once the end passes `isOn` is false, but the span still has to be closed). nil = off / until turned off.
+    public var endDeadline: Double? {
+        guard let until, until > 0 else { return nil }
+        return until
     }
 
     /// 开启 (or re-set the end time while on; the start stays).
@@ -265,11 +272,11 @@ public struct PresenceInfo: Equatable, Sendable {
                             focus: FocusStatus(json: d["focus"]),
                             character: (d["character"] as? String).flatMap(PetCharacter.init(rawValue:)),
                             mode: (d["mode"] as? String).flatMap(PairMode.init(rawValue:)),
-                            device: (d["device"] as? String).flatMap { $0.isEmpty ? nil : $0 },
-                            app: (d["app"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+                            device: WireLimits.clipped(d["device"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+                            app: WireLimits.clipped(d["app"] as? String).flatMap { $0.isEmpty ? nil : $0 },
                             place: WeatherPlace(json: d["place"]),
-                            outfit: PresenceLook.cleanOutfit(d["outfit"] as? String),
-                            pose: (d["pose"] as? String).map(PetPose.init(raw:)))
+                            outfit: PresenceLook.cleanOutfit(WireLimits.clipped(d["outfit"] as? String)),
+                            pose: WireLimits.clipped(d["pose"] as? String).map(PetPose.init(raw:)))
     }
 
     /// Body of the presence PUT (heartbeat / sign-off).

@@ -33,10 +33,12 @@ final class LocationProvider: NSObject, CLLocationManagerDelegate {
         waiting.append(completion)
         guard !inFlight else { return }
         inFlight = true
-        generation += 1
+        // B14: location services switched off system-wide never answer; don't wait for them.
+        guard CLLocationManager.locationServicesEnabled() else { finish(.failure(.denied)); return }
         switch manager.authorizationStatus {
         case .notDetermined:
             if prompt {
+                armWatchdog(after: Self.promptTimeout)   // every path has one (B14); the permission prompt gets longer
                 NSApp.activate()
                 manager.requestWhenInUseAuthorization()   // answered in locationManagerDidChangeAuthorization
             } else {
@@ -49,11 +51,21 @@ final class LocationProvider: NSObject, CLLocationManagerDelegate {
         }
     }
 
+    private static let fixTimeout: TimeInterval = 60
+    private static let promptTimeout: TimeInterval = 180
+
     private func requestFix() {
+        armWatchdog(after: Self.fixTimeout)
         manager.requestLocation()
+    }
+
+    /// Watchdog: a request that never answers must not leave 「正在定位…」 up (and block the next request) forever.
+    /// Re-arming (a new phase of the same request) invalidates the previous watchdog.
+    private func armWatchdog(after seconds: TimeInterval) {
+        generation += 1
         let g = generation
-        Task { @MainActor [weak self] in   // watchdog: a request that never answers must not block the next one
-            try? await Task.sleep(nanoseconds: 60_000_000_000)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             if let self, self.inFlight, self.generation == g { self.finish(.failure(.unavailable)) }
         }
     }
@@ -61,6 +73,7 @@ final class LocationProvider: NSObject, CLLocationManagerDelegate {
     private func finish(_ result: Result<CLLocation, LocationFailure>) {
         guard inFlight else { return }
         inFlight = false
+        generation += 1   // retires the watchdog
         let done = waiting
         waiting = []
         done.forEach { $0(result) }

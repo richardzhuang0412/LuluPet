@@ -7,6 +7,10 @@
 #                 CHANGELOG.md / README「最近更新」 from assets/changelog.json, like a real run).
 #   --no-install  skip installing into /Applications (still builds, commits and publishes).
 #
+# Signing: dist/LuluPet.zip is signed (Ed25519) by scripts/update_signing_key.sh and uploaded as LuluPet.zip.sig; the app
+# refuses unsigned updates. Needs the private key (~/.config/lulupet/update_signing_key) and a real public key in
+# Sources/LuluCore/UpdateKey.swift (both from `scripts/update_signing_key.sh init`); refuses to run without them.
+#
 # Before running: bump VERSION, add the x.y.z entry at the top of assets/changelog.json (copied to
 # Resources/changelog.json) and sync the docs (scripts/check_docs_sync.sh; see docs/DOCS_SYNC.md).
 # CHANGELOG.md and README.md's 「最近更新」 block are regenerated from the changelog here (tools/gen_changelog.py).
@@ -64,6 +68,15 @@ preflight() {
   ok "CHANGELOG.md / README「最近更新」已按 changelog 生成 / regenerated"
 
   scripts/check_docs_sync.sh "$VER" || die "先同步文档再发版 / sync the docs first"
+
+  # Signed updates: the build must carry a real public key and I must hold the matching private key.
+  grep -q 'UPDATE-KEY-PLACEHOLDER' Sources/LuluCore/UpdateKey.swift \
+    && die "Sources/LuluCore/UpdateKey.swift 还是占位公钥，先运行 scripts/update_signing_key.sh init / placeholder update key — run scripts/update_signing_key.sh init first"
+  local want have
+  want="$(sed -n 's/.*publicKeyBase64 = "\(.*\)".*/\1/p' Sources/LuluCore/UpdateKey.swift)"
+  have="$(scripts/update_signing_key.sh pubkey 2>/dev/null)" || die "没有更新签名私钥 / no update signing key — run scripts/update_signing_key.sh init"
+  [[ -n "$want" && "$want" == "$have" ]] || die "UpdateKey.swift 的公钥和本机私钥不匹配 / compiled public key does not match the local private key"
+  ok "更新签名密钥就绪 / update signing key ready"
 
   local branch; branch="$(git rev-parse --abbrev-ref HEAD)"
   if [[ "$branch" != "master" ]]; then
@@ -164,6 +177,15 @@ build() {
   ok "dist/LuluPet.app + dist/LuluPet.zip，签名有效 / signature valid"
 }
 
+# Signs dist/LuluPet.zip → dist/LuluPet.zip.sig and checks it against the public key compiled into the build.
+sign_zip() {
+  step "签名更新包 / Sign dist/LuluPet.zip"
+  grep -q 'UPDATE-KEY-PLACEHOLDER' Sources/LuluCore/UpdateKey.swift && die "占位公钥 / placeholder update key"
+  scripts/update_signing_key.sh sign dist/LuluPet.zip > dist/LuluPet.zip.sig || die "签名失败 / signing failed"
+  scripts/update_signing_key.sh verify dist/LuluPet.zip dist/LuluPet.zip.sig || die "签名和编进 App 的公钥对不上 / signature does not verify against the compiled-in key"
+  ok "dist/LuluPet.zip.sig（Ed25519，已用 App 里的公钥验证）/ signed and verified"
+}
+
 # ---------------------------------------------------------------- install
 snapshot_user_data() {   # prints the four values that must survive the install
   local lines=missing
@@ -234,6 +256,11 @@ import json, sys
 for e in json.load(open("assets/changelog.json", encoding="utf-8")):
     if e["version"] == sys.argv[1]:
         print("\n".join("- " + it for it in e["items"]))
+        # Install footer (first-time installers land on this page): keep in sync with .claude/skills/release/SKILL.md.
+        print("\n---\n第一次安装？先把 LuluPet 拖进「应用程序」，再按 "
+              "[README「安装」第 3 步](https://github.com/richardzhuang0412/LuluPet#安装3-步)放行"
+              "（macOS 15 / 26：系统设置 → 隐私与安全性 → 仍要打开）。"
+              "Apple 芯片（M1 及以后）、macOS 14+，约 190 MB。")
 PY
 }
 
@@ -257,9 +284,11 @@ publish_github() {
 
   local notes; notes="$(release_notes)"
   mkdir -p "$TMP/asset"
-  cp dist/LuluPet.zip "$TMP/asset/LuluPet.zip"   # the in-app updater downloads the asset named LuluPet.zip
-  gh release create "v$VER" --repo "$REPO" --target main --title "v$VER" --notes "$notes" "$TMP/asset/LuluPet.zip"
-  ok "GitHub release v$VER（附件 LuluPet.zip）"
+  cp dist/LuluPet.zip "$TMP/asset/LuluPet.zip"   # the in-app updater downloads the asset named LuluPet.zip …
+  cp dist/LuluPet.zip.sig "$TMP/asset/LuluPet.zip.sig"   # … and checks the signature in LuluPet.zip.sig
+  scripts/update_signing_key.sh verify "$TMP/asset/LuluPet.zip" "$TMP/asset/LuluPet.zip.sig" || die "上传前签名校验失败 / signature check failed before upload"
+  gh release create "v$VER" --repo "$REPO" --target main --title "v$VER" --notes "$notes" "$TMP/asset/LuluPet.zip" "$TMP/asset/LuluPet.zip.sig"
+  ok "GitHub release v$VER（附件 LuluPet.zip + LuluPet.zip.sig）"
 }
 
 # ---------------------------------------------------------------- main
@@ -275,6 +304,7 @@ if [[ $DRY == 1 ]]; then
 fi
 
 build
+sign_zip
 if [[ $INSTALL == 1 ]]; then install_local; else warn "跳过本机安装 / --no-install: not installing"; fi
 commit_master
 publish_github

@@ -157,6 +157,17 @@ struct PairingFields: View {
     }
 }
 
+/// 「还没有数据库？」 with a clickable link to the illustrated setup guide (Welcome step 4 and Settings 通用).
+struct FirebaseGuideNote: View {
+    static let guideURL = "https://github.com/richardzhuang0412/LuluPet/blob/main/docs/firebase-setup.md"
+
+    var body: some View {
+        Text("还没有数据库？按照[图文步骤](https://github.com/richardzhuang0412/LuluPet/blob/main/docs/firebase-setup.md)创建一个，大约 10 分钟。")
+            .font(.system(size: 11, design: .rounded)).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
 /// First launch (no usable config, no mode yet): 一个人 / 情侣 / 朋友 → which character → (paired modes) the
 /// pairing fields. Calls `onFinish` with the finished config; closing the window without finishing leaves the
 /// app without a pet (the menu 设置… still works).
@@ -180,8 +191,9 @@ final class WelcomeWindow: NSWindow {
         let portraits = Dictionary(uniqueKeysWithValues: PetCharacter.allCases.map { c in
             (c, Self.portrait(sprites, c))
         })
-        let view = WelcomeView(draft: draft, portraits: portraits, citySearch: citySearch, onFinish: { [weak self] cfg, place in
+        let view = WelcomeView(draft: draft, portraits: portraits, citySearch: citySearch, onFinish: { [weak self] cfg, place, launchAtLogin in
             if let place { self?.onPlaceChosen?(place) }
+            if launchAtLogin { LoginItem.set(true) }   // v0.16: the final step's 开机自动打开 checkbox (no-op in test instances)
             self?.onFinish?(cfg)
             self?.close()
         })
@@ -216,8 +228,9 @@ private struct WelcomeView: View {
     @ObservedObject var draft: PairingDraft
     let portraits: [PetCharacter: NSImage?]
     let citySearch: CitySearch
-    let onFinish: (AppConfig, WeatherPlace?) -> Void
+    let onFinish: (AppConfig, WeatherPlace?, Bool) -> Void
 
+    @State private var launchAtLogin = true   // v0.16: offered (checked) on the final step
     @State private var step: Int = WelcomeWindow.demoStep ?? 1   // 1 mode, 2 character, 3 city (v0.12), 4 pairing
     @State private var place: WeatherPlace?
 
@@ -225,7 +238,7 @@ private struct WelcomeView: View {
     private static let cream = Color(red: 1.0, green: 0.97, blue: 0.93)
 
     init(draft: PairingDraft, portraits: [PetCharacter: NSImage?], citySearch: @escaping CitySearch,
-         onFinish: @escaping (AppConfig, WeatherPlace?) -> Void) {
+         onFinish: @escaping (AppConfig, WeatherPlace?, Bool) -> Void) {
         self.draft = draft
         self.portraits = portraits
         self.citySearch = citySearch
@@ -261,7 +274,7 @@ private struct WelcomeView: View {
         switch step {
         case 1: return "你想怎么用？之后可以在设置里随时改"
         case 2: return draft.mode == .solo ? "选一只陪着你的宠物" : "选你桌面上住的角色"
-        case 3: return "天气会显示在小组件和传话面板上，可以跳过"
+        case 3: return "用来显示天气，宠物也会跟着天气换样子；可以跳过"
         default: return draft.mode == .friend ? "和朋友连上：一个人生成配对码，另一个人粘贴" : "和对象连上：填上一样的配对码和数据库地址"
         }
     }
@@ -346,15 +359,25 @@ private struct WelcomeView: View {
                                      : "之后可以在设置里改。")
                 .font(.system(size: 11, design: .rounded)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            if !draft.mode.isPaired { launchToggle }
             HStack {
                 Button("返回") { step = 2 }
                 Spacer()
-                Button(place == nil ? "跳过" : draft.mode.isPaired ? "下一步" : "开始") {
-                    if draft.mode.isPaired { step = 4 } else { onFinish(draft.config, place) }
+                // Solo: this is the last step, so it is always 开始 (not 跳过, which reads as "skip the whole setup").
+                Button(draft.mode.isPaired ? (place == nil ? "跳过" : "下一步") : "开始") {
+                    if draft.mode.isPaired { step = 4 } else { onFinish(draft.config, place, launchAtLogin) }
                 }
                 .keyboardShortcut(.defaultAction)
             }
         }
+    }
+
+    /// v0.16: the final step offers 开机自动打开 (checked); `LoginItem.set` runs when 开始 is pressed.
+    private var launchToggle: some View {
+        Toggle(isOn: $launchAtLogin) {
+            Text("开机自动打开（推荐）").font(.system(size: 12, design: .rounded))
+        }
+        .toggleStyle(.checkbox)
     }
 
     // MARK: 4 pairing (couple / friend)
@@ -362,13 +385,12 @@ private struct WelcomeView: View {
     private var pairStep: some View {
         VStack(alignment: .leading, spacing: 16) {
             PairingFields(draft: draft)
-            Text("还没有数据库？按照 docs/firebase-setup.md 里的步骤创建一个（大约 5 分钟）。")
-                .font(.system(size: 11, design: .rounded)).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            FirebaseGuideNote()
+            launchToggle
             HStack {
                 Button("返回") { step = 3 }
                 Spacer()
-                Button("开始") { onFinish(draft.config, place) }
+                Button("开始") { onFinish(draft.config, place, launchAtLogin) }
                     .keyboardShortcut(.defaultAction)
                     .disabled(!draft.config.isComplete)
             }

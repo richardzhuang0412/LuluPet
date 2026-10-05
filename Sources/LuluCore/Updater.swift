@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// v0.14 one-click updater: the pure rules (release JSON, "is it newer", daily check, skip, install location,
@@ -9,30 +10,39 @@ public struct ReleaseInfo: Equatable, Sendable {
     public var tag: String
     /// The `LuluPet.zip` asset's `browser_download_url`.
     public var assetURL: URL
+    /// The `LuluPet.zip.sig` asset (base64 Ed25519 signature of the zip bytes); nil = the release is unsigned.
+    public var sigURL: URL?
     /// The release notes (markdown body, may be empty).
     public var notes: String
     /// The release's web page (for the manual-update fallback); nil if the feed did not carry one.
     public var pageURL: URL?
 
-    public init(version: AppVersion, tag: String, assetURL: URL, notes: String, pageURL: URL? = nil) {
+    public init(version: AppVersion, tag: String, assetURL: URL, notes: String, pageURL: URL? = nil, sigURL: URL? = nil) {
         self.version = version; self.tag = tag; self.assetURL = assetURL; self.notes = notes; self.pageURL = pageURL
+        self.sigURL = sigURL
     }
 }
 
 public enum UpdateFeed {
     public static let repo = "richardzhuang0412/LuluPet"
     public static let assetName = "LuluPet.zip"
+    public static let sigAssetName = "LuluPet.zip.sig"
     public static let bundleID = "com.lulupet.app"
     /// The page to send people to when the app can not update itself.
     public static let releasesPage = URL(string: "https://github.com/\(repo)/releases/latest")!
 
+    /// The hidden `--update-feed <url>` is accepted only as https, or http to this Mac (127.0.0.1 / localhost / ::1);
+    /// anything else (plain http to a remote host, file:, junk) → nil.
+    public static func sanitizedOverride(_ s: String?) -> URL? {
+        guard let s = s?.trimmingCharacters(in: .whitespaces), !s.isEmpty, let u = URL(string: s),
+              let scheme = u.scheme?.lowercased(), let host = u.host, !host.isEmpty else { return nil }
+        if scheme == "https" { return u }
+        return scheme == "http" && UpdateURLPolicy.isLoopback(host) ? u : nil
+    }
+
     /// `override` (the hidden `--update-feed <url>`) is used as the whole feed URL; invalid / empty → the GitHub API.
     public static func latestURL(override: String? = nil) -> URL {
-        if let s = override?.trimmingCharacters(in: .whitespaces), !s.isEmpty,
-           let u = URL(string: s), let scheme = u.scheme?.lowercased(), scheme == "http" || scheme == "https", u.host != nil {
-            return u
-        }
-        return URL(string: "https://api.github.com/repos/\(repo)/releases/latest")!
+        sanitizedOverride(override) ?? URL(string: "https://api.github.com/repos/\(repo)/releases/latest")!
     }
 
     public static func userAgent(version: String?) -> String { "LuluPet/\(version ?? "dev")" }
@@ -44,16 +54,64 @@ public enum UpdateFeed {
 
     /// `tag_name` "v0.14.0" / "0.14.0" (and a missing / unparseable tag, a draft, a prerelease, or no `LuluPet.zip`
     /// asset) → nil. The asset is looked up by name, not by position.
-    public static func parse(_ data: Data) -> ReleaseInfo? {
+    public static func parse(_ data: Data, allowLoopback: Bool = false) -> ReleaseInfo? {
         guard let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let tag = obj["tag_name"] as? String, let version = AppVersion(tag) else { return nil }
         if (obj["draft"] as? Bool) == true || (obj["prerelease"] as? Bool) == true { return nil }
         let assets = (obj["assets"] as? [[String: Any]]) ?? []
         guard let asset = assets.first(where: { ($0["name"] as? String) == assetName }),
               let urlString = asset["browser_download_url"] as? String, let url = URL(string: urlString),
-              let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return nil }
-        let page = (obj["html_url"] as? String).flatMap(URL.init(string:))
-        return ReleaseInfo(version: version, tag: tag, assetURL: url, notes: (obj["body"] as? String) ?? "", pageURL: page)
+              UpdateURLPolicy.isTrustedAsset(url, allowLoopback: allowLoopback) else { return nil }
+        // The signature asset is optional here (an unsigned release is refused at install time, with a reason).
+        let sig = assets.first(where: { ($0["name"] as? String) == sigAssetName })
+            .flatMap { $0["browser_download_url"] as? String }.flatMap(URL.init(string:))
+            .flatMap { UpdateURLPolicy.isTrustedAsset($0, allowLoopback: allowLoopback) ? $0 : nil }
+        // The page is only ever opened in the browser: https on github.com or nothing (→ the fixed releases page).
+        let page = (obj["html_url"] as? String).flatMap(URL.init(string:)).flatMap { UpdateURLPolicy.isTrustedPage($0) ? $0 : nil }
+        return ReleaseInfo(version: version, tag: tag, assetURL: url, notes: (obj["body"] as? String) ?? "", pageURL: page, sigURL: sig)
+    }
+}
+
+/// Where release files and pages may come from.
+public enum UpdateURLPolicy {
+    /// What GitHub serves release downloads from: github.com redirects to release-assets.githubusercontent.com
+    /// (objects.githubusercontent.com is the older host and is still allowed).
+    public static let assetHosts: Set<String> = ["github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"]
+
+    public static func isLoopback(_ host: String) -> Bool {
+        ["127.0.0.1", "localhost", "::1", "[::1]"].contains(host.lowercased())
+    }
+
+    /// https on an allowed GitHub host; with `allowLoopback` (a test feed on this Mac) also http(s) to loopback.
+    public static func isTrustedAsset(_ url: URL, allowLoopback: Bool = false) -> Bool {
+        guard let scheme = url.scheme?.lowercased(), let host = url.host?.lowercased() else { return false }
+        if scheme == "https" && assetHosts.contains(host) { return true }
+        return allowLoopback && (scheme == "http" || scheme == "https") && isLoopback(host)
+    }
+
+    /// The release web page we open in the browser: https on github.com.
+    public static func isTrustedPage(_ url: URL) -> Bool {
+        url.scheme?.lowercased() == "https" && url.host?.lowercased() == "github.com"
+    }
+}
+
+/// Ed25519 check of a downloaded zip against the compiled-in public key. Fails closed: no usable key, no
+/// signature or a bad one → not `.ok`.
+public enum UpdateSignature {
+    public enum Result: Equatable, Sendable {
+        case ok
+        case noKey       // the build has the placeholder / a malformed key: nothing can verify
+        case missing     // the release has no signature
+        case malformed   // the signature is not base64 of 64 bytes
+        case mismatch    // does not verify (tampered zip, wrong key)
+    }
+
+    public static func verify(zip: Data, signatureBase64: String?, publicKeyBase64: String = UpdateKey.publicKeyBase64) -> Result {
+        guard let keyData = Data(base64Encoded: publicKeyBase64.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let key = try? Curve25519.Signing.PublicKey(rawRepresentation: keyData) else { return .noKey }
+        guard let text = signatureBase64?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return .missing }
+        guard let sig = Data(base64Encoded: text), sig.count == 64 else { return .malformed }
+        return key.isValidSignature(sig, for: zip) ? .ok : .mismatch
     }
 }
 
@@ -118,7 +176,8 @@ public enum UpdateInstaller {
     /// Single-quote for /bin/sh.
     public static func shQuote(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
 
-    /// Waits (at most ~2 min) for `pid` to exit, copies `newApp` next to `target` as `<target>.new`, swaps it in
+    /// Waits (at most ~2 min) for `pid` to exit (if it is still alive after that, aborts and leaves the old app
+    /// alone: nothing is replaced, the staging folder is removed), copies `newApp` next to `target` as `<target>.new`, swaps it in
     /// (the old one is kept as `<target>.old` until the swap worked and restored if it did not), clears quarantine,
     /// removes the staging folder and relaunches with `args`. Nothing here touches UserDefaults / Application Support.
     public static func script(pid: Int32, newApp: String, target: String, workDir: String, relaunchArgs: [String]) -> String {
@@ -129,6 +188,9 @@ public enum UpdateInstaller {
         # LuluPet updater helper (generated). Runs detached after the app quits.
         i=0
         while kill -0 \(pid) 2>/dev/null && [ $i -lt 400 ]; do sleep 0.3; i=$((i+1)); done
+        if kill -0 \(pid) 2>/dev/null; then
+          echo "old app (pid \(pid)) still running after the wait, leaving it alone"; rm -rf \(shQuote(workDir)); exit 1
+        fi
         sleep 0.5
         rm -rf \(n) \(o)
         if ! /usr/bin/ditto \(shQuote(newApp)) \(n); then
@@ -150,6 +212,24 @@ public enum UpdateInstaller {
     }
 }
 
+extension UpdateInstaller {
+    /// The launch arguments the new instance should get: a profile / test flags survive the restart, but every
+    /// `--update-*` (feed, allow-dir, auto-confirm) and one-shot `--demo-update*` flag is dropped, so a test feed
+    /// never outlives the instance it was given to.
+    public static func relaunchArguments(_ all: [String]) -> [String] {
+        var out: [String] = []
+        var skipValue = false
+        for a in all.dropFirst() {
+            if skipValue { skipValue = false; if !a.hasPrefix("-") { continue } }
+            if a == "--update-auto-confirm" { continue }                       // bare flag, takes no value
+            if a.hasPrefix("--update-") || a.hasPrefix("--demo-update") { skipValue = true; continue }
+            if a.hasPrefix("-psn_") { continue }
+            out.append(a)
+        }
+        return out
+    }
+}
+
 /// Chinese UI strings of the updater (kept here so they are covered by tests).
 public enum UpdateCopy {
     public static func upToDate(_ v: String?) -> String { "已经是最新版\(v.map { " v\($0)" } ?? "")" }
@@ -160,6 +240,9 @@ public enum UpdateCopy {
         return "正在下载… \(Int((min(max(f, 0), 1) * 100).rounded()))%"
     }
     public static let verifying = "正在检查新版本…"
+    /// Unsigned release, bad / missing signature, or a build without a signing key: refuse.
+    public static let badSignature = "更新包签名不对，已取消（为了安全）"
+    public static let badURL = "更新地址不在 GitHub 上，已取消（为了安全）"
     public static let installing = "正在安装，马上重启…"
     public static let checkFailed = "检查更新失败了，稍后再试试吧"
     /// The releases feed answered 404: the GitHub repo isn't public (yet) or has no release.

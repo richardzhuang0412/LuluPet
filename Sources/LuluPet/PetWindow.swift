@@ -187,6 +187,7 @@ final class PetWindow: NSPanel {
         stays = catalog.namedClips(character, outfit: outfit, list: .stay)
         extras = catalog.namedClips(character, outfit: outfit, list: .clips)
         lastFidget = nil
+        queuedFidget = nil
         weatherClips = Dictionary(uniqueKeysWithValues: WeatherLook.allCases.compactMap { look in
             let list = catalog.weatherNamedClips(for: character, look: look)
             return list.isEmpty ? nil : (look, list)
@@ -199,8 +200,9 @@ final class PetWindow: NSPanel {
                                                : catalog.exactClip(character, outfit: outfit, action: a)
             if let c = clip { clips[a] = c }
         }
-        // Keep only this outfit's frames decoded (the previous outfit's are released).
-        SpritePlayer.retain(Array(clips.values) + (fidgets + stays + extras).map(\.clip), owner: self)
+        // Keep only this outfit's core clips decoded (the previous outfit's are released); fidgets / stays / extras
+        // are decoded on demand (prelaunch-F, SpritePlayer.prefetch).
+        SpritePlayer.retain(Array(clips.values), owner: self)
         guard let (size, scale) = fittedLayout() else { return }
         player.pointScale = scale
 
@@ -218,6 +220,7 @@ final class PetWindow: NSPanel {
         if isSleeping || isDozing { refreshSleepIndicator() }
         layoutMoodSign()
         layoutCountdown()
+        if !isVisitor { primeNextFidget(weather: nil, extra: []) }
     }
 
     /// Window size and points-per-pixel for the current outfit at `petScale` (idle = 170 pt x scale),
@@ -476,11 +479,48 @@ final class PetWindow: NSPanel {
         playClipOnce(clip, completion: completion)
     }
 
+    /// Bumped by everything that starts or changes what the player shows; a lazily decoded clip that finishes
+    /// decoding after that is dropped (prelaunch-F).
+    private var playToken = 0
+
     private func playClipOnce(_ clip: SpriteClip, completion: (() -> Void)?) {
+        playToken += 1
+        guard !SpritePlayer.isReady(clip) else { startClipOnce(clip, completion: completion); return }
+        // Not decoded yet (a fidget / extra that was not prefetched): decode off-main, play when ready (≈ tens of ms).
+        let token = playToken, t0 = CACurrentMediaTime()
+        SpritePlayer.prefetch(clip, owner: self) { [weak self] in
+            guard let self, token == self.playToken, !self.isRunning, self.coupleRestore == nil else { return }
+            NSLog("[lulu] lazy clip %@: not ready at play time, started %.0f ms late", clip.frames.first?.deletingLastPathComponent().lastPathComponent ?? "?",
+                  (CACurrentMediaTime() - t0) * 1000)
+            self.startClipOnce(clip, completion: completion)
+        }
+    }
+
+    private func startClipOnce(_ clip: SpriteClip, completion: (() -> Void)?) {
         player.play(clip, loop: false) { [weak self] in
             self?.returnToRest()
             completion?()
         }
+    }
+
+    // MARK: Lazy fidget prefetch (prelaunch-F)
+
+    /// The next random fidget, picked ahead (for `queuedFidget.look`) so its frames are decoded before it plays.
+    private var queuedFidget: (look: WeatherLook?, choice: WeatherPlan.FidgetChoice)?
+
+    private func fidgetClip(_ c: WeatherPlan.FidgetChoice, weather: [NamedClip]) -> NamedClip {
+        switch c {
+        case .plain(let i): return fidgets[i]
+        case .weather(let i): return weather[i]
+        }
+    }
+
+    /// Picks the following fidget now and decodes it in the background.
+    private func primeNextFidget(weather look: WeatherLook?, extra: [NamedClip]) {
+        guard let c = WeatherPlan.pickFidget(plain: fidgets.count, weather: extra.count, lastPlain: lastFidget, lastWeather: lastWeatherFidget,
+                                             roll: { Int.random(in: 0..<$0) }) else { queuedFidget = nil; return }
+        queuedFidget = (look, c)
+        SpritePlayer.prefetch(fidgetClip(c, weather: extra).clip, owner: self)
     }
 
     /// Whether this outfit has its own clip for `action` (else a fallback is used).
@@ -500,6 +540,21 @@ final class PetWindow: NSPanel {
     /// Loops the rest pose (idle or the visitor's stay pose); v0.8: quiet and doze are held still (frame 0
     /// of the `quiet` clip / of the eyes-closed `sleep` clip), so nothing is drawn while the pet rests.
     private func returnToRest() {
+        playToken += 1
+        if case .stay(let name) = rest, let c = stays.first(where: { $0.name == name })?.clip {
+            // The visitor's stay pose is kept decoded while it is the rest pose (decoded now if need be).
+            if !SpritePlayer.isReady(c) {
+                if let idle = clips[.idle] { player.idle(idle) }   // meanwhile
+                SpritePlayer.prefetch(c, owner: self, pin: true) { [weak self] in
+                    guard let self, self.rest == .stay(name), !self.isBusy else { return }
+                    self.returnToRest()
+                }
+                return
+            }
+            SpritePlayer.prefetch(c, owner: self, pin: true)
+        } else {
+            SpritePlayer.unpin(owner: self)
+        }
         if let c = restClip { player.idle(c, still: rest == .quiet || rest == .sleep) }
     }
 
@@ -580,19 +635,26 @@ final class PetWindow: NSPanel {
     func playFidget(weather: WeatherLook? = nil) -> String? {
         lastFidgetWasWeather = false
         let extra = weather.flatMap { weatherClips[$0] } ?? []
-        switch WeatherPlan.pickFidget(plain: fidgets.count, weather: extra.count, lastPlain: lastFidget, lastWeather: lastWeatherFidget,
-                                      roll: { Int.random(in: 0..<$0) }) {
+        let picked: WeatherPlan.FidgetChoice?
+        if let q = queuedFidget, q.look == weather { picked = q.choice }   // the one decoded ahead
+        else { picked = WeatherPlan.pickFidget(plain: fidgets.count, weather: extra.count, lastPlain: lastFidget, lastWeather: lastWeatherFidget,
+                                               roll: { Int.random(in: 0..<$0) }) }
+        queuedFidget = nil
+        let name: String
+        switch picked {
         case nil: return nil
         case .plain(let i)?:
             lastFidget = i
             playClipOnce(fidgets[i].clip, completion: nil)
-            return fidgets[i].name
+            name = fidgets[i].name
         case .weather(let i)?:
             lastWeatherFidget = i
             lastFidgetWasWeather = true
             playClipOnce(extra[i].clip, completion: nil)
-            return extra[i].name
+            name = extra[i].name
         }
+        if !isVisitor { primeNextFidget(weather: weather, extra: extra) }
+        return name
     }
 
     /// The last `playFidget` picked a weather clip.
@@ -656,6 +718,7 @@ final class PetWindow: NSPanel {
         let startX = frame.minX, y = frame.minY
         let duration = max(0.05, VisitGeometry.runDuration(targetX - startX, speed: speed))
         let runClip = clips[.run]
+        playToken += 1
         if let clip = runClip ?? clips[.idle] { player.play(clip, loop: true, completion: nil) }
         player.mirrored = runClip != nil && targetX < startX
         let start = CACurrentMediaTime()
@@ -720,6 +783,7 @@ final class PetWindow: NSPanel {
             self.coupleRestore = nil
             self.applyPendingScale()
         }
+        playToken += 1
         player.play(clip, loop: false) { [weak self] in
             self?.coupleRestore?()
             self?.coupleRestore = nil

@@ -68,8 +68,12 @@ public struct WeatherPlace: Codable, Equatable, Sendable {
     public var longitude: Double
     /// IANA time zone id ("America/Los_Angeles").
     public var timezone: String
+    /// S5: an auto-located place keeps its (2-decimal) coordinates here for the weather, but is PUBLISHED at one
+    /// decimal (about 11 km): the partner only needs the city. Not part of the published JSON; manual cities: false.
+    public var coarsePublished = false
 
-    public init(name: String, admin: String?, country: String?, latitude: Double, longitude: Double, timezone: String) {
+    public init(name: String, admin: String?, country: String?, latitude: Double, longitude: Double, timezone: String, coarsePublished: Bool = false) {
+        self.coarsePublished = coarsePublished
         self.name = name
         self.admin = admin
         self.country = country
@@ -78,7 +82,7 @@ public struct WeatherPlace: Codable, Equatable, Sendable {
         self.timezone = timezone
     }
 
-    private enum CodingKeys: String, CodingKey { case name, admin, country, latitude, longitude, timezone }
+    private enum CodingKeys: String, CodingKey { case name, admin, country, latitude, longitude, timezone, coarsePublished }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -87,10 +91,12 @@ public struct WeatherPlace: Codable, Equatable, Sendable {
                   country: try c.decodeIfPresent(String.self, forKey: .country),
                   latitude: try c.decode(Double.self, forKey: .latitude),
                   longitude: try c.decode(Double.self, forKey: .longitude),
-                  timezone: try c.decode(String.self, forKey: .timezone))
+                  timezone: try c.decode(String.self, forKey: .timezone),
+                  coarsePublished: (try? c.decodeIfPresent(Bool.self, forKey: .coarsePublished)) ?? false)
     }
 
     static func round2(_ v: Double) -> Double { (v * 100).rounded() / 100 }
+    static func round1(_ v: Double) -> Double { (v * 10).rounded() / 10 }
 
     /// "加利福尼亚 · 美国" (the province / state when it differs from the city name, then the country).
     public var subtitle: String {
@@ -99,7 +105,8 @@ public struct WeatherPlace: Codable, Equatable, Sendable {
 
     /// JSON object for `presence/<seat>/place`.
     public var json: [String: Any] {
-        var out: [String: Any] = ["name": name, "latitude": latitude, "longitude": longitude, "timezone": timezone]
+        let lat = coarsePublished ? Self.round1(latitude) : latitude, lon = coarsePublished ? Self.round1(longitude) : longitude
+        var out: [String: Any] = ["name": name, "latitude": lat, "longitude": lon, "timezone": timezone]
         if let admin { out["admin"] = admin }
         if let country { out["country"] = country }
         return out
@@ -110,8 +117,10 @@ public struct WeatherPlace: Codable, Equatable, Sendable {
         guard let d = json as? [String: Any], let name = d["name"] as? String, !name.isEmpty,
               let lat = (d["latitude"] as? NSNumber)?.doubleValue, let lon = (d["longitude"] as? NSNumber)?.doubleValue,
               let tz = d["timezone"] as? String, !tz.isEmpty else { return nil }
-        self.init(name: name, admin: d["admin"] as? String, country: d["country"] as? String,
-                  latitude: lat, longitude: lon, timezone: tz)
+        // prelaunch-A: partner data, capped (name 64 UTF-16 units)
+        self.init(name: WireLimits.clipUTF16(name, max: WireLimits.maxField), admin: WireLimits.clipped(d["admin"] as? String),
+                  country: WireLimits.clipped(d["country"] as? String),
+                  latitude: lat, longitude: lon, timezone: WireLimits.clipUTF16(tz, max: WireLimits.maxField))
     }
 
     /// Cache key: the rounded coordinates.

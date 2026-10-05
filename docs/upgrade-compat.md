@@ -162,6 +162,8 @@
 
 - 纯加：两个本地键 `updateLastCheck` / `updateSkipped`（第 1 节表格），没有新的远端字段，没有迁移，老版本忽略。
 - 来源：GitHub Releases `richardzhuang0412/LuluPet` 的 `releases/latest`（不带 token，`User-Agent: LuluPet/<版本>`），按名字找资产 `LuluPet.zip`；`tag_name` 写成 `v0.14.0` 或 `0.14.0` 都行；草稿 / 预发布 / 没有该资产 = 当作没有新版本。**发版时资产名必须是 `LuluPet.zip`（`scripts/build_app.sh` 的产物，原样上传）。**
+- **签名（prelaunch D）**：每个 release 还有第二个资产 **`LuluPet.zip.sig`**（`LuluPet.zip` 的原始字节的 Ed25519 签名，base64 文本，由 `scripts/release.sh` 用 `scripts/update_signing_key.sh sign` 生成并上传）。App 内置对应的公钥（`Sources/LuluCore/UpdateKey.swift`），下载后**先验签、再解压**；没有 `.sig`、签名不对、或这个 build 里的公钥还是占位符 → 一律拒绝（「更新包签名不对，已取消（为了安全）」）。**v0.15.6 及以前的老 App 不认识 `.sig`**，照旧只按名字找 `LuluPet.zip`，所以第一个带签名的版本老 App 仍然能一键更新上去；从那一版起新 App 要求签名（所有以后的 release 都必须带 `.sig`）。资产名 `LuluPet.zip.sig` 和公钥一样是冻结的约定；换密钥见 README「开发者 → 发布签名」。
+- **下载地址白名单**：资产 / 页面 URL 必须是 `https`，主机只能是 `github.com`、`objects.githubusercontent.com`、`release-assets.githubusercontent.com`（GitHub 目前把 release 下载 302 到最后一个），重定向的每一跳也检查；发布页只在 `https://github.com` 时才会被打开。`--update-feed` 只接受 `https` 或指向本机（`127.0.0.1` / `localhost` / `::1`）的 `http`；重启时所有 `--update-*` 参数都会被去掉。更新脚本如果等了约 2 分钟旧进程还没退出，就放弃、不替换、保留旧 App。
 - 检查：一天一次（`HousekeepingTask.updateCheck`，挂在已有的 housekeeping 一次性计时器上，没有新的重复计时器；启动后至少 20 秒才查），另有菜单「检查更新…」和更新日志窗口里的按钮。找到新版本：我自己的桌宠冒卡片「有新版本 vX · 更新」（「更新」/「以后再说」），菜单多一行「有新版本 vX」，TA 升级提醒气泡多一个「一键更新」。
 - 更新：下载到临时目录 → `ditto -x -k` → 校验（bundle id = `com.lulupet.app`、版本 > 当前、`codesign --verify --deep --strict`）→ 写一个 `/bin/sh` 小脚本并脱离启动：等本进程退出，`ditto` 到 `<App>.new`，旧的改名 `<App>.old`、新的换上去（失败就还原）、`xattr -dr com.apple.quarantine`、`open` 重新打开（带原来的启动参数，`--demo-update*` 除外）。App 随后走正常退出（presence 下线）。只在 App 直接位于 `/Applications` 或 `~/Applications` 时自动更新，其余情况提示「请手动更新」+ 发布页。
 - 用户数据（UserDefaults、Application Support、日志）都在 App 包外，脚本从不碰；确认框里写明「聊天记录和设置不会丢」。更新后的更新日志卡片走 v0.13 已有的 `whatsNewSeen` 逻辑。
@@ -198,3 +200,17 @@
 - **老版本**：照常当文字消息显示（气泡 + 来访），`upgradeTo` 留在 `Message.extra` 里原样写回，界面忽略。
 - **新版本（≥ v0.15.5）**：`upgradeTo` 比自己的版本新 → 气泡多一个「一键更新」（走 v0.14 的 `UpdateController`）；不比自己新（已经升过了）/ 解析不了 → 普通文字。
 - 本地键 `upgradePingSent`（第 1 节）：每个自己的版本只叫一次；只在配对模式、对方版本已知且更旧时显示；对方不在线时和普通文字一样排队。
+
+## 15. 同步加固（pre-launch A）
+
+全部是**收紧接收方 / 加本地文件**，线上字段一个没改，老版本照常收发。
+
+- **发送改成幂等 PUT**：发消息不再 `POST /messages`，而是客户端自己生成一个 Firebase push 风格的 key（20 位，时间在前，字符表 `-0-9A-Z_a-z`，`PushKey`），`PUT /messages/<key>`。重试（超时 / 断网）只会重写同一个子节点，不会产生重复消息。老版本读取用 `orderBy="ts"` + 流，只认子节点的 key 当 id，**任何合法 key 都一样**，所以看到的和 `POST` 完全一样。消息 JSON 不变。请求超时 20 秒。
+- **发出的消息发送时就写进历史**（`history.jsonl`，id = 这个 key），回声 / 回填按 id 去重；不再有「送达后才写、换成服务器 id + `localId`」的流程（`localId` 字段仍然读得懂，老历史照旧）。
+- **`outbox.json`（新的本地文件，和 `history.jsonl` 同目录，0600）**：`{"pairCode", "role", "messages": [Message…], "failed": [id…]}`，还没送达的消息。启动 / 改配置后用同一个配对码 + 同一个座位的 `PairChannel` 会读回来继续发；配对码或座位不一样就丢掉；坏文件 = 空。全部送完就删掉文件。**从不**写进 Firebase，老版本不看它。
+- **服务器永久拒绝的消息（HTTP 400 / 413 / 422，或流是通的时候 401 / 403）被「停放」**：从发件箱拿出来、留在历史里、id 记进 `outbox.json` 的 `failed`，弹一次「有一条消息没发出去」，后面的照常发。网络错误 / 5xx / 流没通时的 401 / 403（多半是规则还没配好）一直重试。
+- **接收限制（只对 Firebase 来的消息 / presence，本地历史不动）**：`ts` 比现在晚一天以上的消息忽略（也不会推进 `lastReadTs`；`markRead` 的游标最多到「现在 + 1 天」；启动时发现 `lastReadTs` 已经在一天以后就重置成现在，修复被坏消息卡住的老用户）；整条超过 4 KB 的丢掉；`text` 截到 500 个 UTF-16 单位（不切断字符），`stickerId` / `outfit` / `trip` / `remind` / `ackOf` / `answer` 超过 64 当作没有；presence 的 `app` / `device` / `outfit` / `pose` / `dnd.mood` / 城市名 / `admin` / `country` / `timezone` 截到 64。发送端的 500 字限制也改成 UTF-16 单位，和规则的 `.length` 一致（`Message.maxTextLength`）。
+- **长积压折叠**：一次收到超过 50 条对方消息时只有最新 50 条逐条送进 `onMessage`，更旧的写进历史并算已读（`QueueFold`，`PairChannel.onMessagesFolded`）。
+- **Firebase 规则收紧（docs/firebase-setup.md，只对新粘贴的人生效）**：配对码 `^[A-HJ-NP-Z2-9]{24}$`、`ts` 是数字且 `<= now + 86400000`、`text` ≤ 500、`stickerId` / `outfit` / `remind` / `answer` 存在时 ≤ 64。现有客户端写的所有字段都满足；仍然**没有**「禁止未知字段」。
+- `history.jsonl` 新建 / 打开时权限 0600。
+- SSE 按字节只在 `\n` / `\r` 处分行（不再用 `AsyncBytes.lines`，它会在 U+2028 / U+2029 / U+0085 处断开 JSON）；重连等待只有在连接撑过 30 秒后才重置为 1 秒。

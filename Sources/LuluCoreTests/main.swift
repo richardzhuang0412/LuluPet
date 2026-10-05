@@ -1,3 +1,4 @@
+import CryptoKit
 // Minimal test runner (no XCTest / swift-testing without Xcode).
 // Run: swift run LuluCoreTests
 import Foundation
@@ -157,7 +158,9 @@ final class StubProtocol: URLProtocol {
         let accept = request.value(forHTTPHeaderField: "Accept")
         // "<METHOD> <path> sse" answers only streaming requests; plain "<METHOD> <path>" answers both.
         let sseReply = accept == "text/event-stream" ? Self.replies["\(method) \(url.path) sse"] : nil
-        let reply = sseReply ?? Self.replies["\(method) \(url.path)"] ?? Reply(status: 404, body: "null")
+        // prelaunch-A: "PUT /pairs/PAIR/messages/*" answers any PUT to a child of messages (client-generated keys).
+        let wildcard = Self.replies["\(method) \((url.path as NSString).deletingLastPathComponent)/*"]
+        let reply = sseReply ?? Self.replies["\(method) \(url.path)"] ?? wildcard ?? Reply(status: 404, body: "null")
         Self.lock.unlock()
         let resp = HTTPURLResponse(url: url, statusCode: reply.status, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": reply.contentType])!
         client?.urlProtocol(self, didReceive: resp, cacheStoragePolicy: .notAllowed)
@@ -261,6 +264,35 @@ do {
     let h = VisitGeometry.go(window: CGRect(x: 100, y: 8, width: 150, height: 214), spriteWidth: 110, screen: screen)
     check(h.side == .left && h.edgeX == -20 && h.offscreenX == -150, "go: left edge \(h)")
     check(abs(VisitGeometry.runDuration(440) - 2) < 1e-9, "run duration at 220 pt/s")
+}
+// prelaunch B (B16): "off screen" must not be a neighbouring display; a home origin on a vanished display is pulled back.
+do {
+    let main = CGRect(x: 0, y: 0, width: 1440, height: 900)
+    let right = CGRect(x: 1440, y: -100, width: 1920, height: 1080)   // a monitor to the right
+    let left = CGRect(x: -1280, y: 0, width: 1280, height: 800)       // and one to the left
+    let all = [main, right, left]
+    check(VisitGeometry.offscreenX(side: .right, windowWidth: 150, screen: main, others: []) == 1440, "offscreen: single display, right")
+    check(VisitGeometry.offscreenX(side: .right, windowWidth: 150, screen: main, others: all) == 3360, "offscreen: past the right neighbour")
+    check(VisitGeometry.offscreenX(side: .left, windowWidth: 150, screen: main, others: all) == -1430, "offscreen: past the left neighbour")
+    check(VisitGeometry.offscreenX(side: .left, windowWidth: 150, screen: main, others: [main, right]) == -150, "offscreen: no left neighbour")
+    let above = CGRect(x: 1440, y: 2000, width: 1000, height: 800)   // beside in x but nowhere near vertically
+    check(VisitGeometry.offscreenX(side: .right, windowWidth: 150, screen: main, others: [main, above]) == 1440, "offscreen: a non-adjacent display is ignored")
+    let g = VisitGeometry.go(window: CGRect(x: 1250, y: 8, width: 150, height: 214), spriteWidth: 110, screen: main, others: all)
+    check(g.side == .right && g.offscreenX == 3360 && g.edgeX == 1440 - 150 + 20, "go: offscreen skips the neighbour, edge unchanged")
+    let a = VisitGeometry.arrival(host: CGRect(x: 1000, y: 8, width: 100, height: 170), visitorWindowWidth: 150, visitorSpriteWidth: 110, screen: main, others: all)
+    check(a.entryX == 3360, "arrival: enters from beyond the neighbour")
+    let size = CGSize(width: 150, height: 214)
+    check(VisitGeometry.clampHome(origin: CGPoint(x: 600, y: 8), size: size, screens: [main]) == CGPoint(x: 600, y: 8), "clampHome: on a display → unchanged")
+    check(VisitGeometry.clampHome(origin: CGPoint(x: 2500, y: 8), size: size, screens: [main]) == CGPoint(x: 1290, y: 8), "clampHome: display unplugged → clamped to the nearest one")
+    check(VisitGeometry.clampHome(origin: CGPoint(x: 500, y: 5000), size: size, screens: [main]) == CGPoint(x: 500, y: 686), "clampHome: far above → clamped down")
+    check(VisitGeometry.clampHome(origin: CGPoint(x: 5, y: 5), size: size, screens: []) == CGPoint(x: 5, y: 5), "clampHome: no screens → unchanged")
+    // B1: the end deadline of a timed 勿扰 exists even once `isOn` is false (the timer must still fire to close the span).
+    var dst = DNDState()
+    check(dst.endDeadline == nil, "dnd: off → no end deadline")
+    dst.turnOn(.thirtyMinutes, now: 1_000_000)
+    check(dst.endDeadline == 1_001_800 && dst.isOn(now: 1_001_799) && !dst.isOn(now: 1_001_800) && dst.endDeadline == 1_001_800, "dnd: end deadline stays after the end passes")
+    dst.turnOn(.untilOff, now: 1_000_000)
+    check(dst.endDeadline == nil, "dnd: until-off has no deadline")
 }
 do {
     let croot = tmp.appendingPathComponent("Couples")
@@ -498,7 +530,7 @@ StubProtocol.replies = [
     "GET /pairs/PAIR/presence/lumei/lastSeen.json": .init(status: 200, body: "\(nowMs())"),
     // v0.8 reads the whole presence object (an old client's shape: no dnd).
     "GET /pairs/PAIR/presence/lumei.json": .init(status: 200, body: "{\"lastSeen\":\(nowMs())}"),
-    "POST /pairs/PAIR/messages.json": .init(status: 200, body: #"{"name":"-Y"}"#),
+    "PUT /pairs/PAIR/messages/*": .init(status: 200, body: "{}"),
 ]
 StubProtocol.requests = []
 let chStore = ConfigStore(profile: "test-\(UUID().uuidString)")
@@ -524,7 +556,7 @@ await MainActor.run {
     check(states.first == .connecting && states.contains(.connected) && states.contains(.offline), "channel states \(states)")
     check(online == [true], "channel partner online reported once")
     check(channel.outbox.isEmpty, "channel outbox flushed")
-    let posted = StubProtocol.requests.filter { $0.method == "POST" }.compactMap { $0.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }?["text"] as? String }
+    let posted = StubProtocol.requests.filter { $0.method == "PUT" && $0.url.path.contains("/messages/") }.compactMap { $0.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }?["text"] as? String }
     check(posted == ["a", "b", "c"], "channel sends in order")
     check(StubProtocol.requests.filter { $0.method == "GET" && $0.url.path.hasSuffix("messages.json") }.count >= 2, "channel reconnects")
     channel.markRead(got[1])   // -B (ts 7) read while -A (ts 5) is still shown
@@ -535,10 +567,10 @@ await MainActor.run {
     check(chStore.lastReadTs == 7, "markRead keeps max ts")
     channel.stop()
     let h = chHistory.all()
-    // -Z/-A from backfill, -A/-M/-B from the stream (own echo -M included), -Y = first sent message
-    // (the stub answers every POST with "-Y", so "b" and "c" dedupe against it).
-    check(h.map(\.id) == ["-Z", "-A", "-M", "-B", "-Y"], "channel history records both directions + backfill once each: \(h.map(\.id))")
-    check(h.last?.text == "a" && h.last?.localId != nil, "channel history stores sent message under push id with local id")
+    // -Z/-A from backfill, -A/-M/-B from the stream (own echo -M included), plus a, b, c written at send time
+    // under their own client-generated push keys.
+    check(h.count == 7 && Array(h.map(\.id).prefix(4)) == ["-Z", "-A", "-M", "-B"], "channel history records both directions + backfill once each: \(h.map(\.id))")
+    check(h.suffix(3).map { $0.text } == ["a", "b", "c"] && h.suffix(3).allSatisfy { PushKey.isValid($0.id) }, "channel history stores sent messages at send time under push keys")
     check(StubProtocol.requests.filter { $0.method == "GET" && $0.accept != "text/event-stream" && $0.url.path.hasSuffix("messages.json") }.count == 1, "channel backfills once per launch")
     check(PairChannel.misconfigurationReason(FirebaseError.http(401)) == "数据库规则拒绝访问 (HTTP 401)" && PairChannel.misconfigurationReason(FirebaseError.http(503)) == nil, "misconfiguration reasons")
 }
@@ -1727,10 +1759,16 @@ do {
     var c = ActiveTimeReminder(interval: 3600)
     _ = c.tick(now: 0, idleSeconds: 0, blocked: false)
     _ = c.tick(now: 36_000, idleSeconds: 0, blocked: false)
-    check(c.activeSeconds == 7200, "dt capped (long sleep not counted as work): \(c.activeSeconds)")
+    check(c.activeSeconds == 0, "B2: a 10 h gap is sleep, not work (starts over): \(c.activeSeconds)")
+    var gap = ActiveTimeReminder(interval: 3600)
+    _ = gap.tick(now: 0, idleSeconds: 0, blocked: false)
+    _ = gap.tick(now: 420, idleSeconds: 0, blocked: false)
+    check(gap.activeSeconds == 420, "B2: a gap of awayThreshold + 120 still counts as work: \(gap.activeSeconds)")
+    _ = gap.tick(now: 841, idleSeconds: 0, blocked: false)
+    check(gap.activeSeconds == 0 && gap.lastTick == 841, "B2: one second more → away (reset, nothing added)")
     var short = ActiveTimeReminder(interval: 60)
     _ = short.tick(now: 0, idleSeconds: 0, blocked: false)
-    _ = short.tick(now: 10_000, idleSeconds: 0, blocked: false)
+    _ = short.tick(now: 400, idleSeconds: 0, blocked: false)
     check(short.activeSeconds == 120, "dt cap floor is 120 s: \(short.activeSeconds)")
     var d = ActiveTimeReminder(interval: 300)
     _ = d.tick(now: 0, idleSeconds: 0, blocked: false)
@@ -1750,7 +1788,7 @@ do {
     check(z.tick(now: 120, idleSeconds: 0, blocked: false), "due")
     z.snooze(now: 130)
     check(!z.showing && z.snoozeUntil == 730 && z.activeSeconds == 120, "snooze: 600 s, active time stays")
-    check(!z.tick(now: 190, idleSeconds: 0, blocked: false) && !z.tick(now: 700, idleSeconds: 0, blocked: false), "snoozed → quiet")
+    check(!z.tick(now: 190, idleSeconds: 0, blocked: false) && !z.tick(now: 400, idleSeconds: 0, blocked: false) && !z.tick(now: 600, idleSeconds: 0, blocked: false), "snoozed → quiet")
     check(z.tick(now: 730, idleSeconds: 0, blocked: false) && z.showing, "snooze over → fires again")
     check(!z.tick(now: 790, idleSeconds: 0, blocked: false), "…once")
     z.done(now: 800)
@@ -2643,6 +2681,90 @@ do {
     check(wcs.whatsNewSeen == nil, "v0.13: whatsNewSeen can be cleared")
 }
 
+// MARK: prelaunch C: sleep / launch gaps, corrupt pomodoro, stale pomodoro, stickers, place privacy
+do {
+    // B2: sleep 2 h after 10 min of use → nothing within 5 min of waking
+    var r = ActiveTimeReminder(interval: 3600)
+    var t: TimeInterval = 0
+    _ = r.tick(now: t, idleSeconds: 0, blocked: false)
+    for _ in 0..<2 { t += 300; _ = r.tick(now: t, idleSeconds: 0, blocked: false) }
+    check(r.activeSeconds == 600, "B2: 10 min of use counted")
+    t += 7200   // the Mac sleeps 2 h; the first tick after wake
+    check(!r.tick(now: t, idleSeconds: 0, blocked: false) && r.activeSeconds == 0, "B2: wake after 2 h sleep: reset, 0 added")
+    t += 300
+    check(!r.tick(now: t, idleSeconds: 0, blocked: false) && r.activeSeconds == 300, "B2: only the time since waking counts")
+    var snoozed = ActiveTimeReminder(interval: 600)
+    _ = snoozed.tick(now: 0, idleSeconds: 0, blocked: false)
+    snoozed.snooze(now: 10)
+    check(!snoozed.tick(now: 5000, idleSeconds: 0, blocked: false) && snoozed.snoozeUntil == nil && !snoozed.showing, "B2: a snooze does not fire right after a sleep")
+
+    // B2: launch. Saved ticks older than a normal gap: fresh count; recent: count kept; lastTick always cleared.
+    var q = ActiveTimeReminder(interval: 3600)
+    q.activeSeconds = 1500; q.lastTick = 1000; q.snoozeUntil = 1200; q.showing = true
+    q.resume(now: 1000 + 8 * 3600)
+    check(q.activeSeconds == 0 && q.snoozeUntil == nil && q.lastTick == nil && !q.showing, "B2: app quit overnight → fresh count")
+    var q2 = ActiveTimeReminder(interval: 3600)
+    q2.activeSeconds = 1500; q2.lastTick = 1000
+    q2.resume(now: 1100)
+    check(q2.activeSeconds == 1500 && q2.lastTick == nil, "B2: a quick relaunch keeps the count, clears lastTick")
+    check(!q2.tick(now: 1200, idleSeconds: 0, blocked: false) && q2.activeSeconds == 1500, "B2: first tick after launch adds nothing")
+    var q3 = ActiveTimeReminder(interval: 3600)
+    q3.activeSeconds = 100; q3.lastTick = 5000
+    q3.resume(now: 4000)   // clock went back
+    check(q3.activeSeconds == 0, "B2: clock went back → fresh")
+
+    // B13: corrupt pomodoro state
+    let bad = try JSONDecoder().decode(PomodoroState.self, from: Data(#"{"phase":"focus","completedFocus":2}"#.utf8))
+    check(bad == .idle, "B13: focus with neither until nor pausedRemaining → idle")
+    let badBreak = try JSONDecoder().decode(PomodoroState.self, from: Data(#"{"phase":"shortBreak"}"#.utf8))
+    check(badBreak == .idle, "B13: a break with no deadline → idle")
+    let okRun = try JSONDecoder().decode(PomodoroState.self, from: Data(#"{"phase":"focus","until":5000}"#.utf8))
+    check(okRun.phase == .focus && okRun.until == 5000, "B13: a running focus loads as is")
+    let okPaused = try JSONDecoder().decode(PomodoroState.self, from: Data(#"{"phase":"focus","pausedRemaining":300}"#.utf8))
+    check(okPaused.isPaused, "B13: a paused focus loads as is")
+    check(try JSONDecoder().decode(PomodoroState.self, from: Data(#"{"phase":"idle"}"#.utf8)) == .idle, "B13: idle stays idle")
+
+    // B17: a phase that ended long ago moves on silently
+    var p = PomodoroState(phase: .focus, until: 1000, completedFocus: 0)
+    check(!p.endedLongAgo(now: 999) && !p.endedLongAgo(now: 1000 + 600) && p.endedLongAgo(now: 1000 + 601), "B17: stale only when ended > 10 min ago")
+    check(!PomodoroState.idle.endedLongAgo(now: 99999), "B17: idle is never stale")
+    p.pause(now: 500)
+    check(!p.endedLongAgo(now: 99999), "B17: paused is never stale")
+
+    // B17: sticker bar with hidden intimate stickers
+    let vis = ["a", "b", "c", "d", "e", "f"]
+    let stored = ["a", "x1", "b", "x2", "c", "d", "e", "f"]
+    check(StickerPanel.hiddenOnBar(stored: stored, visible: vis) == 2, "B17: two bar slots held by hidden stickers")
+    check(StickerPanel.hiddenOnBar(stored: ["a", "a", "x1"], visible: vis) == 1, "B17: duplicates counted once")
+    let shown = StickerPanel.shownBar(stored: stored, visible: vis + ["g", "h"], counts: ["g": 5, "h": 2], recent: [:])
+    check(shown == ["a", "b", "c", "d", "e", "f", "g", "h"], "B17: hidden slots are filled from the next ranked: \(shown)")
+    let shown2 = StickerPanel.shownBar(stored: ["a", "x1", "b"], visible: vis + ["g"], counts: ["g": 5], recent: [:])
+    check(shown2 == ["a", "b", "g"], "B17: only the hidden slot is filled, free slots stay free: \(shown2)")
+    check(StickerPanel.shownBar(stored: ["a", "b"], visible: vis, counts: [:], recent: [:]) == ["a", "b"], "B17: no hidden → plain quickBar")
+    check(StickerPanel.shownBar(stored: stored, visible: vis, counts: [:], recent: [:]) == StickerPanel.quickBar(stored: stored, visible: vis), "B17: nothing left to fill with")
+    check(StickerPanel.canDrop("a", visible: vis) && !StickerPanel.canDrop("hello world", visible: vis) && !StickerPanel.canDrop("x1", visible: vis), "B17: only a visible sticker id can be dropped")
+    check(StickerPanel.dropped("hello world", onto: 0, in: ["a"], visible: vis).list == ["a"], "B17: dropped text leaves the bar unchanged")
+
+    // S5: an auto-located place is published at one decimal, kept exact locally; manual unchanged
+    let auto = WeatherPlace(name: "伯克利", admin: nil, country: nil, latitude: 37.8716, longitude: -122.2727, timezone: "America/Los_Angeles", coarsePublished: true)
+    check(auto.latitude == 37.87 && auto.longitude == -122.27, "S5: local coordinates stay at 2 decimals")
+    let pj = auto.json
+    check((pj["latitude"] as? Double) == 37.9 && (pj["longitude"] as? Double) == -122.3, "S5: published at 1 decimal: \(pj)")
+    let manual = WeatherPlace(name: "上海", admin: nil, country: nil, latitude: 31.2304, longitude: 121.4737, timezone: "Asia/Shanghai")
+    check((manual.json["latitude"] as? Double) == 31.23 && (manual.json["longitude"] as? Double) == 121.47, "S5: manual cities unchanged")
+    check(WeatherPlace(json: pj)?.coarsePublished == false, "S5: the partner reads a plain place")
+    let wdef = UserDefaults(suiteName: "lulupet.test-s5-\(UUID().uuidString)")!
+    let ws = WeatherStore(defaults: wdef)
+    ws.myPlace = auto
+    check(ws.myPlace?.coarsePublished == false && ws.myPlace?.latitude == 37.87, "S5: manual (auto off) → not coarse, exact kept")
+    ws.myPlaceAuto = true
+    check(ws.myPlace?.coarsePublished == true && ws.myPlace?.latitude == 37.87, "S5: auto on → flagged coarse, exact kept for weather")
+    let stored5 = String(data: wdef.data(forKey: "myPlace")!, encoding: .utf8)!
+    check(stored5.contains("37.87"), "S5: exact coordinates stored locally")
+    ws.myPlaceAuto = false
+    check(ws.myPlace?.coarsePublished == false, "S5: auto off → published normally again")
+}
+
 // MARK: v0.13.1 reminder cycle status (小工具 tab)
 do {
     var r = ActiveTimeReminder(interval: 3600)
@@ -2728,23 +2850,27 @@ do {
     func json(_ s: String) -> Data { Data(s.utf8) }
     let good = """
     {"tag_name":"v0.14.0","html_url":"https://github.com/richardzhuang0412/LuluPet/releases/tag/v0.14.0","body":"notes","draft":false,"prerelease":false,
-     "assets":[{"name":"checksums.txt","browser_download_url":"https://x/checksums.txt"},{"name":"LuluPet.zip","browser_download_url":"https://x/LuluPet.zip"}]}
+     "assets":[{"name":"checksums.txt","browser_download_url":"https://github.com/x/checksums.txt"},{"name":"LuluPet.zip","browser_download_url":"https://github.com/x/LuluPet.zip"},{"name":"LuluPet.zip.sig","browser_download_url":"https://github.com/x/LuluPet.zip.sig"}]}
     """
     let r = UpdateFeed.parse(json(good))
     check(r?.version == AppVersion(0, 14, 0) && r?.tag == "v0.14.0", "update feed: tag with v")
-    check(r?.assetURL.absoluteString == "https://x/LuluPet.zip", "update feed: asset found by name, not position")
+    check(r?.assetURL.absoluteString == "https://github.com/x/LuluPet.zip", "update feed: asset found by name, not position")
     check(r?.notes == "notes" && r?.pageURL?.absoluteString.hasSuffix("v0.14.0") == true, "update feed: body + page")
     check(UpdateFeed.parse(json(good.replacingOccurrences(of: "\"tag_name\":\"v0.14.0\"", with: "\"tag_name\":\"0.14.0\"")))?.version == AppVersion(0, 14, 0), "update feed: tag without v")
-    check(UpdateFeed.parse(json(#"{"tag_name":"v0.14.0","assets":[{"name":"other.zip","browser_download_url":"https://x/o.zip"}]}"#)) == nil, "update feed: no LuluPet.zip asset → nil")
-    check(UpdateFeed.parse(json(#"{"tag_name":"nightly","assets":[{"name":"LuluPet.zip","browser_download_url":"https://x/a"}]}"#)) == nil, "update feed: unparseable tag → nil")
+    check(UpdateFeed.parse(json(#"{"tag_name":"v0.14.0","assets":[{"name":"other.zip","browser_download_url":"https://github.com/x/o.zip"}]}"#)) == nil, "update feed: no LuluPet.zip asset → nil")
+    check(UpdateFeed.parse(json(#"{"tag_name":"nightly","assets":[{"name":"LuluPet.zip","browser_download_url":"https://github.com/x/a"}]}"#)) == nil, "update feed: unparseable tag → nil")
     check(UpdateFeed.parse(json(good.replacingOccurrences(of: #""prerelease":false"#, with: #""prerelease":true"#))) == nil, "update feed: prerelease → nil")
     check(UpdateFeed.parse(json(good.replacingOccurrences(of: #""draft":false"#, with: #""draft":true"#))) == nil, "update feed: draft → nil")
-    check(UpdateFeed.parse(json(good.replacingOccurrences(of: "https://x/LuluPet.zip", with: "file:///etc/passwd"))) == nil, "update feed: non-http asset URL → nil")
+    check(UpdateFeed.parse(json(good.replacingOccurrences(of: "https://github.com/x/LuluPet.zip", with: "file:///etc/passwd"))) == nil, "update feed: non-http asset URL → nil")
     check(UpdateFeed.parse(json("not json")) == nil && UpdateFeed.parse(json("[]")) == nil && UpdateFeed.parse(Data()) == nil, "update feed: bad data → nil")
-    check(UpdateFeed.parse(json(#"{"tag_name":"v1.0.0","assets":[{"name":"LuluPet.zip","browser_download_url":"https://x/a"}]}"#))?.notes == "", "update feed: missing body → empty notes")
+    check(UpdateFeed.parse(json(#"{"tag_name":"v1.0.0","assets":[{"name":"LuluPet.zip","browser_download_url":"https://github.com/x/a"}]}"#))?.notes == "", "update feed: missing body → empty notes")
 
     check(UpdateFeed.latestURL().absoluteString == "https://api.github.com/repos/richardzhuang0412/LuluPet/releases/latest", "update url: default")
     check(UpdateFeed.latestURL(override: "http://127.0.0.1:8123/latest.json").absoluteString == "http://127.0.0.1:8123/latest.json", "update url: override")
+    check(UpdateFeed.latestURL(override: "https://example.com/f.json").host == "example.com" && UpdateFeed.latestURL(override: "http://localhost:9/x").host == "localhost", "update url: https / http-localhost overrides accepted")
+    check(UpdateFeed.latestURL(override: "http://example.com/f.json").host == "api.github.com" && UpdateFeed.latestURL(override: "http://192.168.1.5/f").host == "api.github.com"
+          && UpdateFeed.latestURL(override: "file:///etc/passwd").host == "api.github.com" && UpdateFeed.latestURL(override: "http://127.0.0.1.evil.com/").host == "api.github.com", "update url: http to a non-loopback host → default (S7)")
+    check(UpdateFeed.sanitizedOverride("http://[::1]:80/x") != nil && UpdateFeed.sanitizedOverride(nil) == nil && UpdateFeed.sanitizedOverride("https://") == nil, "update url: sanitizedOverride")
     check(UpdateFeed.latestURL(override: "  ").host == "api.github.com" && UpdateFeed.latestURL(override: "ftp://x/y").host == "api.github.com"
           && UpdateFeed.latestURL(override: "garbage").host == "api.github.com", "update url: bad override → default")
     check(UpdateFeed.userAgent(version: "0.14.0") == "LuluPet/0.14.0" && UpdateFeed.userAgent(version: nil) == "LuluPet/dev", "update: User-Agent")
@@ -2788,6 +2914,60 @@ do {
     check(sh.contains("xattr -dr com.apple.quarantine '/Applications/LuluPet.app'") && sh.contains("rm -rf '/Applications/LuluPet.app.old'"), "update script: quarantine + cleanup")
     check(sh.contains("/usr/bin/open '/Applications/LuluPet.app' --args '--profile' 'it'\\''s'"), "update script: relaunch with quoted args")
     check(!sh.contains("Application Support") && !sh.contains("Preferences") && !sh.contains("defaults"), "update script: never touches user data")
+    // old pid still alive after the wait → abort before anything is replaced
+    let abortAt = sh.range(of: "still running after the wait")
+    let firstDitto = sh.range(of: "/usr/bin/ditto")
+    check(abortAt != nil && firstDitto != nil && abortAt!.lowerBound < firstDitto!.lowerBound && sh.contains("if kill -0 4242 2>/dev/null; then"), "update script: old pid still alive → abort before ditto")
+    check(sh.contains("exit 1") && !sh.components(separatedBy: "still running after the wait")[1].prefix(160).contains("open"), "update script: abort leaves the old app (no relaunch / swap)")
+
+    // S6: URL policy (github hosts only, https; redirect hosts as GitHub serves them today)
+    func u(_ s: String) -> URL { URL(string: s)! }
+    check(UpdateURLPolicy.isTrustedAsset(u("https://github.com/richardzhuang0412/LuluPet/releases/download/v1/LuluPet.zip")), "url policy: github.com asset")
+    check(UpdateURLPolicy.isTrustedAsset(u("https://release-assets.githubusercontent.com/github-production-release-asset/1/x?sig=1")), "url policy: release-assets host (current redirect target)")
+    check(UpdateURLPolicy.isTrustedAsset(u("https://objects.githubusercontent.com/github-production-release-asset-2e65be/1/x")), "url policy: objects host (older redirect target)")
+    check(!UpdateURLPolicy.isTrustedAsset(u("http://github.com/x/LuluPet.zip")), "url policy: http github → no")
+    check(!UpdateURLPolicy.isTrustedAsset(u("https://evil.com/LuluPet.zip")) && !UpdateURLPolicy.isTrustedAsset(u("https://github.com.evil.com/a"))
+          && !UpdateURLPolicy.isTrustedAsset(u("https://evilgithubusercontent.com/a")) && !UpdateURLPolicy.isTrustedAsset(u("https://api.github.com/a"))
+          && !UpdateURLPolicy.isTrustedAsset(u("https://raw.githubusercontent.com/a")) && !UpdateURLPolicy.isTrustedAsset(u("file:///etc/passwd")), "url policy: other hosts / schemes → no")
+    check(!UpdateURLPolicy.isTrustedAsset(u("http://127.0.0.1:8000/a.zip")) && UpdateURLPolicy.isTrustedAsset(u("http://127.0.0.1:8000/a.zip"), allowLoopback: true)
+          && UpdateURLPolicy.isTrustedAsset(u("http://localhost:1/a"), allowLoopback: true) && !UpdateURLPolicy.isTrustedAsset(u("http://evil.com/a"), allowLoopback: true), "url policy: loopback only with a local test feed")
+    check(UpdateURLPolicy.isTrustedPage(u("https://github.com/o/r/releases/tag/v1")) && !UpdateURLPolicy.isTrustedPage(u("http://github.com/o/r"))
+          && !UpdateURLPolicy.isTrustedPage(u("https://evil.com/o/r")) && !UpdateURLPolicy.isTrustedPage(u("file:///Applications/Calculator.app")), "url policy: page → https github.com only")
+    let evilPage = good.replacingOccurrences(of: "https://github.com/richardzhuang0412/LuluPet/releases/tag/v0.14.0", with: "file:///Applications/Calculator.app")
+    check(UpdateFeed.parse(json(evilPage)) != nil && UpdateFeed.parse(json(evilPage))?.pageURL == nil, "update feed: untrusted page URL dropped (falls back to the fixed releases page)")
+    check(UpdateFeed.parse(json(good.replacingOccurrences(of: "https://github.com/x/LuluPet.zip\"", with: "http://github.com/x/LuluPet.zip\""))) == nil
+          && UpdateFeed.parse(json(good.replacingOccurrences(of: "https://github.com/x/LuluPet.zip\"", with: "https://evil.com/LuluPet.zip\""))) == nil, "update feed: http / foreign asset host → nil")
+    check(UpdateFeed.parse(json(good.replacingOccurrences(of: "https://github.com/x/LuluPet.zip\"", with: "http://127.0.0.1:1/LuluPet.zip\"")), allowLoopback: true) != nil, "update feed: loopback asset ok for a local test feed")
+    check(r?.sigURL?.absoluteString == "https://github.com/x/LuluPet.zip.sig", "update feed: signature asset found by name")
+    check(UpdateFeed.parse(json(#"{"tag_name":"v1.0.0","assets":[{"name":"LuluPet.zip","browser_download_url":"https://github.com/x/a"}]}"#))?.sigURL == nil, "update feed: no .sig asset → sigURL nil (refused at install)")
+    check(UpdateFeed.parse(json(good.replacingOccurrences(of: "https://github.com/x/LuluPet.zip.sig", with: "https://evil.com/LuluPet.zip.sig")))?.sigURL == nil, "update feed: foreign .sig host dropped")
+
+    // S7: relaunch drops every --update-* / --demo-update* flag, keeps the rest
+    check(UpdateInstaller.relaunchArguments(["/App/LuluPet", "--profile", "x", "--update-feed", "http://127.0.0.1:1/f", "--update-allow-dir", "/tmp/t", "--update-auto-confirm", "--offscreen", "--demo-update-now", "2", "--demo-update-check"])
+          == ["--profile", "x", "--offscreen"], "relaunch args: --update-* stripped (with values), profile / offscreen kept")
+    check(UpdateInstaller.relaunchArguments(["/App/LuluPet", "-psn_0_1", "--update-auto-confirm", "--profile", "p"]) == ["--profile", "p"], "relaunch args: bare auto-confirm does not eat the next flag")
+    check(UpdateInstaller.relaunchArguments(["/App/LuluPet"]).isEmpty, "relaunch args: none")
+
+    // S1: Ed25519 signature over the exact zip bytes; fails closed
+    let sk = Curve25519.Signing.PrivateKey()
+    let pk = sk.publicKey.rawRepresentation.base64EncodedString()
+    let zipBytes = Data((0..<5000).map { UInt8($0 % 251) })
+    let goodSig = try! sk.signature(for: zipBytes).base64EncodedString()
+    check(UpdateSignature.verify(zip: zipBytes, signatureBase64: goodSig, publicKeyBase64: pk) == .ok, "signature: good → ok")
+    check(UpdateSignature.verify(zip: zipBytes, signatureBase64: goodSig + "\n", publicKeyBase64: pk) == .ok, "signature: trailing newline (file from `sign`) → ok")
+    var tampered = zipBytes; tampered[100] ^= 1
+    check(UpdateSignature.verify(zip: tampered, signatureBase64: goodSig, publicKeyBase64: pk) == .mismatch, "signature: tampered zip → mismatch")
+    check(UpdateSignature.verify(zip: zipBytes + Data([0]), signatureBase64: goodSig, publicKeyBase64: pk) == .mismatch, "signature: appended byte → mismatch")
+    let other = Curve25519.Signing.PrivateKey()
+    check(UpdateSignature.verify(zip: zipBytes, signatureBase64: try! other.signature(for: zipBytes).base64EncodedString(), publicKeyBase64: pk) == .mismatch, "signature: signed by another key → mismatch")
+    check(UpdateSignature.verify(zip: zipBytes, signatureBase64: nil, publicKeyBase64: pk) == .missing && UpdateSignature.verify(zip: zipBytes, signatureBase64: "  \n", publicKeyBase64: pk) == .missing, "signature: missing → missing")
+    check(UpdateSignature.verify(zip: zipBytes, signatureBase64: "not base64!!", publicKeyBase64: pk) == .malformed
+          && UpdateSignature.verify(zip: zipBytes, signatureBase64: Data(repeating: 1, count: 10).base64EncodedString(), publicKeyBase64: pk) == .malformed, "signature: malformed → malformed")
+    check(UpdateSignature.verify(zip: zipBytes, signatureBase64: goodSig, publicKeyBase64: "UPDATE-KEY-PLACEHOLDER") == .noKey
+          && UpdateSignature.verify(zip: zipBytes, signatureBase64: goodSig, publicKeyBase64: "") == .noKey
+          && UpdateSignature.verify(zip: zipBytes, signatureBase64: goodSig, publicKeyBase64: Data(repeating: 1, count: 5).base64EncodedString()) == .noKey, "signature: placeholder / empty / short key → noKey (fail closed)")
+    check(UpdateSignature.verify(zip: zipBytes, signatureBase64: goodSig) != .ok, "signature: the compiled-in key never verifies a foreign signature")
+    check(UpdateCopy.badSignature == "更新包签名不对，已取消（为了安全）", "update copy: bad signature text")
     check(UpdateInstaller.shQuote("a b'c") == "'a b'\\''c'", "update script: shell quoting")
 
     check(UpdateCopy.upToDate("0.13.3") == "已经是最新版 v0.13.3" && UpdateCopy.menuLine("0.14.0") == "有新版本 v0.14.0", "update copy: up to date / menu")
@@ -3295,6 +3475,171 @@ do {
     check(pcs.upgradePingSent == nil, "v0.15.5: upgradePingSent default nil")
     pcs.upgradePingSent = "0.15.5"
     check(pcs.upgradePingSent == "0.15.5", "v0.15.5: upgradePingSent persists")
+}
+
+
+// MARK: prelaunch-A sync hardening (pure rules)
+do {
+    let now: Int64 = 1_800_000_000_000
+    // future ts guard
+    check(WireLimits.isFuture(ts: now + 86_400_001, now: now) && !WireLimits.isFuture(ts: now + 86_400_000, now: now), "A: future ts boundary (> now + 1 day)")
+    check(WireLimits.clampCursor(now * 10, now: now) == now + 86_400_000 && WireLimits.clampCursor(5, now: now) == 5, "A: cursor clamp")
+    let far = ["from": "lumei", "kind": "text", "text": "x", "ts": now * 10] as [String: Any]
+    let ok = ["from": "lumei", "kind": "text", "text": "y", "ts": now + 1000] as [String: Any]
+    check(Message.decode(firebaseKey: "-F", value: far, now: now) == nil, "A: future-ts message ignored on receive")
+    check(Message.decode(firebaseKey: "-O", value: ok, now: now)?.text == "y", "A: near-future (clock skew) message accepted")
+    // caps
+    check(Message.decode(firebaseKey: "-T", value: ["from": "lumei", "kind": "text", "text": String(repeating: "a", count: 900), "ts": 5], now: now)?.text?.utf16.count == 500, "A: partner text capped to 500")
+    let longField = String(repeating: "s", count: 65)
+    let capped = Message.decode(firebaseKey: "-S", value: ["from": "lumei", "kind": "sticker", "stickerId": longField, "outfit": longField, "ackOf": longField, "trip": "deliver", "ts": 5], now: now)
+    check(capped != nil && capped?.stickerId == nil && capped?.outfit == nil && capped?.ackOf == nil && capped?.trip == "deliver", "A: over-64 id fields read as absent")
+    check(Message.decode(firebaseKey: "-S2", value: ["from": "lumei", "kind": "sticker", "stickerId": String(repeating: "s", count: 64), "ts": 5], now: now)?.stickerId?.count == 64, "A: 64-char stickerId kept")
+    check(Message.decode(firebaseKey: "-B", value: ["from": "lumei", "kind": "future", "ts": 5, "blob": String(repeating: "z", count: 5000)], now: now) == nil, "A: message over 4 KB dropped")
+    check(Message.decode(firebaseKey: "-N", value: ["from": "lumei", "kind": "voice", "ts": 5, "dur": 3], now: now)?.extra["dur"] == .int(3), "A: small unknown fields still preserved")
+    // utf16 limit
+    let emoji = String(repeating: "😀", count: 300)   // 300 Characters, 600 UTF-16 units
+    check(Message.text(emoji, from: .lulu, ts: 1).text?.utf16.count == 500 && Message.text(emoji, from: .lulu, ts: 1).text?.count == 250, "A: text limit counts UTF-16 units, never splits a character")
+    check(WireLimits.clipUTF16("a👨‍👩‍👧b", max: 3) == "a" && WireLimits.clipUTF16("abc", max: 3) == "abc", "A: clip keeps grapheme clusters whole")
+    check(Message.clampText(String(repeating: "好", count: 500)).count == 500, "A: 500 BMP characters fit")
+    // presence caps
+    let longName = String(repeating: "N", count: 200)
+    let pj = PresenceInfo.decode(Data("{\"lastSeen\":1,\"app\":\"\(longName)\",\"device\":\"\(longName)\",\"outfit\":\"\(longName)\",\"dnd\":{\"mood\":\"\(longName)\",\"until\":0},\"place\":{\"name\":\"\(longName)\",\"latitude\":1,\"longitude\":2,\"timezone\":\"UTC\"}}".utf8))
+    check(pj?.app?.count == 64 && pj?.device?.count == 64 && pj?.dnd?.mood.count == 64 && pj?.place?.name.count == 64, "A: presence strings capped at 64")
+    // queue fold
+    let fold = QueueFold.split(Array(1...120))
+    check(fold.folded == Array(1...70) && fold.kept == Array(71...120), "A: queue fold keeps newest 50")
+    check(QueueFold.split(Array(1...50)).folded.isEmpty && QueueFold.split([Int]()).kept.isEmpty, "A: queue under cap untouched")
+    // push key
+    let k1 = PushKey.generate(at: now), k2 = PushKey.generate(at: now + 5000)
+    check(PushKey.isValid(k1) && k1 < k2 && k1.count == 20, "A: push keys are valid and time-ordered")
+    check(!PushKey.isValid("with/slash.xxxxxxxxxx") && !PushKey.isValid("short"), "A: invalid keys rejected")
+    // non-retryable classification
+    check(OutboxPolicy.verdict(status: 400, streamConnected: false) == .park, "A: 400 parks")
+    check(OutboxPolicy.verdict(status: 401, streamConnected: true) == .park && OutboxPolicy.verdict(status: 403, streamConnected: true) == .park, "A: 401/403 park when the stream works")
+    check(OutboxPolicy.verdict(status: 401, streamConnected: false) == .retry, "A: 401 keeps retrying while the setup is broken")
+    check(OutboxPolicy.verdict(status: 500, streamConnected: true) == .retry && OutboxPolicy.verdict(status: 503, streamConnected: true) == .retry && OutboxPolicy.verdict(status: nil, streamConnected: true) == .retry, "A: 5xx / network errors retry")
+    // backoff
+    check(StreamBackoff.afterConnection(current: 8, livedFor: 2) == 8 && StreamBackoff.afterConnection(current: 8, livedFor: 45) == 1, "A: backoff reset only after a stable connection")
+    // SSE splitting
+    do {
+        var sp = SSELineSplitter()
+        let payload = "event: put\ndata: {\"path\":\"/-A\",\"data\":{\"from\":\"lumei\",\"kind\":\"text\",\"ts\":5,\"text\":\"a\u{2028}b\u{2029}c\u{85}d\"}}\r\n\r\nevent: keep-alive\ndata: null\n"
+        let lines = sp.feed(Array(payload.utf8))
+        check(lines.count == 4 && lines[1].contains("a\u{2028}b\u{2029}c\u{85}d"), "A: SSE splitter keeps U+2028/2029/0085 inside a line: \(lines.count)")
+        var parser = SSEParser()
+        let evs = lines.compactMap { parser.feed(line: $0) }
+        check(evs.count == 2 && FirebaseDecode.messages(from: evs[0]).first?.text == "a\u{2028}b\u{2029}c\u{85}d", "A: event with line-separator characters decodes")
+    }
+    // outbox persistence round trip
+    do {
+        let dir = tmp.appendingPathComponent("outbox-rt")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let store = OutboxStore(directory: dir)
+        var m1 = Message.text("hi", from: .lulu, ts: 10); m1.id = PushKey.generate(at: 10)
+        var m2 = Message.sticker("hug", from: .lulu, ts: 11, label: "抱抱"); m2.id = PushKey.generate(at: 11); m2.character = .lulu; m2.outfit = "bear"
+        store.save(.init(pending: [m1, m2], failed: ["-bad"]), pairCode: "CODE", role: .lulu)
+        let back = store.load(pairCode: "CODE", role: .lulu)
+        check(back.pending == [m1, m2] && back.failed == ["-bad"], "A: outbox round-trips")
+        check(store.load(pairCode: "OTHER", role: .lulu) == .init(), "A: outbox dropped for another pair code")
+        check(store.load(pairCode: "CODE", role: .lumei) == .init(), "A: outbox dropped for another seat")
+        let perms = (try? FileManager.default.attributesOfItem(atPath: store.fileURL.path)[.posixPermissions] as? Int) ?? 0
+        check(perms == 0o600, "A: outbox file is 0600")
+        store.save(.init(), pairCode: "CODE", role: .lulu)
+        check(!FileManager.default.fileExists(atPath: store.fileURL.path), "A: empty outbox removes the file")
+        try? Data("garbage".utf8).write(to: store.fileURL)
+        check(store.load(pairCode: "CODE", role: .lulu) == .init(), "A: corrupt outbox reads as empty")
+    }
+    // history file permissions
+    do {
+        let dir = tmp.appendingPathComponent("perm-hist")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent("history.jsonl")
+        FileManager.default.createFile(atPath: file.path, contents: Data(), attributes: [.posixPermissions: 0o644])
+        let h = HistoryStore(directory: dir)
+        h.append(Message.text("a", from: .lulu, ts: 1))
+        check(((try? FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? Int) ?? 0) == 0o600, "A: existing history.jsonl is chmod 0600")
+        let dir2 = tmp.appendingPathComponent("perm-hist2")
+        let h2 = HistoryStore(directory: dir2)
+        h2.append(Message.text("a", from: .lulu, ts: 1))
+        check(((try? FileManager.default.attributesOfItem(atPath: h2.fileURL.path)[.posixPermissions] as? Int) ?? 0) == 0o600, "A: new history.jsonl is 0600")
+    }
+}
+
+// MARK: prelaunch-A PairChannel: outbox survives a restart, parked 400, no duplicates
+nonisolated(unsafe) var relaunched: PairChannel?
+do {
+    let dir = tmp.appendingPathComponent("outbox-channel")
+    let hist = HistoryStore(directory: dir)
+    let cfg = AppConfig(role: .lulu, pairCode: "PAIR", databaseURL: "https://stub.firebaseio.com")
+    let st = ConfigStore(profile: "test-\(UUID().uuidString)")
+    StubProtocol.replies = ["PUT /pairs/PAIR/messages/*": .init(status: 503, body: "{}")]   // every send fails
+    StubProtocol.requests = []
+    let sent: [Message] = await MainActor.run {
+        let ch = PairChannel(config: cfg, store: st, client: fb, history: hist)
+        let a = ch.send(.text("one", from: .lulu, ts: 100))
+        let b = ch.send(.text("two", from: .lulu, ts: 100))
+        check(hist.contains(id: a.id) && hist.contains(id: b.id), "A: sent message is in history at send time")
+        check(ch.outbox.count == 2, "A: both queued while the server fails")
+        ch.stop()   // "quit"
+        return [a, b]
+    }
+    check(FileManager.default.fileExists(atPath: dir.appendingPathComponent("outbox.json").path), "A: outbox persisted on disk")
+    // relaunch, server fine: both go out exactly once, in order
+    StubProtocol.replies = ["PUT /pairs/PAIR/messages/*": .init(status: 200, body: "{}")]
+    StubProtocol.requests = []
+    await MainActor.run {
+        let ch = PairChannel(config: cfg, store: st, client: fb, history: hist)
+        check(ch.outbox.map(\.id) == sent.map(\.id), "A: outbox reloaded after relaunch")
+        ch.start()   // starts flushing (stream / presence stubs 404 → offline; harmless)
+        relaunched = ch
+    }
+    try? await Task.sleep(nanoseconds: 800_000_000)
+    await MainActor.run { relaunched?.stop() }
+    let puts = StubProtocol.requests.filter { $0.method == "PUT" && $0.url.path.contains("/messages/") }.map { $0.url.lastPathComponent }
+    check(puts == sent.map { $0.id + ".json" }, "A: relaunch delivers both once, in order: \(puts)")
+    check(hist.all().filter { $0.from == .lulu }.count == 2, "A: history holds each sent message once")
+    check(!FileManager.default.fileExists(atPath: dir.appendingPathComponent("outbox.json").path), "A: outbox file removed once delivered")
+    // a different pair code never resends it
+    do {
+        let dir2 = tmp.appendingPathComponent("outbox-other")
+        let h2 = HistoryStore(directory: dir2)
+        OutboxStore(directory: dir2).save(.init(pending: [sent[0]]), pairCode: "PAIR", role: .lulu)
+        let other = await MainActor.run { PairChannel(config: AppConfig(role: .lulu, pairCode: "OTHERCODE", databaseURL: "https://stub.firebaseio.com"), store: st, client: fb, history: h2).outbox.count }
+        check(other == 0, "A: outbox dropped when the pair code changed")
+    }
+    // 400 on one message: parked, the next still goes out
+    let dir3 = tmp.appendingPathComponent("outbox-park")
+    let h3 = HistoryStore(directory: dir3)
+    StubProtocol.requests = []
+    let parked: (ids: [String], failed: [String], left: Int, notified: Int) = await withCheckedContinuation { cont in
+        Task { @MainActor in
+            let ch = PairChannel(config: cfg, store: st, client: fb, history: h3)
+            nonisolated(unsafe) var notified = 0
+            ch.onSendFailed = { _ in notified += 1 }
+            var badMsg = Message.text("bad", from: .lulu, ts: 200)
+            badMsg.id = PushKey.generate(at: 200)
+            StubProtocol.replies = [
+                "PUT /pairs/PAIR/messages/\(badMsg.id).json": .init(status: 400, body: #"{"error":"bad"}"#),
+                "PUT /pairs/PAIR/messages/*": .init(status: 200, body: "{}"),
+            ]
+            let a = ch.send(badMsg)
+            let b = ch.send(.text("good", from: .lulu, ts: 201))
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            ch.stop()
+            cont.resume(returning: ([a.id, b.id], ch.failedIds, ch.outbox.count, notified))
+        }
+    }
+    check(parked.failed == [parked.ids[0]] && parked.left == 0 && parked.notified == 1, "A: a 400-rejected message is parked, the rest delivered")
+    check(StubProtocol.requests.filter { $0.method == "PUT" }.count == 2 && h3.contains(id: parked.ids[0]), "A: parked message stays in history")
+    check(OutboxStore(directory: dir3).load(pairCode: "PAIR", role: .lulu).failed == [parked.ids[0]], "A: parked id persisted")
+    // markRead clamps a far-future message
+    await MainActor.run {
+        let ch = PairChannel(config: cfg, store: st, client: fb, history: nil)
+        var far = Message.poke(from: .lumei, ts: nowMs() * 10); far.id = "-FAR"
+        ch.markRead(far)
+        check(st.lastReadTs <= nowMs() + 86_400_000, "A: markRead never moves the cursor past now + 1 day")
+    }
+    st.wipe()
 }
 
 try? FileManager.default.removeItem(at: tmp)

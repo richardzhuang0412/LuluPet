@@ -16,6 +16,8 @@ final class ToolsPanelModel: ObservableObject {
     var openSettings: () -> Void = {}
     /// v0.13.1: how much of a reminder's cycle is left (nil = reminder off).
     var cycleLine: (ReminderKind) -> String? = { _ in nil }
+    /// B17: today's cups read live (a panel left open past midnight shows 0, not yesterday's count).
+    var todayCups: () -> Int = { 0 }
 
     func update(settings: ToolsSettings, pomodoro: PomodoroState, cups: Int) {
         if self.settings != settings { self.settings = settings }
@@ -131,8 +133,11 @@ struct ToolsTabView: View {
                 }
             }
             if water {
-                Text("今天喝了 \(model.cups) 杯 💧")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(Self.accent)
+                TimelineView(.periodic(from: .now, by: 30)) { _ in
+                    Text("今天喝了 \(model.todayCups()) 杯 💧")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded)).foregroundStyle(Self.accent)
+                }
+                .id(model.cups)   // a cup counted now shows at once
             }
         }
     }

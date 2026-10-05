@@ -192,15 +192,15 @@ final class UpdateController {
                 let dir = try AppUpdater.makeWorkDir()
                 workDir = dir
                 let panel = self.progress
-                let zip = try await AppUpdater.download(release, into: dir) { f in
+                let files = try await AppUpdater.download(release, into: dir, allowLoopback: AppUpdater.allowsLoopbackAssets(feedOverride: self.env.options.feed)) { f in
                     DispatchQueue.main.async { panel.update(text: UpdateCopy.downloading(f), fraction: f) }
                 }
                 try Task.checkCancellation()
                 self.progress.update(text: UpdateCopy.verifying, fraction: nil, cancellable: false)
-                let app = try await AppUpdater.stage(zip: zip, in: dir, current: self.current)
+                let app = try await AppUpdater.stage(zip: files.zip, sig: files.sig, in: dir, current: self.current)
                 self.progress.update(text: UpdateCopy.installing, fraction: nil, cancellable: false)
                 try AppUpdater.launchInstaller(newApp: app, target: target, workDir: dir,
-                                               relaunchArgs: AppUpdater.relaunchArguments(CommandLine.arguments))
+                                               relaunchArgs: UpdateInstaller.relaunchArguments(CommandLine.arguments))
                 NSLog("[lulu] update: installer started for v%@, quitting", v)
                 self.env.terminate()   // presence sign-off path (applicationWillTerminate)
             } catch {

@@ -158,10 +158,11 @@ struct CityPicker: View {
             }
             if changing, !results.isEmpty {
                 VStack(spacing: 0) {
-                    ForEach(Array(results.enumerated()), id: \.offset) { i, p in
+                    ForEach(Array(Self.rows(results).enumerated()), id: \.offset) { i, row in
+                        let p = row.place
                         if i > 0 { Divider() }
                         Button { choose(p) } label: {
-                            Text(p.pickerTitle)
+                            Text(row.label)
                                 .font(.system(size: 12, design: .rounded))
                                 .foregroundStyle(Color(white: 0.2))
                                 .lineLimit(1)
@@ -183,6 +184,22 @@ struct CityPicker: View {
             guard new != place else { return }
             place = new
             if new != nil { changing = false; query = ""; results = []; status = nil } else { changing = true }
+        }
+    }
+
+    /// Result rows with identical labels ("Springfield · Illinois · 美国" twice) are told apart: a near-duplicate (same label,
+    /// within ~0.1° of an earlier row) is dropped; a genuinely different place with the same label gets its coordinates appended.
+    static func rows(_ places: [WeatherPlace]) -> [(place: WeatherPlace, label: String)] {
+        var kept: [WeatherPlace] = []
+        for p in places where !kept.contains(where: { $0.pickerTitle == p.pickerTitle && abs($0.latitude - p.latitude) < 0.1 && abs($0.longitude - p.longitude) < 0.1 }) {
+            kept.append(p)
+        }
+        let counts = Dictionary(kept.map { ($0.pickerTitle, 1) }, uniquingKeysWith: +)
+        return kept.map { p in
+            guard (counts[p.pickerTitle] ?? 0) > 1 else { return (p, p.pickerTitle) }
+            let lat = String(format: "%.1f°%@", abs(p.latitude), p.latitude >= 0 ? "N" : "S")
+            let lon = String(format: "%.1f°%@", abs(p.longitude), p.longitude >= 0 ? "E" : "W")
+            return (p, "\(p.pickerTitle)（\(lat) \(lon)）")
         }
     }
 

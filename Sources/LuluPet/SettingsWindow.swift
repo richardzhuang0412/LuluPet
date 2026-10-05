@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import LuluCore
 import SwiftUI
 
@@ -220,7 +221,7 @@ private struct SettingsView: View {
                 banner("⚠︎", "连接失败：\(warning)\n请检查配对码和数据库地址，两个人要填得一模一样哦",
                        tint: Self.accent)
             } else if firstLaunch {
-                banner("👋", "第一次使用：选你是谁，填上和TA一样的配对码和数据库地址就能连上啦（设置方法见 docs/firebase-setup.md）",
+                banner("👋", "第一次使用：选你是谁，填上和TA一样的配对码和数据库地址就能连上啦（还没有数据库？见页面最下面的图文步骤）",
                        tint: Color(red: 0.36, green: 0.62, blue: 0.38))
             }
 
@@ -278,6 +279,7 @@ private struct SettingsView: View {
                         .font(.system(size: 12, design: .rounded))
                 }
                 .toggleStyle(.checkbox)
+                LaunchAtLoginRow()
             }
 
             Divider().padding(.vertical, -4)
@@ -309,10 +311,7 @@ private struct SettingsView: View {
             }
 
             if draft.mode.isPaired {
-                Text("还没有数据库？按照 docs/firebase-setup.md 里的步骤创建一个（大约 5 分钟）。")
-                    .font(.system(size: 11, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                FirebaseGuideNote()
             }
 
         }
@@ -404,13 +403,20 @@ private struct SettingsView: View {
 }
 
 /// v0.10 小工具 settings: edits apply (and are saved) at once.
+/// B12: no copy of its own. Reads the controller's live settings each time and writes through it, so a switch flipped
+/// in the menu / the compose panel is never overwritten by a stale value here; `changed` redraws the page.
 final class ToolsPrefsModel: ObservableObject {
-    @Published var settings: ToolsSettings { didSet { if settings != oldValue { access.set(settings) } } }
     private let access: PersonalToolsController.SettingsAccess
+    private var bag: AnyCancellable?
+
+    var settings: ToolsSettings {
+        get { access.get() }
+        set { if newValue != access.get() { access.set(newValue) } }
+    }
 
     init(_ access: PersonalToolsController.SettingsAccess) {
         self.access = access
-        settings = access.get()
+        bag = access.changed.sink { [weak self] in self?.objectWillChange.send() }
     }
 }
 
@@ -622,4 +628,32 @@ final class ShortcutPrefsModel: ObservableObject {
 private struct GeneralHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+/// v0.16 开机自动打开 (通用 page): the system's login-item status is the source of truth (`LoginItem`).
+private struct LaunchAtLoginRow: View {
+    @State private var state = LoginItem.state
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Toggle(isOn: Binding(get: { state == .on || state == .requiresApproval }, set: { on in
+                error = LoginItem.set(on)
+                state = LoginItem.state
+            })) {
+                Text("开机自动打开").font(.system(size: 12, design: .rounded))
+            }
+            .toggleStyle(.checkbox)
+            .disabled(state == .unavailable)
+            Text(error ?? LoginItem.hint(for: state))
+                .font(.system(size: 11, design: .rounded))
+                .foregroundStyle(error != nil || state == .requiresApproval ? Color.red.opacity(0.8) : Color.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if state == .requiresApproval {
+                Button("打开登录项设置", action: LoginItem.openSystemSettings).controlSize(.small)
+            }
+        }
+        .padding(.top, 2)
+        .onAppear { state = LoginItem.state }
+    }
 }

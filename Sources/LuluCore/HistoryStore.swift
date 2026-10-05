@@ -73,8 +73,9 @@ public final class HistoryStore: @unchecked Sendable {
     @discardableResult
     public func merge(_ messages: [Message]) -> Int {
         lock.lock(); defer { lock.unlock() }
-        let fd = open(fileURL.path, O_WRONLY | O_APPEND | O_CREAT, 0o644)
+        let fd = open(fileURL.path, O_WRONLY | O_APPEND | O_CREAT, 0o600)   // prelaunch-A: private (was 0644)
         guard fd >= 0 else { NSLog("[lulu] history: cannot open %@ (errno %d)", fileURL.path, errno); return 0 }
+        fchmod(fd, 0o600)   // ... also for a file an older version created world-readable
         let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         flock(fd, LOCK_EX)
         defer { flock(fd, LOCK_UN); try? handle.close() }

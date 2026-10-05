@@ -127,7 +127,7 @@ public enum VisitGeometry {
     /// The visitor enters from the screen edge nearer the host and stands on that side, unless there is no
     /// room there, in which case it runs past the host and stands on the other side.
     public static func arrival(host: CGRect, visitorWindowWidth w: CGFloat, visitorSpriteWidth s: CGFloat,
-                               screen: CGRect, gap: CGFloat = Visits.standGap) -> VisitPlan {
+                               screen: CGRect, gap: CGFloat = Visits.standGap, others: [CGRect] = []) -> VisitPlan {
         let entry: Side = host.midX < screen.midX ? .left : .right
         let inset = (w - s) / 2
         let leftX = host.minX - gap - s - inset       // visitor sprite's maxX = host.minX - gap
@@ -139,18 +139,55 @@ public enum VisitGeometry {
         case .left: stand = leftFits || !rightFits ? .left : .right
         case .right: stand = rightFits || !leftFits ? .right : .left
         }
-        let entryX = entry == .left ? screen.minX - w : screen.maxX
+        let entryX = offscreenX(side: entry, windowWidth: w, screen: screen, others: others)
         return VisitPlan(entrySide: entry, entryX: entryX, standX: stand == .left ? leftX : rightX, standSide: stand)
     }
 
     /// Where the home pet runs for "去找TA". `window` = the home pet's window frame, `spriteWidth` its
     /// visible sprite width.
-    public static func go(window: CGRect, spriteWidth s: CGFloat, screen: CGRect) -> GoPlan {
+    public static func go(window: CGRect, spriteWidth s: CGFloat, screen: CGRect, others: [CGRect] = []) -> GoPlan {
         let inset = (window.width - s) / 2
         if window.midX < screen.midX {
-            return GoPlan(side: .left, edgeX: screen.minX - inset, offscreenX: screen.minX - window.width)
+            return GoPlan(side: .left, edgeX: screen.minX - inset,
+                          offscreenX: offscreenX(side: .left, windowWidth: window.width, screen: screen, others: others))
         }
-        return GoPlan(side: .right, edgeX: screen.maxX - window.width + inset, offscreenX: screen.maxX)
+        return GoPlan(side: .right, edgeX: screen.maxX - window.width + inset,
+                      offscreenX: offscreenX(side: .right, windowWidth: window.width, screen: screen, others: others))
+    }
+
+    /// Window x where a window of `windowWidth` is past `screen`'s `side` edge AND not on any neighbouring display
+    /// (`others` = every display's frame; ones beside `screen`, overlapping it vertically, are skipped over). Without
+    /// this a pet "off screen" at `screen.maxX` is parked on the next monitor.
+    public static func offscreenX(side: Side, windowWidth w: CGFloat, screen: CGRect, others: [CGRect]) -> CGFloat {
+        let beside = others.filter { $0.minY < screen.maxY && $0.maxY > screen.minY }
+        var x = side == .left ? screen.minX - w : screen.maxX
+        for _ in 0..<beside.count + 1 {   // each pass can only move past one more display
+            switch side {
+            case .left:
+                guard let d = beside.first(where: { $0.minX < x + w && $0.maxX > x }) else { return x }
+                x = d.minX - w
+            case .right:
+                guard let d = beside.first(where: { $0.minX < x + w && $0.maxX > x }) else { return x }
+                x = d.maxX
+            }
+        }
+        return x
+    }
+
+    /// The home pet's saved window origin, pulled back onto a display when the one it was on is gone (unplugged,
+    /// resolution change): unchanged while the window's centre is on some display; else clamped into the display
+    /// nearest to it. `screens` = visible frames.
+    public static func clampHome(origin: CGPoint, size: CGSize, screens: [CGRect]) -> CGPoint {
+        guard !screens.isEmpty else { return origin }
+        let centre = CGPoint(x: origin.x + size.width / 2, y: origin.y + size.height / 2)
+        if screens.contains(where: { $0.contains(centre) }) { return origin }
+        func dist(_ r: CGRect) -> CGFloat {
+            let dx = max(r.minX - centre.x, 0, centre.x - r.maxX), dy = max(r.minY - centre.y, 0, centre.y - r.maxY)
+            return dx * dx + dy * dy
+        }
+        let target = screens.min { dist($0) < dist($1) }!
+        return CGPoint(x: min(max(origin.x, target.minX), max(target.minX, target.maxX - size.width)),
+                       y: min(max(origin.y, target.minY), max(target.minY, target.maxY - size.height)))
     }
 
     /// Seconds to run `distance` points.

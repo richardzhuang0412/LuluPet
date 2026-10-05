@@ -68,6 +68,14 @@ public final class PairChannel {
     public private(set) var partnerNeverSeen = false
     /// Messages waiting to be sent, oldest first.
     public private(set) var outbox: [Message] = []
+    /// prelaunch-A: ids of messages the server refused for good (HTTP 400 / 401 / 403 on that message): they are
+    /// parked (still in history) instead of blocking the rest; shown as 「没发出去」.
+    public private(set) var failedIds: [String] = []
+    /// prelaunch-A: a message was parked (see `failedIds`).
+    public var onSendFailed: ((Message) -> Void)?
+    /// prelaunch-A: a backlog longer than `WireLimits.queueCap` partner messages arrived at once; only the newest
+    /// 50 went through `onMessage`, the older `count` were recorded in history and marked read (fold them into "+N").
+    public var onMessagesFolded: ((_ count: Int) -> Void)?
 
     /// Presence timing (`Presence` / `PowerProfile`: AC 20 s heartbeat + 15 s poll, battery 30 s + 30 s,
     /// offline after 75 s). Both run from one coalesced wake-up (`PresenceSchedule`); a change takes effect
@@ -99,6 +107,11 @@ public final class PairChannel {
     private var lastSentTs: Int64 = 0
     private var backfillTask: Task<Void, Never>?
     private var backfilled = false
+    /// prelaunch-A: set by `stop()`; late callbacks of a stopped channel (in-flight requests) are dropped.
+    private var stopped = false
+    /// prelaunch-A: set by `signOffBlocking()`: no heartbeat may overwrite the sign-off afterwards.
+    private var signedOff = false
+    private let outboxStore: OutboxStore?
 
     public convenience init(config: AppConfig, store: ConfigStore, history: HistoryStore? = nil) {
         self.init(config: config, store: store,
@@ -112,6 +125,24 @@ public final class PairChannel {
         self.store = store
         self.client = client
         self.history = history
+        // prelaunch-A: unsent messages survive quit / crash / config change (same pair code and seat only).
+        outboxStore = history.map { OutboxStore(directory: $0.fileURL.deletingLastPathComponent()) }
+        if let outboxStore {
+            let snap = outboxStore.load(pairCode: config.pairCode, role: config.role)
+            outbox = snap.pending
+            failedIds = snap.failed
+            lastSentTs = snap.pending.map(\.ts).max() ?? 0
+            if !snap.pending.isEmpty { history?.merge(snap.pending) }
+            if !snap.pending.isEmpty || !snap.failed.isEmpty { persistOutbox() }
+            else { outboxStore.save(Snapshot(), pairCode: config.pairCode, role: config.role) }   // drops a stale file of another pair
+        }
+    }
+
+    private typealias Snapshot = OutboxStore.Snapshot
+
+    private func persistOutbox() {
+        guard !stopped, let outboxStore else { return }
+        outboxStore.save(Snapshot(pending: outbox, failed: failedIds), pairCode: config.pairCode, role: config.role)
     }
 
     /// v0.10: publish my focus round (nil = not focusing). Sends a heartbeat at once when it changed (and the
@@ -162,7 +193,7 @@ public final class PairChannel {
     public func setLook(_ look: PresenceLook?) {
         guard look != self.look else { return }
         self.look = look
-        guard !tasks.isEmpty else { return }
+        guard !tasks.isEmpty, !signedOff else { return }
         let wait = lastLookBeat.map { max(0, lookBeatGap - Date().timeIntervalSince($0)) } ?? 0
         if wait <= 0 {
             lastLookBeat = Date()
@@ -186,6 +217,11 @@ public final class PairChannel {
     /// Opens the message stream and starts the presence heartbeat + partner polling (one loop).
     public func start() {
         stop()
+        stopped = false
+        signedOff = false
+        // prelaunch-A: a cursor poisoned by an old far-future message (or a bad clock) must not stall the stream.
+        let now = nowMs()
+        if WireLimits.isFuture(ts: store.lastReadTs, now: now) { store.lastReadTs = now }
         setState(.connecting)
         seatMonitor = SeatClashMonitor(interval: seatCheckInterval)
         tasks = [
@@ -197,6 +233,9 @@ public final class PairChannel {
 
     /// Cancels all tasks; safe to call more than once.
     public func stop() {
+        stopped = true
+        lookBeatTask?.cancel()
+        lookBeatTask = nil
         tasks.forEach { $0.cancel() }
         tasks = []
         flushTask?.cancel()
@@ -213,7 +252,13 @@ public final class PairChannel {
         var m = message
         m.ts = max(m.ts, lastSentTs + 1)
         lastSentTs = m.ts
+        // prelaunch-A: the message gets its Firebase key now (a retry is an idempotent PUT to it), is written to
+        // history at once (the stream echo and backfill dedupe by id) and the outbox is persisted.
+        if !PushKey.isValid(m.id) { m.id = PushKey.generate(at: m.ts) }
+        m.localId = nil
         outbox.append(m)
+        history?.append(m)
+        persistOutbox()
         flush()
         return m
     }
@@ -226,6 +271,7 @@ public final class PairChannel {
         readHigh = max(readHigh, message.ts)
         var cursor = readHigh
         if let oldest = unread.values.min() { cursor = min(cursor, oldest - 1) }
+        cursor = WireLimits.clampCursor(cursor, now: nowMs())   // prelaunch-A: never past what the rules allow
         store.lastReadTs = max(store.lastReadTs, cursor)
     }
 
@@ -236,9 +282,11 @@ public final class PairChannel {
     private func streamLoop() async {
         var backoff: TimeInterval = 1
         while !Task.isCancelled {
+            let began = Date()
             let error = await connectOnce()
             if Task.isCancelled { return }
-            if connectionState == .connected { backoff = 1 }
+            // prelaunch-A: keep-alives alone don't reset the backoff; only a connection that stayed up does.
+            backoff = StreamBackoff.afterConnection(current: backoff, livedFor: Date().timeIntervalSince(began))
             let wait: TimeInterval
             if let reason = Self.misconfigurationReason(error) {
                 setState(.misconfigured(reason))
@@ -282,6 +330,7 @@ public final class PairChannel {
     private func streamIdleSeconds() -> TimeInterval { Date().timeIntervalSince(lastStreamActivity) }
 
     private func handle(_ ev: SSEEvent) {
+        guard !stopped else { return }   // prelaunch-A: late event of a stopped channel
         lastStreamActivity = Date()
         if connectionState != .connected {
             setState(.connected)
@@ -290,8 +339,16 @@ public final class PairChannel {
         let messages = FirebaseDecode.messages(from: ev)
         if let history, !messages.isEmpty { history.merge(messages) }
         let live = !FirebaseDecode.isBacklog(ev)
+        var fresh: [Message] = []
         for m in messages where m.from != config.role {
             guard delivered.insert(m.id).inserted else { continue }
+            fresh.append(m)
+        }
+        // prelaunch-A: a huge backlog is folded: only the newest 50 are delivered one by one.
+        let (folded, kept) = QueueFold.split(fresh)
+        for m in folded { unread[m.id] = m.ts; markRead(m) }
+        if !folded.isEmpty { onMessagesFolded?(folded.count) }
+        for m in kept {
             unread[m.id] = m.ts
             if let c = m.character, m.ts >= lastPartnerCharacterTs {   // v0.11: newest message's character
                 lastPartnerCharacterTs = m.ts
@@ -322,7 +379,7 @@ public final class PairChannel {
     }
 
     private func setState(_ s: ConnectionState) {
-        guard s != connectionState else { return }
+        guard s != connectionState, !stopped else { return }
         connectionState = s
         onConnection?(s)
     }
@@ -344,6 +401,7 @@ public final class PairChannel {
 
     private func backfillFinished(_ result: Result<Int, Error>) {
         backfillTask = nil
+        guard !stopped else { return }
         switch result {
         case .success(let added):
             backfilled = true
@@ -372,6 +430,7 @@ public final class PairChannel {
             // v0.11: my own seat is read BEFORE this iteration's heartbeat PUT, at start and then every ~3 min. Only in
             // iterations that send a heartbeat: just before my PUT the seat still holds whoever wrote last since my
             // previous PUT (the other machine, if there is one), while between two of my PUTs it would be my own write.
+            if signedOff { return }   // prelaunch-A
             if identity != nil, due.heartbeat, seatMonitor.isDue(now: now()) {
                 do {
                     let mine = try await client.presence(role)   // nil = never written: a (negative) read, not a failure
@@ -402,6 +461,7 @@ public final class PairChannel {
     }
 
     private func applyMySeat(_ info: PresenceInfo?, at now: TimeInterval) {
+        guard !stopped else { return }
         mySeatPresence = info
         guard let device = identity?.device else { return }
         let read = SeatClash.detect(mySeatPresence: info, myDevice: device, nowMs: nowMs())
@@ -419,6 +479,7 @@ public final class PairChannel {
     }
 
     private func apply(_ info: PresenceInfo?) {
+        guard !stopped else { return }
         let changed = info != partnerPresence
         partnerPresence = info
         partnerNeverSeen = info?.lastSeen == nil && info?.dnd == nil
@@ -475,6 +536,9 @@ public final class PairChannel {
     public func signOffBlocking(timeout: TimeInterval = 1.5) {
         let client = client, role = config.role, dnd = dnd, identity = identity, app = appVersion, place = place
         let signOffLook = look.map { PresenceLook(outfit: $0.outfit) }   // the pose is not on TA's desk any more
+        signedOff = true   // prelaunch-A: nothing may heartbeat over the sign-off
+        lookBeatTask?.cancel()
+        lookBeatTask = nil
         let done = DispatchSemaphore(value: 0)
         Task.detached { try? await client.markOffline(role, dnd: dnd, identity: identity, app: app, place: place, look: signOffLook); done.signal() }
         _ = done.wait(timeout: .now() + timeout)
@@ -482,6 +546,7 @@ public final class PairChannel {
 
     /// Heartbeat immediately (after wake).
     public func heartbeatNow() {
+        guard !signedOff else { return }   // prelaunch-A
         let client = client, role = config.role, dnd = dnd, focus = publishedFocus, identity = identity, app = appVersion, place = place, look = look
         Task { try? await client.heartbeat(role, dnd: dnd, focus: focus, identity: identity, app: app, place: place, look: look) }
     }
@@ -495,32 +560,33 @@ public final class PairChannel {
     // MARK: Outbox
 
     private func flush() {
-        guard flushTask == nil, !outbox.isEmpty else { return }
+        guard flushTask == nil, !stopped, !outbox.isEmpty else { return }
         flushGeneration += 1
         let generation = flushGeneration
         flushTask = Task { [weak self] in
             while let self, !Task.isCancelled, let next = self.outbox.first {
                 do {
-                    let pushId = try await self.client.post(next)
+                    try await self.client.put(next)   // idempotent: same key on every retry
                     if self.outbox.first?.id == next.id { self.outbox.removeFirst() }
-                    self.recordSent(next, pushId: pushId)
+                    self.persistOutbox()
                 } catch {
-                    try? await Task.sleep(nanoseconds: UInt64(Self.outboxRetryInterval * 1_000_000_000))
+                    if Task.isCancelled { break }
+                    var status: Int?
+                    if case .http(let code)? = error as? FirebaseError { status = code }
+                    switch OutboxPolicy.verdict(status: status, streamConnected: self.connectionState == .connected) {
+                    case .park:
+                        // The server refuses this very message for good: park it, carry on with the rest.
+                        NSLog("[lulu] send refused for good (HTTP %ld): parked a %@ message", status ?? 0, next.kind.rawValue)
+                        if self.outbox.first?.id == next.id { self.outbox.removeFirst() }
+                        if !self.failedIds.contains(next.id) { self.failedIds.append(next.id) }
+                        self.persistOutbox()
+                        self.onSendFailed?(next)
+                    case .retry:
+                        try? await Task.sleep(nanoseconds: UInt64(Self.outboxRetryInterval * 1_000_000_000))
+                    }
                 }
             }
             if let self, self.flushGeneration == generation { self.flushTask = nil }
         }
-    }
-
-    /// Stores a delivered message under its server push id (what the stream echo, the partner and
-    /// backfill all see), remembering the local id; falls back to the local id if the server sent none.
-    private func recordSent(_ m: Message, pushId: String?) {
-        guard let history else { return }
-        var record = m
-        if let pushId {
-            record.id = pushId
-            record.localId = m.id
-        }
-        history.append(record)
     }
 }

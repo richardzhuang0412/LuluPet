@@ -26,8 +26,17 @@ public final class WeatherStore: @unchecked Sendable {
 
     /// My city; nil = none set.
     public var myPlace: WeatherPlace? {
-        get { load("myPlace") }
-        set { save(newValue, "myPlace") }
+        // S5: while 「使用我现在的位置」 is on, the place is published coarsely (see `WeatherPlace.coarsePublished`).
+        get {
+            var p: WeatherPlace? = load("myPlace")
+            if myPlaceAuto { p?.coarsePublished = true }
+            return p
+        }
+        set {
+            var p = newValue
+            p?.coarsePublished = false   // derived from `myPlaceAuto` on read, never stored
+            save(p, "myPlace")
+        }
     }
 
     /// v0.14.1: my city comes from 「使用我现在的位置」 (default false = I picked it by hand). Additive key; old versions ignore it.

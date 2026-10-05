@@ -19,20 +19,31 @@ import LuluCore
     nonisolated(unsafe) static var expandedThisSession = false
     private var toastGeneration = 0
 
+    private let scanHistory: (() -> [String: Int]?)?
+    /// No `stickerSendCounts` stored yet and the history could not be read (no role yet): scan later, and do not store
+    /// an empty map meanwhile.
+    private var needsScan = false
+
     /// `library`: every sticker id of the catalog (not the policy-filtered ones). `scanHistory` counts my sent stickers
-    /// in history.jsonl; it runs once, the first time (no `stickerSendCounts` stored yet).
-    init(store: ConfigStore?, library: [String], scanHistory: (() -> [String: Int])? = nil) {
+    /// in history.jsonl; it runs once (no `stickerSendCounts` stored yet) and returns nil while there is no role
+    /// (then it is tried again at the next use, and nothing is stored).
+    init(store: ConfigStore?, library: [String], scanHistory: (() -> [String: Int]?)? = nil) {
         self.store = store
+        self.scanHistory = scanHistory
         let recent = store?.stickerRecent ?? [:]
         self.recent = recent
-        let counts: [String: Int]
+        var counts: [String: Int] = [:]
+        var deferScan = false
         if let stored = store?.stickerSendCounts {
             counts = stored
+        } else if let scanned = scanHistory?() {
+            counts = scanned
+            store?.stickerSendCounts = scanned
+            NSLog("[lulu] stickers: send counts built from history (%ld stickers, %ld sends)", scanned.count, scanned.values.reduce(0, +))
         } else {
-            counts = scanHistory?() ?? [:]
-            store?.stickerSendCounts = counts
-            NSLog("[lulu] stickers: send counts built from history (%ld stickers, %ld sends)", counts.count, counts.values.reduce(0, +))
+            deferScan = scanHistory != nil
         }
+        needsScan = deferScan
         self.counts = counts
         if let stored = store?.stickerQuickBar {
             quickBar = Array(stored.prefix(StickerPanel.maxQuickBar))
@@ -46,10 +57,22 @@ import LuluCore
 
     /// A sticker was sent (or acted out in solo): it counts towards 常用 and is the newest use.
     func use(_ id: String) {
+        scanIfNeeded()
         counts[id, default: 0] += 1
         recent = StickerPanel.recorded(id, at: nowMs(), in: recent)
         store?.stickerSendCounts = counts
         store?.stickerRecent = recent
+    }
+
+    /// The deferred history scan (see `init`): once a role exists, merge the history's counts with what was counted since.
+    func scanIfNeeded() {
+        guard needsScan, let scanned = scanHistory?() else { return }
+        needsScan = false
+        var merged = scanned
+        for (id, n) in counts { merged[id, default: 0] += n }
+        counts = merged
+        store?.stickerSendCounts = merged
+        NSLog("[lulu] stickers: send counts built from history (%ld stickers, %ld sends)", merged.count, merged.values.reduce(0, +))
     }
 
     func isOnBar(_ id: String) -> Bool { quickBar.contains(id) }
@@ -84,6 +107,7 @@ import LuluCore
     func unequip(_ id: String) { setBar(StickerPanel.removed(id, from: quickBar)) }
     /// v0.15.3 drag & drop onto a quick-bar slot. Returns the message for the page.
     func drop(_ id: String, onto slot: Int, visible: [String], label: (String) -> String) -> String {
+        guard StickerPanel.canDrop(id, visible: visible) else { return "这不是表情，没有装上" }
         let wasOn = isOnBar(id)
         let r = StickerPanel.dropped(id, onto: slot, in: quickBar, visible: visible)
         setBar(r.list)
@@ -93,6 +117,7 @@ import LuluCore
     }
     func move(_ id: String, by delta: Int, visible: [String]) { setBar(StickerPanel.moved(id, by: delta, in: quickBar, visible: visible)) }
     func recommend(visible: [String]) {
+        scanIfNeeded()
         setBar(StickerPanel.recommended(stored: quickBar, counts: counts, recent: recent, visible: visible))
     }
 

@@ -34,6 +34,8 @@ struct BubbleItem {
     /// v0.12.1: my own pet's bubble (pomodoro, reminders, receipts, upgrade nudge): it points at the home pet even
     /// while TA's visitor is here, so it never reads as if TA said it.
     var atHome = false
+    /// prelaunch-B17: runs when this item actually becomes the bubble on screen (not while it waits in the queue).
+    var onShown: (() -> Void)? = nil
 
     /// v0.7.4: text / sticker bubbles that stay until acknowledged get the「收到 ❤️」button.
     var wantsAck: Bool {
@@ -147,6 +149,8 @@ final class BubbleWindow: NSPanel {
     override var canBecomeKey: Bool { false }
 
     var isShowingSomething: Bool { current != nil }
+    /// prelaunch-B11: a bubble is actually on screen (not just held in the queue while the pet is hidden / 勿扰).
+    var isOnScreen: Bool { current != nil && !isSuspended }
 
     /// v0.12.1: enqueue one of my own pet's bubbles (anchored at the home pet, see `BubbleItem.atHome`).
     func enqueueAtHome(_ item: BubbleItem) {
@@ -159,6 +163,7 @@ final class BubbleWindow: NSPanel {
         if items.enqueue(item) {
             render()
             onShow?(item)
+            item.onShown?()
         } else {
             bubbleView.setPendingCount(items.waiting.count)
             relayout()
@@ -190,6 +195,7 @@ final class BubbleWindow: NSPanel {
         if let next = current {
             render()
             onShow?(next)
+            next.onShown?()
         } else {
             orderOut(nil)
         }
@@ -257,6 +263,12 @@ private final class BubbleView: NSView {
     var onToolButton: ((Int) -> Void)?
     var tailOnTop = false { didSet { needsLayout = true } }
     var tailX: CGFloat = 0
+
+    /// Most lines a text bubble shows: about 60 % of the main screen's height (at least 6).
+    static var maxTextLines: Int {
+        let h = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.height ?? 800
+        return max(6, Int((h * 0.6) / 18))
+    }
 
     private static let pad: CGFloat = 12          // inner padding
     private static let margin: CGFloat = 10       // room for the shadow
@@ -342,6 +354,8 @@ private final class BubbleView: NSView {
             b.isHidden = i >= toolButtonCount
             if i < toolButtonCount { b.title = item.buttons[i].title }
         }
+        textLabel.maximumNumberOfLines = 0
+        textLabel.lineBreakMode = .byWordWrapping
         switch item.content {
         case .card(let lines, let preview, let title):
             isSticker = false; textLabel.alignment = .natural
@@ -378,12 +392,18 @@ private final class BubbleView: NSView {
             textLabel.alignment = .natural
             textLabel.font = Effects.roundedFont(14, weight: .regular)
             textLabel.textColor = NSColor(calibratedWhite: 0.18, alpha: 1)
+            // prelaunch: a very long message must not make the bubble taller than the screen: cap the lines
+            // (the rest ends in 「…」; the full text is in the history).
+            let maxLines = Self.maxTextLines
+            textLabel.maximumNumberOfLines = maxLines
+            textLabel.lineBreakMode = .byTruncatingTail
             textLabel.stringValue = s
             textLabel.isHidden = false
             gifView.isHidden = true
             gifView.image = nil
             let fit = textLabel.sizeThatFits(NSSize(width: 240, height: CGFloat.greatestFiniteMagnitude))
-            contentSize = NSSize(width: min(240, ceil(fit.width)), height: ceil(fit.height))
+            let lineH = ceil(textLabel.font?.boundingRectForFont.height ?? 18)
+            contentSize = NSSize(width: min(240, ceil(fit.width)), height: min(ceil(fit.height), lineH * CGFloat(maxLines)))
         case .sticker(let url, let caption):
             isSticker = true
             let img = NSImage(contentsOf: url)

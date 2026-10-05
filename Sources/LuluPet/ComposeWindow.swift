@@ -190,6 +190,13 @@ final class ComposeWindow: NSPanel {
         isDismissing = true
         orderOut(nil)
         isDismissing = false
+        // prelaunch: a dismissed panel is never shown again (each open builds a new one), but the app keeps the old
+        // window until the next open — drop its SwiftUI tree so its TimelineViews (weather minute tick, tools timers)
+        // and models stop. Deferred: dismiss() is often called from inside a SwiftUI button action.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.isVisible else { return }
+            self.contentView = NSView()
+        }
     }
 
     static func firstFrame(_ url: URL) -> NSImage? {
@@ -402,7 +409,8 @@ private struct ComposeView: View {
                     .background(RoundedRectangle(cornerRadius: 10).fill(Color.white))
                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(Self.accent.opacity(0.35), lineWidth: 1))
                     .onChange(of: text) { _, new in
-                        if new.count > Message.maxTextLength { text = String(new.prefix(Message.maxTextLength)) }
+                        // prelaunch-A: the limit is in UTF-16 units (like the Firebase rules), not Characters
+                        if new.utf16.count > Message.maxTextLength { text = Message.clampText(new) }
                     }
                 Button(action: send) {
                     Text("发送")
@@ -431,9 +439,10 @@ private struct ComposeView: View {
     /// 「更多表情…」 row that opens the whole library by emotion (remembered while the app runs).
     private var stickerGrid: some View {
         let visibleIDs = stickers.map(\.id)
-        let barIDs = StickerPanel.quickBar(stored: prefs.quickBar, visible: visibleIDs)
+        // prelaunch-C: slots held by hidden (friend-mode) stickers are filled from the next ranked ones, display only
+        let barIDs = StickerPanel.shownBar(stored: prefs.quickBar, visible: visibleIDs, counts: prefs.counts, recent: prefs.recent)
         let byID = Dictionary(stickers.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        let freqIDs = StickerPanel.frequent(quickBar: prefs.quickBar, counts: prefs.counts, recent: prefs.recent, visible: visibleIDs)
+        let freqIDs = StickerPanel.frequent(quickBar: prefs.quickBar + barIDs, counts: prefs.counts, recent: prefs.recent, visible: visibleIDs)
         let freq = freqIDs.compactMap { byID[$0] }
         let hasMore = stickers.count > barIDs.count + freq.count
         return VStack(alignment: .leading, spacing: 6) {

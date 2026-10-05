@@ -255,7 +255,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     let next = args.firstIndex(of: a).flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
                     demoWhatsNew = next == "todos" ? .todos : .updates   // an unknown following arg is ignored by the loop
                 case "--demo-whatsnew-seen": demoWhatsNewSeen = it.next()
-                case "--update-feed": update.feed = it.next()
+                case "--update-feed":   // https, or http to this Mac only; anything else is ignored (the real GitHub feed is used)
+                    let raw = it.next()
+                    update.feed = UpdateFeed.sanitizedOverride(raw)?.absoluteString
+                    if update.feed == nil { NSLog("[lulu] ignoring --update-feed %@ (only https or http://127.0.0.1 / localhost)", raw ?? "") }
                 case "--update-auto-confirm": update.autoConfirm = true
                 case "--update-allow-dir": update.allowDir = it.next()
                 case "--demo-update-check": demoUpdateCheck = it.next().flatMap(TimeInterval.init) ?? 1.5
@@ -312,7 +315,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var history = HistoryStore(directory: HistoryStore.defaultDirectory(profile: options.profile))
     /// v0.15.2 快捷栏 + send counts, shared by the compose panel and the Settings 「表情」 page (counts are built from history once).
     private lazy var stickerPrefs = StickerPrefsModel(store: store, library: stickers.stickers.map(\.id), scanHistory: { [unowned self] in
-        self.role.map { StickerPanel.sendCounts(from: self.history.all(), me: $0) } ?? [:]
+        self.role.map { StickerPanel.sendCounts(from: self.history.all(), me: $0) }   // prelaunch-C: nil until a role exists (nothing stored)
     })
     private let sprites = SpriteCatalog(root: resourcesRoot().appendingPathComponent("Sprites"))
     private let stickers = StickerCatalog(root: resourcesRoot().appendingPathComponent("Stickers"))
@@ -486,6 +489,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.somethingEnded()   // a visit may have held up a due quiet / doze / rotation
         }
         visits.onNoVisitor = { [weak self] e in self?.showOnHomePet(e) }
+        // prelaunch-B15: a 喝了 / 等会儿 reply that couldn't ride the return toast (trip reset, bounce, collision)
+        // shows as the usual small bubble on the home pet instead of being dropped.
+        visits.onToastLost = { [weak self] line in
+            guard let self else { return }
+            NSLog("[lulu] remind reply: return toast lost, showing at home: %@", line)
+            self.bubble.enqueueAtHome(BubbleItem(header: self.partnerCharacter().displayName, content: .text(line), autoHide: 4))
+            self.petMoved()
+        }
         visits.onHome = { [weak self] in
             self?.playTripCard()
         }
@@ -760,12 +771,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let old = channel, !usingDummyConfig, cfg.effectiveMode == .solo || cfg.role != config?.role || cfg.pairCode != config?.pairCode {
             old.signOffBlocking()
         }
+        // prelaunch-B10: what was queued / waiting belongs to the old mode / seat / pair code — never show it under the new one.
+        let seatChanged = cfg.effectiveMode != config?.effectiveMode || cfg.role != config?.role || cfg.pairCode != config?.pairCode
         config = cfg
+        if seatChanged {
+            awayMessages = []
+            tripMessages = []
+            awayBatchIsDND = false
+            awayBatchIsFocus = false
+            unseenAway = nil
+            statusMenu.setUnseen(0)
+        }
         channel?.stop()
         channel = nil
         partnerOnline = nil
         shownMisconfigNotice = false
         seatClashShown = false
+        statusMenu.setSeatClash(false)   // prelaunch-B9: the status line must not keep the old seat's clash
         bubble.clearAll()
         notice.dismiss()
         statusMenu.setSolo(cfg.effectiveMode == .solo)
@@ -792,15 +814,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let ch = PairChannel(config: cfg, store: store, history: history)
         // --- v0.11: heartbeats carry who I am (character / mode / device); a second machine on my seat is noticed
         ch.setIdentity(character: cfg.myCharacter, mode: cfg.effectiveMode, device: store.deviceId)
-        ch.onSeatClash = { [weak self] clash in self?.seatClashChanged(clash) }
-        ch.setAppVersion(AppVersionSource.current)   // v0.11.2: nil outside a bundle = not published
-        ch.onPartnerPresence = { [weak self] _ in
-            self?.evaluateUpgradeNudge()
-            self?.partnerPlaceMaybeChanged()   // v0.12
-            self?.refreshComposeWeatherCard()  // v0.15.1 TA's status tag
+        // prelaunch-A: every callback below ignores a channel that has been replaced / stopped (`self.channel === ch`).
+        ch.onSeatClash = { [weak self, weak ch] clash in
+            guard let self, let ch, self.channel === ch else { return }
+            self.seatClashChanged(clash)
         }
-        ch.onPartnerIdentity = { [weak self] id in
-            guard let self else { return }
+        ch.setAppVersion(AppVersionSource.current)   // v0.11.2: nil outside a bundle = not published
+        ch.onPartnerPresence = { [weak self, weak ch] _ in
+            guard let self, let ch, self.channel === ch else { return }   // prelaunch-A
+            self.evaluateUpgradeNudge()
+            self.partnerPlaceMaybeChanged()   // v0.12
+            self.refreshComposeWeatherCard()  // v0.15.1 TA's status tag
+        }
+        ch.onPartnerIdentity = { [weak self, weak ch] id in
+            guard let self, let ch, self.channel === ch else { return }   // prelaunch-A
             NSLog("[lulu] partner identity: %@ / %@", id.character.rawValue, id.mode.rawValue)
             self.partnerIdentityChanged()
         }
@@ -811,20 +838,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ch.presencePollInterval = 2
             ch.presenceThresholdMs = 6_000
         }
-        ch.onMessage = { [weak self] m, live in self?.receive(m, live: live, fromChannel: true) }
-        ch.onPartnerOnline = { [weak self] online in self?.partnerOnlineChanged(online) }
-        ch.onPartnerDND = { [weak self] d in
-            NSLog("[lulu] partner dnd: %@", d.map { DND.partnerStatusLine($0) + " until \($0.untilMs)" } ?? "off")
-            self?.statusMenu.setPartnerDND(d)
+        ch.onMessage = { [weak self, weak ch] m, live in
+            guard let self, let ch, self.channel === ch else { return }   // prelaunch-A
+            self.receive(m, live: live, fromChannel: true)
         }
-        ch.onPartnerFocus = { [weak self] f in
+        ch.onPartnerOnline = { [weak self, weak ch] online in
+            guard let self, let ch, self.channel === ch else { return }   // prelaunch-A
+            self.partnerOnlineChanged(online)
+        }
+        // prelaunch-A: a message the server refused for good (parked, still in history): tell me once.
+        ch.onSendFailed = { [weak self, weak ch] _ in
+            guard let self, let ch, self.channel === ch else { return }
+            self.pet?.showToast("有一条消息没发出去")
+        }
+        // prelaunch-A: a backlog of > 50 partner messages was folded (only the newest 50 reach `receive`; the older
+        // ones are already in history, marked read) — say so once, they're in 记录.
+        ch.onMessagesFolded = { [weak self, weak ch] count in
+            guard let self, let ch, self.channel === ch else { return }
+            NSLog("[lulu] backlog folded: %ld older message(s) only in history", count)
+            self.pet?.showToast("还有 \(count) 条更早的话在「记录」里")
+        }
+        ch.onPartnerDND = { [weak self, weak ch] d in
+            guard let self, let ch, self.channel === ch else { return }   // prelaunch-A
+            NSLog("[lulu] partner dnd: %@", d.map { DND.partnerStatusLine($0) + " until \($0.untilMs)" } ?? "off")
+            self.statusMenu.setPartnerDND(d)
+        }
+        ch.onPartnerFocus = { [weak self, weak ch] f in
+            guard let self, let ch, self.channel === ch else { return }   // prelaunch-A
             NSLog("[lulu] partner focus: %@", f.map { "until \($0.until)" } ?? "off")
-            self?.statusMenu.setPartnerFocus(f, name: self?.partnerName ?? cfg.role.partner.displayName)
+            self.statusMenu.setPartnerFocus(f, name: self.partnerName)
         }
         ch.dnd = dnd.status(now: wallClock)
-        ch.onConnection = { [weak self] state in
+        ch.onConnection = { [weak self, weak ch] state in
             // `--demo-notice` / `--demo-offline` pin a fake state for snapshots.
-            guard let self, !self.options.demoNotice, !self.options.demoOffline else { return }
+            guard let self, let ch, self.channel === ch, !self.options.demoNotice, !self.options.demoOffline else { return }
             self.connectionChanged(state)
         }
         ch.setPlace(weatherStore.myPlace)   // v0.12: heartbeats carry my city from the first one
@@ -879,7 +926,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func storeMyPlace(_ place: WeatherPlace?) {
         weatherStore.myPlace = place
         cityModel.place = place
-        channel?.setPlace(place)
+        channel?.setPlace(weatherStore.myPlace)   // prelaunch-C (S5): the store's copy is flagged coarse while auto-located
         NSLog("[lulu] weather: my city → %@%@", place?.name ?? "none", weatherStore.myPlaceAuto ? " (located)" : "")
         refreshWeather(force: true)
         housekeeping.setNeedsArm()
@@ -1139,12 +1186,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusMenu.setVersionLine("有新版本 v\(v)（TA 已升级）")
             guard shouldBubble, upgradeBubbleQueued != v, !hide.isHidden, !dndOn, !holdingForFocus else { return }
             upgradeBubbleQueued = v
-            store.upgradeNudgedFor = v   // once per partner version: persisted when the bubble is shown
+            // Once per partner version: persisted when the bubble is actually shown (B17: not while it waits in the queue,
+            // else quitting before it showed would lose the nudge for good).
             NSLog("[lulu] upgrade nudge: partner is on v%@, mine v%@ — bubble", v, mine ?? "?")
             bubble.enqueueAtHome(BubbleItem(header: partnerName, content: .text("\(partnerName)已经升级到 v\(v) 啦，你也升级一下吧～点「一键更新」就行"),
                                       message: nil,
                                       buttons: [BubbleButton(title: "一键更新", action: { [weak self] in self?.updater.updateTapped() }),   // v0.14
-                                                BubbleButton(title: "知道啦", action: {})]))
+                                                BubbleButton(title: "知道啦", action: {})],
+                                      onShown: { [weak self] in self?.store.upgradeNudgedFor = v }))
         }
     }
 
@@ -1368,7 +1417,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         fidgetDue = Housekeeping.fidgetDeadline(current: fidgetDue, armed: armed, now: uptime,
                                                 delay: IdleRules.fidgetDelay(fixed: options.fidgetSeconds, unit: Double.random(in: 0...1)))
-        let dndEnd = dnd.until.flatMap { $0 > 0 && dndOn ? $0 : nil }
+        let dndEnd = dnd.endDeadline // prelaunch-B1: not gated on dndOn (false once the end passes -> timer never fired)
         let hideEnd = hide.manual ? hide.until : nil
         var d = HousekeepingDeadlines(quiet: quietDue, doze: dozeDue, rotation: rotationDue, fidget: fidgetDue,
                                       dndEnd: dndEnd, hideEnd: hideEnd)
@@ -1423,7 +1472,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var homePetBusy: Bool {
         guard let pet else { return true }
         return pet.isBusy || pet.isDragging || pet.inputLocked || visits.isActive
-            || bubble.isShowingSomething || compose?.isVisible == true
+            || bubble.isOnScreen || compose?.isVisible == true   // B11: a suspended bubble isn't visible
     }
 
     // MARK: v0.12 weather (shared)
@@ -1597,7 +1646,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func thinkContext() -> ThinkContext {
         ThinkContext(solo: isSolo, hidden: windowsHidden || hide.isHidden, dnd: dndOn, focus: tools.isFocusing,
                      quiet: restQuiet || (pet?.isDozing ?? false) || (pet?.isSleeping ?? false),
-                     visitActive: visits.isActive, bubbleShowing: bubble.isShowingSomething,
+                     visitActive: visits.isActive, bubbleShowing: bubble.isOnScreen,
                      petBusy: homePetBusy || thinkWindow.isShowing)
     }
 
@@ -1721,6 +1770,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: v0.14.3 偷看 (peek at TA on demand; private: nothing is sent)
     private var peekInFlight = false
+    private var peekWaiting = false   // prelaunch-A: a peek is waiting for the speech bubble to go (a 2nd press must not start a 2nd wait)
 
     /// --demo-peek: a faked TA state for this peek (nil = real).
     private var peekDemoState: String?
@@ -1740,7 +1790,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// gives a toast; a speech bubble on screen makes the peek wait until it is gone (the cleaner of the two options:
     /// nothing overlaps and the message being read stays readable).
     func peekAtPartner() {
-        guard config != nil, !isSolo, pet != nil, !peekInFlight else { return }
+        guard config != nil, !isSolo, pet != nil, !peekInFlight, !peekWaiting else { return }   // prelaunch-A: peekWaiting
         NSLog("[lulu] peek: asked")
         // Checks that need no fetch: hidden / visit (a waiting speech bubble is handled after the fetch).
         let pre = ThinkRules.peekVerdict(context: thinkContext(), partnerEverSeen: true)
@@ -1760,18 +1810,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func finishPeek(waitedSince: TimeInterval?) {
-        guard !isSolo else { return }
+        guard !isSolo else { peekWaiting = false; return }   // prelaunch-A
         let v = ThinkRules.peekVerdict(context: thinkContext(), partnerEverSeen: partnerEverSeenForPeek())
         switch v {
         case .show:
+            peekWaiting = false   // prelaunch-A
             tryThink(.peek, force: true)
         case .wait:
             // A speech bubble is on screen: look again every 0.5 s (only while a peek is waiting), give up after 30 s.
             let since = waitedSince ?? uptime
-            guard uptime - since < 30 else { return }
-            if waitedSince == nil { NSLog("[lulu] peek: waiting for the speech bubble") }
+            guard uptime - since < 30 else { peekWaiting = false; return }   // prelaunch-A
+            if waitedSince == nil { peekWaiting = true; NSLog("[lulu] peek: waiting for the speech bubble") }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.finishPeek(waitedSince: since) }
         default:
+            peekWaiting = false   // prelaunch-A
             applyPeekVerdict(v)
         }
     }
@@ -2023,10 +2075,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: Incoming
 
+    /// S8: logs never carry what the two of them wrote — a text is logged as its length only.
+    private static func logBody(_ m: Message) -> String {
+        m.text.map { "\($0.count) chars" } ?? m.stickerId ?? m.remindRaw ?? ""
+    }
+
     /// A partner message: the partner's character comes to visit and says it (VisitController).
     private func receive(_ m: Message, live: Bool, fromChannel: Bool) {
         if fromChannel {
-            NSLog("[lulu] received %@: %@ (id %@, ts %lld, trip %@, %@)", m.kind.rawValue, m.text ?? m.stickerId ?? m.remindRaw ?? "", m.id, m.ts,
+            NSLog("[lulu] received %@: %@ (id %@, ts %lld, trip %@, %@)", m.kind.rawValue, Self.logBody(m), m.id, m.ts,
                   m.trip ?? "-", live ? "live" : "backlog")
         }
         if fromChannel, let o = m.outfit { lastPartnerOutfit = o }
@@ -2114,7 +2171,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// happens that could follow the end of a round (a message arrives, a bubble is read, the pet is clicked,
     /// the pomodoro's end) — no timer of its own.
     func releaseFocusHold(reason: String) {
-        guard awayBatchIsFocus, !awayMessages.isEmpty, !holdingForFocus, !hide.isHidden, !dndOn else { return }
+        // prelaunch-B3: any queued batch (also hidden / 勿扰 ones that ended mid-focus) is released once the focus hold ends.
+        guard !awayMessages.isEmpty, !holdingForFocus, !hide.isHidden, !dndOn else { return }
         NSLog("[lulu] focus hold released (%@): %ld message(s) waiting", reason, awayMessages.count)
         DispatchQueue.main.async { [weak self] in self?.playAwayMoment() }
     }
@@ -2214,7 +2272,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         message.character = message.character ?? config?.myCharacter   // v0.11: which character I draw (partner's visitor)
         message.outfit = message.outfit ?? outfit   // v0.5: the partner's visitor wears what our pet wears
         guard let m = channel?.send(message) else { return nil }
-        NSLog("[lulu] sent %@: %@ (ts %lld, trip %@, outfit %@)", m.kind.rawValue, m.text ?? m.stickerId ?? m.remindRaw.map { "\($0)\(m.ackOf == nil ? "" : " (receipt)")" } ?? "", m.ts, m.trip ?? "-", m.outfit ?? "-")
+        NSLog("[lulu] sent %@: %@ (ts %lld, trip %@, outfit %@)", m.kind.rawValue, m.text.map { "\($0.count) chars" } ?? m.stickerId ?? m.remindRaw.map { "\($0)\(m.ackOf == nil ? "" : " (receipt)")" } ?? "", m.ts, m.trip ?? "-", m.outfit ?? "-")
         return m
     }
 
@@ -2240,6 +2298,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if connected, options.demoGoOnline == nil, !usingDummyConfig, let channel {
             Task { @MainActor [weak self] in
                 let fresh = await channel.refreshPartnerPresence()
+                guard self?.channel === channel else { return }   // prelaunch-A: the channel was replaced meanwhile
                 self?.dispatchSend(message, connected: connected, reachable: fresh ?? (self?.partnerOnline == true))
             }
             return

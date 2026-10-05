@@ -111,6 +111,12 @@ final class VisitController {
     private var queuedWhileAway: [Event] = []
     private var homeOrigin: NSPoint = .zero
     private var awayTimer: Timer?
+    /// prelaunch-B17: the partner-offline bounce's 「look around off-screen」 wait; cancellable by `reset()`.
+    private var bounceTimer: Timer?
+    /// prelaunch-B7: bumped by `reset()`. Clip / run completions started before a reset must not resume the old visit.
+    private var epoch = 0
+    /// prelaunch-B15: a partner reply (「TA 说马上喝」) that could not ride the return toast home: the app shows it as a home bubble.
+    var onToastLost: ((String) -> Void)?
     /// v0.6: shown when the pet is back from a bounce (partner offline) instead of the delivered toast.
     private var homeNotice: String?
     /// v0.14.4: the partner answered a 叫 TA 喝水 / 起来动动 while our pet was at their desk: the return toast says it
@@ -134,6 +140,22 @@ final class VisitController {
 
     private static func log(_ s: String) { NSLog("[lulu] visit: %@", s) }
     private var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
+
+    /// Wraps a completion so it does nothing once `reset()` has run since it was created (B7).
+    private func current(_ f: @escaping () -> Void) -> () -> Void {
+        let e = epoch
+        return { [weak self] in
+            guard let self, self.epoch == e else { return }
+            f()
+        }
+    }
+
+    /// The reply that was to ride the return toast is handed to the app instead of being dropped (B15).
+    private func flushToastOverride() {
+        guard let line = homeToastOverride else { return }
+        homeToastOverride = nil
+        onToastLost?(line)
+    }
 
     /// True while anything visit-related is on screen or in motion.
     var isActive: Bool { visitorState != .absent || homeState != .home }
@@ -177,9 +199,10 @@ final class VisitController {
     /// were waiting to be shown so nothing unread is lost.
     func resetKeepingBubbles() -> [BubbleItem] {
         var items = pending + queuedWhileAway.compactMap(\.bubble)
-        // A collision dance can't go on: the partner's message it was keeping back is handed back too.
-        if location.collision == .partner, var b = danceEvent?.bubble {
-            b.header = Visits.pinnedHeader
+        // A collision dance can't go on: the partner's message it was keeping back is handed back too (B8: whoever won;
+        // only the loser's one was kept back under the 「TA 留下的话」 header).
+        if location.collision != nil, var b = danceEvent?.bubble {
+            if location.collision == .partner { b.header = Visits.pinnedHeader }
             items.append(b)
         }
         reset()
@@ -187,6 +210,9 @@ final class VisitController {
     }
 
     func reset() {
+        epoch += 1
+        bounceTimer?.invalidate(); bounceTimer = nil
+        flushToastOverride()
         dance = []
         danceEvent = nil
         danceTimer?.invalidate(); danceTimer = nil
@@ -265,10 +291,10 @@ final class VisitController {
             pending = []
             load(e)
             Self.log("\(e.kind.rawValue) while leaving: visitor turns back")
-            visitor.run(toX: plan.standX) { [weak self] in
+            visitor.run(toX: plan.standX, completion: current { [weak self] in
                 guard let self else { return }
                 if e.live { self.meet() } else { self.stay() }
-            }
+            })
         }
     }
 
@@ -348,6 +374,9 @@ final class VisitController {
         return w
     }
 
+    /// Every display's frame, so "off screen" never lands on a neighbouring monitor (B16).
+    private var allScreenFrames: [NSRect] { NSScreen.screens.map(\.frame) }
+
     private func screenFrame(for rect: NSRect) -> NSRect {
         (NSScreen.screens.first { $0.frame.intersects(rect) } ?? NSScreen.main)?.visibleFrame
             ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
@@ -356,9 +385,9 @@ final class VisitController {
     private func arrive(_ e: Event, host: PetWindow, visitor: PetWindow) {
         let p = VisitGeometry.arrival(host: host.visibleSpriteScreenRect, visitorWindowWidth: visitor.frame.width,
                                       visitorSpriteWidth: visitor.idleSpriteWidth, screen: screenFrame(for: host.frame),
-                                      gap: Visits.standGap * petScale)
+                                      gap: Visits.standGap * petScale, others: allScreenFrames)
         startVisitor(e, plan: p, host: host, visitor: visitor)
-        visitor.run(toX: p.standX) { [weak self] in self?.meet() }
+        visitor.run(toX: p.standX, completion: current { [weak self] in self?.meet() })
     }
 
     /// Puts the visitor at the edge, ready to run in for `e` (the caller starts the run).
@@ -394,11 +423,11 @@ final class VisitController {
         let poolText = pendingCouples.isEmpty ? "built-in \(pendingMove.rawValue)" : "pool \(pendingCouples)"
         if let name, let cc = clip {
             Self.log("meeting: picked \(name) from \(poolText)")
-            playCouple(cc, name: name, host: host, visitor: visitor) { [weak self] in self?.stay() }
+            playCouple(cc, name: name, host: host, visitor: visitor, completion: current { [weak self] in self?.stay() })
         } else {
             Self.log("meeting: no couple clip from \(poolText) (have \(available.sorted()); policy \(policy.mode.rawValue), "
                      + "\(policy.allowsCoupleClips ? "intimate \(policy.allowsIntimate ? "ok" : "refused")" : "same character")), both play happy + hearts")
-            bothHappy(host: host, visitor: visitor) { [weak self] in self?.stay() }
+            bothHappy(host: host, visitor: visitor, completion: current { [weak self] in self?.stay() })
         }
     }
 
@@ -427,7 +456,8 @@ final class VisitController {
     }
 
     private func stay() {
-        guard let visitor else { return }
+        // B7: only a visit that is still on its way in / meeting (a reset in between leaves `.absent`).
+        guard let visitor, visitorState == .entering || visitorState == .meeting else { return }
         visitorState = .staying
         if visitor.petScale != petScale { setPetScale(petScale) }   // the size changed during its run / meeting
         if let next = afterMeeting {
@@ -531,7 +561,7 @@ final class VisitController {
         visitor.inputLocked = true
         visitor.setRest(.idle)
         Self.log("visitor leaving: \(visitor.hasClip(.wave) ? "wave" : "happy (no wave clip)"), then back to the \(plan.entrySide.rawValue) edge")
-        visitor.playOnce(.wave) { [weak self, weak visitor] in
+        visitor.playOnce(.wave, completion: current { [weak self, weak visitor] in
             guard let self, let visitor, self.visitorState == .leaving else { return }
             self.sound(.leave)   // v0.15.4: the footsteps start with the walk off screen (after the wave)
             visitor.run(toX: plan.entryX) { [weak self, weak visitor] in
@@ -541,7 +571,7 @@ final class VisitController {
                 self.onLayoutChanged?()
                 Self.log("visitor gone")
             }
-        }
+        })
     }
 
     // MARK: v0.7 size
@@ -559,7 +589,7 @@ final class VisitController {
             visitor.setPetScale(s)
             let p = VisitGeometry.arrival(host: host.visibleSpriteScreenRect, visitorWindowWidth: visitor.frame.width,
                                           visitorSpriteWidth: visitor.idleSpriteWidth, screen: screenFrame(for: host.frame),
-                                          gap: Visits.standGap * s)
+                                          gap: Visits.standGap * s, others: allScreenFrames)
             plan = p
             visitor.setFrameOrigin(NSPoint(x: p.standX, y: host.frame.minY))
             Self.log("visitor resized to \(String(format: "%.2f", Double(s))), now \(p.standSide.rawValue) of host; frame \(NSStringFromRect(visitor.frame))")
@@ -577,7 +607,8 @@ final class VisitController {
     /// Home pet dropped after a drag that started at `origin`. If it overlaps the visitor, both merge
     /// into a couple clip (hug or kiss) and then return to where they were. Returns true when handled.
     func homeDragEnded(from origin: NSPoint) -> Bool {
-        guard visitorState == .staying, let host, let visitor,
+        // B6: not during a collision dance (the dance owns both pets; a merge would hide the home pet for good).
+        guard visitorState == .staying, location.collision == nil, let host, let visitor,
               host.visibleSpriteScreenRect.intersects(visitor.visibleSpriteScreenRect) else { return false }
         leaveTimer?.invalidate(); leaveTimer = nil
         stayClock.restart(now: now)   // v0.7.4: playing with the visitor gives it the full time again
@@ -589,17 +620,17 @@ final class VisitController {
         let merged = name.flatMap { couples.clip(named: $0) }
         onSound?(SoundEvent.meetingKeys(reaction: [], clipSound: merged?.sound, fallback: [], couple: name), visitorRole)
         Self.log("merge: home pet dropped onto visitor")
-        let done: () -> Void = { [weak self, weak host] in
-            host?.slide(to: origin, save: true) { self?.stay() }
+        let done: () -> Void = current { [weak self, weak host] in
+            host?.slide(to: origin, save: true, completion: self?.current { self?.stay() })
         }
         if let name, let cc = couples.clip(named: name) {
             playCouple(cc, name: name, host: host, visitor: visitor, completion: done)
         } else {
             Self.log("merge: no hug/kiss clip (have \(couples.names.sorted())), both play happy + hearts")
-            host.slide(to: origin, save: true) { [weak self, weak host, weak visitor] in
+            host.slide(to: origin, save: true, completion: current { [weak self, weak host, weak visitor] in
                 guard let self, let host, let visitor else { return }
-                self.bothHappy(host: host, visitor: visitor) { self.stay() }
-            }
+                self.bothHappy(host: host, visitor: visitor, completion: self.current { self.stay() })
+            })
         }
         return true
     }
@@ -632,14 +663,14 @@ final class VisitController {
         case .deliver(let away):
             if before == .home { homeOrigin = host.frame.origin }
             homeNotice = nil
-            homeToastOverride = nil
+            flushToastOverride()   // B15: a new trip replaces the toast; the reply it would have carried shows as a bubble
             host.inputLocked = true
             notice.dismiss()
             homeSound(.goVisit)
             let m = send(Message.tripDeliver) ?? Message(from: hostSeat ?? hostCharacter ?? .lulu, kind: kind, ts: nowMs(), trip: Message.tripDeliver)
             tripMessage = m
             location.sent(ts: m.ts)
-            let p = VisitGeometry.go(window: host.frame, spriteWidth: host.idleSpriteWidth, screen: screenFrame(for: host.frame))
+            let p = VisitGeometry.go(window: host.frame, spriteWidth: host.idleSpriteWidth, screen: screenFrame(for: host.frame), others: allScreenFrames)
             Self.log("deliver: \(before == .returning ? "turning around, " : "")running off the \(p.side.rawValue) edge with the \(kind.rawValue) "
                      + "(trip ts \(location.tripTs.map(String.init) ?? "-"), away \(Int(away)) s)")
             host.run(toX: p.offscreenX) { [weak self, weak host] in
@@ -676,13 +707,18 @@ final class VisitController {
                 host.inputLocked = true
                 notice.dismiss()
                 homeSound(.goVisit)
-                let p = VisitGeometry.go(window: host.frame, spriteWidth: host.idleSpriteWidth, screen: screenFrame(for: host.frame))
+                let p = VisitGeometry.go(window: host.frame, spriteWidth: host.idleSpriteWidth, screen: screenFrame(for: host.frame), others: allScreenFrames)
                 Self.log("bounce: partner \(dnd ? (partnerDND == nil && partnerFocusHold ? "专注" : "勿扰") : "offline") → run off the \(p.side.rawValue) edge, look for TA, come back (\(sent ? "sent, queued for TA" : "nothing sent"))")
                 // Run off-screen like a real trip, "look around" out there for a moment, then come back.
                 host.run(toX: p.offscreenX) { [weak self] in
                     guard let self, self.homeState == .leaving else { return }
                     Self.log(String(format: "bounce: off-screen, back in %.1f s", Visits.bounceAwaySeconds))
-                    DispatchQueue.main.asyncAfter(deadline: .now() + Visits.bounceAwaySeconds) { [weak self] in self?.runHome() }
+                    self.bounceTimer?.invalidate()
+                    let t = Timer(timeInterval: Visits.bounceAwaySeconds, repeats: false) { [weak self] _ in
+                        MainActor.assumeIsolated { self?.bounceTimer = nil; self?.runHome() }
+                    }
+                    RunLoop.main.add(t, forMode: .common)
+                    self.bounceTimer = t
                 }
             } else {
                 Self.log("bounce: pet already on the move (\(homeState.rawValue)), \(sent ? "sent" : "nothing sent")")
@@ -708,9 +744,20 @@ final class VisitController {
 
     /// `then` (collision dance): called once home instead of the usual toast / card / queued visitors.
     private func runHome(then: (() -> Void)? = nil) {
-        guard let host, homeState == .leaving || homeState == .away else { return }
+        guard let host, homeState == .leaving || homeState == .away else {
+            // Already home (e.g. the loser's pet never left): the dance must still move on (B17).
+            then?()
+            return
+        }
         awayTimer?.invalidate(); awayTimer = nil
         let bounced = location.bouncing
+        // B16: the display it set off from may be gone (unplugged) — come home to one that exists.
+        let safe = VisitGeometry.clampHome(origin: homeOrigin, size: host.frame.size, screens: NSScreen.screens.map(\.visibleFrame))
+        if safe != homeOrigin {
+            Self.log("home position \(NSStringFromPoint(homeOrigin)) is off every display → \(NSStringFromPoint(safe))")
+            homeOrigin = safe
+            host.setFrameOrigin(NSPoint(x: host.frame.minX, y: safe.y))
+        }
         location.startReturn()
         host.orderFrontRegardless()
         if !bounced { Self.log("running home") }
@@ -728,6 +775,7 @@ final class VisitController {
                 self.notice.show(title: nil, body: line, autoHide: 4, beside: host.spriteScreenRect)
                 self.homeSound(.notHome)
                 Self.log("back home, told \"\(line)\"")
+                self.flushToastOverride()   // B15: the notice has no room for the partner's reply
             } else {
                 let toast = self.homeToastOverride ?? Visits.deliveredToast
                 host.showToast(toast)
@@ -736,7 +784,7 @@ final class VisitController {
                 Self.log("back home, toast \"\(toast)\"")
             }
             self.homeNotice = nil
-            self.homeToastOverride = nil
+            self.homeToastOverride = nil   // (consumed by the toast above, or flushed)
             self.onLayoutChanged?()
             self.onHome?()
             let queued = self.queuedWhileAway
@@ -790,7 +838,12 @@ final class VisitController {
                 nextStep()
             }
         case .hostVisitor:
-            guard let host, var e = danceEvent, let visitor = prepareVisitor(outfit: e.outfit) else { nextStep(); return }
+            guard let host, var e = danceEvent, let visitor = prepareVisitor(outfit: e.outfit) else {
+                // No sprites for the partner's pet: its message shows on the home pet instead of vanishing (B17).
+                if let e = danceEvent { danceEvent?.bubble = nil; onNoVisitor?(e) }
+                nextStep()
+                return
+            }
             e.bubble = nil   // kept back: shown when our pet is home again (showPinned)
             e.live = true
             afterMeeting = { [weak self] in self?.nextStep() }
@@ -837,11 +890,12 @@ final class VisitController {
         visitor.inputLocked = true
         visitor.setRest(.idle)
         homeOrigin = host.frame.origin
+        host.setPetHidden(false)   // B6: never leave with the home pet drawn invisible
         host.inputLocked = true
         location.leaveAgain(away: 0)
         sound(.leave)
         let screen = screenFrame(for: host.frame)
-        let hostX = plan.entrySide == .left ? screen.minX - host.frame.width : screen.maxX
+        let hostX = VisitGeometry.offscreenX(side: plan.entrySide, windowWidth: host.frame.width, screen: screen, others: allScreenFrames)
         Self.log("leave together: both pets run off the \(plan.entrySide.rawValue) edge")
         var running = 2
         let done: () -> Void = { [weak self] in
@@ -867,6 +921,7 @@ final class VisitController {
     /// then the visitor stays and leaves by the usual rules (its bubble is shown as usual).
     private func comeHomeWithVisitor() {
         guard let host, let e = danceEvent, let visitor = prepareVisitor(outfit: e.outfit) else {
+            if let e = danceEvent { danceEvent?.bubble = nil; onNoVisitor?(e) }   // B17: show it on the home pet
             runHome { [weak self] in self?.nextStep() }
             return
         }
@@ -876,9 +931,10 @@ final class VisitController {
         let homeSprite = host.visibleSpriteScreenRect.offsetBy(dx: homeOrigin.x - host.frame.minX, dy: 0)
         let p = VisitGeometry.arrival(host: homeSprite, visitorWindowWidth: visitor.frame.width,
                                       visitorSpriteWidth: visitor.idleSpriteWidth, screen: screenFrame(for: homeFrame),
-                                      gap: Visits.standGap * petScale)
+                                      gap: Visits.standGap * petScale, others: allScreenFrames)
         host.orderFrontRegardless()
         startVisitor(e, plan: p, host: host, visitor: visitor)
+        danceEvent?.bubble = nil   // B8: now in `pending` (a reset hands it back from there, not twice)
         // A step behind ours, so the two are seen running in one after the other.
         let behind = visitor.idleSpriteWidth * 0.8
         visitor.setFrameOrigin(NSPoint(x: host.frame.minX + (p.entrySide == .left ? -behind : behind), y: visitor.frame.minY))
@@ -904,6 +960,7 @@ final class VisitController {
         danceEvent = nil
         danceTimer?.invalidate(); danceTimer = nil
         location.endCollision()
+        flushToastOverride()   // B15: a dance never uses the return toast
         Self.log("collision: dance over")
         onHome?()
         let queued = queuedWhileAway

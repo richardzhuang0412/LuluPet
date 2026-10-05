@@ -120,6 +120,27 @@ public enum StickerPanel {
         return Array(stored.filter { ok.contains($0) && seen.insert($0).inserted }.prefix(maxQuickBar))
     }
 
+    /// How many of the first 8 stored slots are taken by ids the current mode hides (friend mode hides intimate ones).
+    public static func hiddenOnBar(stored: [String], visible: [String]) -> Int {
+        let ok = Set(visible)
+        var seen = Set<String>()
+        return stored.filter { seen.insert($0).inserted }.prefix(maxQuickBar).filter { !ok.contains($0) }.count
+    }
+
+    /// The 快捷栏 as the compose panel draws it: `quickBar`, and when hidden ids still occupy stored slots, those slots
+    /// are filled from the next ranked stickers (display only: the stored list is untouched), so the visible bar is not
+    /// short while the stored bar is full. A bar that simply has free slots stays short.
+    public static func shownBar(stored: [String], visible: [String], counts: [String: Int], recent: [String: Int64]) -> [String] {
+        let base = quickBar(stored: stored, visible: visible)
+        let gap = min(hiddenOnBar(stored: stored, visible: visible), maxQuickBar - base.count)
+        guard gap > 0 else { return base }
+        let have = Set(base)
+        return base + ranked(counts: counts, recent: recent, visible: visible).filter { !have.contains($0) }.prefix(gap)
+    }
+
+    /// Only a real sticker of the current mode can be dropped onto the bar (dragged text must not say 已装上).
+    public static func canDrop(_ id: String, visible: [String]) -> Bool { visible.contains(id) }
+
     /// The automatic 常用: `ranked`, minus the quick bar, at most 16. Nobody sent anything → the default order.
     public static func frequent(quickBar: [String], counts: [String: Int], recent: [String: Int64], visible: [String]) -> [String] {
         let bar = Set(quickBar)
