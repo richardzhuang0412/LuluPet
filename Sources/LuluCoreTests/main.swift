@@ -876,9 +876,9 @@ do {
             let arriveLulu = shippedSounds.files(for: "arrive", visitor: .lulu)
             check(arriveLulu.contains("v4/S01.m4a") && arriveLulu.contains("v4/S02.m4a") && !arriveLumei.contains("v4/S01.m4a") && !arriveLumei.contains("v4/S02.m4a") && !arriveLumei.isEmpty,
                   "shipped sounds: arrive S01 / S02 only for a lulu visitor")
-            check(shippedSounds.files(for: "goVisit", visitor: .lulu) == ["v4/S01.m4a"] && shippedSounds.files(for: "goVisit", visitor: .lumei).isEmpty
+            check(shippedSounds.files(for: "goVisit", visitor: .lulu) == ["v4/S01.m4a", "v6/govisit_V11.m4a", "v6/govisit_V12.m4a"] && shippedSounds.files(for: "goVisit", visitor: .lumei) == ["v6/govisit_V17.m4a"]
                   && shippedSounds.files(for: "goBack", visitor: .lulu).isEmpty && shippedSounds.files(for: "goBack", visitor: .lumei).isEmpty,
-                  "shipped sounds: goVisit S01 only when our own pet is lulu; no goBack line (老公你回来啦 is 噜妹 greeting a visiting 噜噜, not my pet coming home)")
+                  "shipped sounds: goVisit lines per character (噜噜 3, 噜妹 1); no goBack line (老公你回来啦 is 噜妹 greeting a visiting 噜噜, not my pet coming home)")
             check(shippedSounds.files(for: "poke").contains("v4/S03.m4a") && shippedSounds.files(for: "hug").contains("v4/S06.m4a") && shippedSounds.files(for: "cry").contains("v4/S08.m4a")
                   && shippedSounds.files(for: "angry").contains("v4/S10.m4a") && shippedSounds.files(for: "doze").contains("v4/S38.m4a") && shippedSounds.files(for: "doze").contains("v4/S39.m4a"),
                   "shipped sounds: category additions")
