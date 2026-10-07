@@ -417,7 +417,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ws.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.checkDNDExpiry(reason: "wake")
-                self?.channel?.heartbeatNow()
+                self?.channel?.resumeAfterSignOff()   // v0.17: the sleep sign-off ended the presence loop; restart it
                 self?.refreshLocation(userInitiated: false, minGap: 300)   // v0.14.1: the Mac may have moved (no-op unless 「使用我现在的位置」 is on)
                 self?.refreshWeather(force: false)   // v0.12: overdue after sleep → fetch now (no-op when nothing needs weather)
             }

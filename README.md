@@ -16,6 +16,11 @@
 <!-- recent-changes:start -->
 ## 最近更新
 
+**v0.17.0（2026-10-07）**
+
+- 修好：Mac 合盖睡眠再打开后，TA 那边会一直显示你「离线」，要重开 App 才恢复
+- 为网页版做准备：在别的设备上已经看过的消息，回到 Mac 上不会再重播一遍
+
 **v0.16.0（2026-10-04）**
 
 - 更安全的一键更新：只安装带正确签名的官方版本，被改动过的包会直接拒绝
@@ -27,10 +32,6 @@
 **v0.15.6（2026-10-04）**
 
 - 出门找 TA 时多了几句台词：噜噜会说「噜妹～我来了」「来了，噜妹」，噜妹会说「走走走」
-
-**v0.15.5（2026-10-04）**
-
-- 待设置里 TA 版本旧时，可以一键「叫 TA 升级」；TA 是新版的话，收到后直接点「一键更新」
 
 完整的更新日志见 [CHANGELOG.md](CHANGELOG.md)。
 <!-- recent-changes:end -->
@@ -375,3 +376,5 @@ scripts/update_signing_key.sh verify F F.sig   # 用 UpdateKey.swift 里的公�
   再用 `gh release create` 同时上传 zip 和 `.sig`。私钥丢了的话没法这样过渡，已装用户得手动装一次新版。
 - 测试用临时密钥：`LULUPET_SIGNING_KEY_FILE=/tmp/k LULUPET_UPDATE_KEY_SWIFT=/tmp/K.swift scripts/update_signing_key.sh init`
   不会碰真实密钥或仓库文件。
+
+<!-- docs-synced: v0.17.0 -->

@@ -3642,6 +3642,168 @@ do {
     st.wipe()
 }
 
+// MARK: v0.17 web companion on my seat: seat-clash tolerance + shared read cursor (web spec §4.4 / §5.2)
+do {
+    // SharedReadCursor decode / payload
+    check(SharedReadCursor.decode(Data(#"{"ts":123,"device":"web-1","at":456}"#.utf8)) == SharedReadCursor(ts: 123, device: "web-1", at: 456), "v0.17 read cursor: decode object")
+    check(SharedReadCursor.decode(Data(#"{"ts":7,"future":{"x":1}}"#.utf8)) == SharedReadCursor(ts: 7), "v0.17 read cursor: unknown fields ignored")
+    check(SharedReadCursor.decode(Data("null".utf8)) == nil && SharedReadCursor.decode(Data("garbage".utf8)) == nil, "v0.17 read cursor: null / garbage → nil")
+    check(SharedReadCursor.decode(Data(#"{"ts":"9"}"#.utf8)) == nil && SharedReadCursor.decode(Data(#"{"ts":-5}"#.utf8)) == nil && SharedReadCursor.decode(Data(#"{"ts":true}"#.utf8)) == nil, "v0.17 read cursor: non-numeric / negative / bool ts → nil")
+    check(SharedReadCursor.decode(Data("42".utf8)) == SharedReadCursor(ts: 42), "v0.17 read cursor: bare number tolerated")
+    check(SharedReadCursor.decode(Data("{\"ts\":1,\"device\":\"\(String(repeating: "d", count: 100))\"}".utf8))?.device?.count == 64, "v0.17 read cursor: device clipped to 64")
+    let pl = SharedReadCursor(ts: 5, device: "MAC", at: 9).payload
+    check(pl["ts"] as? Int64 == 5 && pl["device"] as? String == "MAC" && pl["at"] as? Int64 == 9 && pl.count == 3, "v0.17 read cursor: payload {ts, device, at}")
+    check(SharedReadCursor(ts: 5).payload.count == 1, "v0.17 read cursor: payload omits missing device / at")
+
+    // start cursor = max(local, shared), future clamp
+    let now: Int64 = 1_800_000_000_000
+    check(SharedRead.startCursor(local: 100, shared: 200, now: now) == 200, "v0.17 start cursor: shared ahead wins")
+    check(SharedRead.startCursor(local: 300, shared: 200, now: now) == 300, "v0.17 start cursor: local ahead wins")
+    check(SharedRead.startCursor(local: 300, shared: nil, now: now) == 300, "v0.17 start cursor: nothing shared = local")
+    check(SharedRead.startCursor(local: 300, shared: now + 2 * 86_400_000, now: now) == 300, "v0.17 start cursor: far-future shared value ignored")
+    check(SharedRead.startCursor(local: now + 2 * 86_400_000, shared: 200, now: now) == now, "v0.17 start cursor: far-future local reset to now (0.16 clamp)")
+    check(SharedRead.startCursor(local: 1, shared: now + 3_600_000, now: now) == now + 3_600_000, "v0.17 start cursor: shared within a day is used")
+
+    // never backwards
+    check(SharedRead.shouldPut(mine: 10, remote: nil) && SharedRead.shouldPut(mine: 10, remote: 9), "v0.17 shouldPut: ahead → put")
+    check(!SharedRead.shouldPut(mine: 10, remote: 10) && !SharedRead.shouldPut(mine: 10, remote: 11) && !SharedRead.shouldPut(mine: 0, remote: nil), "v0.17 shouldPut: equal / behind / zero → no put")
+
+    // throttle: ≤ once per interval
+    var th = SharedReadThrottle(interval: 10)
+    check(th.delay(local: 0, now: 0) == nil, "v0.17 throttle: nothing read → nothing to write")
+    check(th.delay(local: 5, now: 100) == 0, "v0.17 throttle: first write at once")
+    th.noteWrite(at: 100); th.noteRemote(5)
+    check(th.delay(local: 5, now: 101) == nil && !th.needsWrite(local: 5), "v0.17 throttle: written value → nothing to do")
+    check(th.delay(local: 6, now: 104) == 6, "v0.17 throttle: next write waits for the 10 s gap")
+    check(th.delay(local: 6, now: 111) == 0, "v0.17 throttle: after the gap → at once")
+    th.noteRemote(3)
+    check(th.remote == 5, "v0.17 throttle: known remote never lowered")
+
+    // seat clash: web devices on my seat never count
+    let webSeat = PresenceInfo(lastSeen: now, device: "web-1234")
+    check(!SeatClash.detect(mySeatPresence: webSeat, myDevice: "MAC", nowMs: now), "v0.17 seat clash: an online web-* device is not a clash")
+    check(SeatClash.detect(mySeatPresence: PresenceInfo(lastSeen: now, device: "OTHER-MAC"), myDevice: "MAC", nowMs: now), "v0.17 seat clash: another Mac still is")
+    check(SeatClash.detect(mySeatPresence: PresenceInfo(lastSeen: now, device: "webby"), myDevice: "MAC", nowMs: now), "v0.17 seat clash: only the exact web- prefix is exempt")
+    var mon = SeatClashMonitor(interval: 0)
+    for i in 0..<5 { _ = mon.record(read: SeatClash.detect(mySeatPresence: webSeat, myDevice: "MAC", nowMs: now), now: TimeInterval(i)) }
+    check(!mon.clash, "v0.17 seat clash: repeated web reads never raise the notice")
+
+    // presence `client` (additive)
+    let webJSON = "{\"lastSeen\":\(now),\"character\":\"lulu\",\"mode\":\"couple\",\"device\":\"web-9\",\"client\":\"web\",\"outfit\":\"classic\",\"pose\":\"idle\"}"
+    let wp = PresenceInfo.decode(Data(webJSON.utf8))
+    check(wp?.client == "web" && wp?.isWeb == true && wp?.device == "web-9" && wp?.character == .lulu && wp?.outfit == "classic" && wp?.pose == .idle, "v0.17 presence: client decoded, other fields unchanged")
+    check(PresenceInfo.decode(Data("{\"lastSeen\":1,\"device\":\"MAC\"}".utf8))?.client == nil && PresenceInfo.decode(Data("{\"lastSeen\":1,\"device\":\"MAC\"}".utf8))?.isWeb == false, "v0.17 presence: a Mac has no client, not web")
+    check(PresenceInfo.decode(Data("{\"lastSeen\":1,\"device\":\"web-x\"}".utf8))?.isWeb == true, "v0.17 presence: web- device alone counts as web")
+    check(PresenceInfo.payload(lastSeen: 1, dnd: nil, device: "MAC")["client"] == nil, "v0.17 presence: the Mac never writes client")
+}
+do {
+    // PairChannel over the stub: adopt the shared cursor before the stream, write back throttled, never backwards
+    let cfg = AppConfig(role: .lulu, pairCode: "PAIR", databaseURL: "https://stub.firebaseio.com")
+    let st = ConfigStore(profile: "test-\(UUID().uuidString)")
+    let base = nowMs() - 600_000
+    st.lastReadTs = base - 100
+    func readPuts() -> [[String: Any]] {
+        StubProtocol.requests.filter { $0.method == "PUT" && $0.url.path == "/pairs/PAIR/read/lulu.json" }
+            .compactMap { $0.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } }
+    }
+    StubProtocol.replies = [
+        "GET /pairs/PAIR/read/lulu.json": .init(status: 200, body: "{\"ts\":\(base),\"device\":\"web-1\",\"at\":\(base)}"),
+        "PUT /pairs/PAIR/read/lulu.json": .init(status: 200, body: "{}"),
+        "PUT /pairs/PAIR/presence/lulu.json": .init(status: 200, body: "{}"),
+        "GET /pairs/PAIR/messages.json": .init(status: 200, body: "event: keep-alive\ndata: null\n\n", contentType: "text/event-stream"),
+    ]
+    StubProtocol.requests = []
+    nonisolated(unsafe) var rch: PairChannel?
+    await MainActor.run {
+        let ch = PairChannel(config: cfg, store: st, client: fb)
+        ch.readWriteInterval = 0.5
+        ch.setIdentity(character: .lulu, mode: .couple, device: "MAC-1")
+        ch.start()
+        rch = ch
+    }
+    try? await Task.sleep(nanoseconds: 300_000_000)
+    let firstRead = StubProtocol.requests.firstIndex { $0.url.path == "/pairs/PAIR/read/lulu.json" }
+    let firstStream = StubProtocol.requests.firstIndex { $0.accept == "text/event-stream" }
+    check(firstRead != nil && firstStream != nil && firstRead! < firstStream!, "v0.17 channel: shared cursor read before the stream opens")
+    check(StubProtocol.requests.first { $0.accept == "text/event-stream" }?.url.query == "orderBy=%22ts%22&startAt=\(base + 1)", "v0.17 channel: stream starts after max(local, shared)")
+    check(st.lastReadTs == base && readPuts().isEmpty, "v0.17 channel: shared cursor adopted locally, nothing written back (not ahead)")
+    var m1 = Message.text("a", from: .lumei, ts: base + 50); m1.id = "-R1"
+    var m2 = Message.text("b", from: .lumei, ts: base + 60); m2.id = "-R2"
+    await MainActor.run { rch?.markRead(m1) }
+    try? await Task.sleep(nanoseconds: 150_000_000)
+    check(readPuts().count == 1 && (readPuts().last?["ts"] as? NSNumber)?.int64Value == base + 50 && readPuts().last?["device"] as? String == "MAC-1" && readPuts().last?["at"] != nil, "v0.17 channel: markRead writes {ts, device, at} back")
+    await MainActor.run { rch?.markRead(m2) }
+    try? await Task.sleep(nanoseconds: 150_000_000)
+    check(readPuts().count == 1, "v0.17 channel: a second advance within the gap waits (throttled)")
+    try? await Task.sleep(nanoseconds: 600_000_000)
+    check(readPuts().count == 2 && (readPuts().last?["ts"] as? NSNumber)?.int64Value == base + 60, "v0.17 channel: trailing write after the gap carries the newest cursor")
+    // read-modify-write: the server already holds more → no PUT (never backwards)
+    StubProtocol.replies["GET /pairs/PAIR/read/lulu.json"] = .init(status: 200, body: "{\"ts\":\(base + 10_000)}")
+    var m3 = Message.text("c", from: .lumei, ts: base + 70); m3.id = "-R3"
+    await MainActor.run { rch?.markRead(m3) }
+    try? await Task.sleep(nanoseconds: 700_000_000)
+    check(readPuts().count == 2, "v0.17 channel: never moves the shared cursor backwards")
+    // sign-off flushes a pending advance (throttle gap long)
+    StubProtocol.replies["GET /pairs/PAIR/read/lulu.json"] = .init(status: 200, body: "{\"ts\":\(base)}")
+    await MainActor.run { rch?.readWriteInterval = 60; rch?.stop(); rch?.start() }   // new throttle with a 60 s gap
+    try? await Task.sleep(nanoseconds: 300_000_000)
+    let putsBeforeFlush = readPuts().count   // the restart shares the cursor it is ahead with (one write)
+    var m4 = Message.text("d", from: .lumei, ts: base + 80); m4.id = "-R4"
+    await MainActor.run { rch?.markRead(m4) }
+    try? await Task.sleep(nanoseconds: 150_000_000)
+    check(readPuts().count == putsBeforeFlush, "v0.17 channel: within the 60 s gap nothing is written yet")
+    await MainActor.run { rch?.signOffBlocking() }
+    check(readPuts().count == putsBeforeFlush + 1 && (readPuts().last?["ts"] as? NSNumber)?.int64Value == base + 80, "v0.17 channel: sign-off flushes the read cursor")
+    let offBody = StubProtocol.requests.last { $0.method == "PUT" && $0.url.path == "/pairs/PAIR/presence/lulu.json" }?.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+    check((offBody?["lastSeen"] as? NSNumber)?.int64Value == 0, "v0.17 channel: sign-off still writes lastSeen 0")
+    // wake after a sleep sign-off: heartbeats resume
+    func beats() -> Int {
+        StubProtocol.requests.filter { $0.method == "PUT" && $0.url.path == "/pairs/PAIR/presence/lulu.json" }
+            .compactMap { $0.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } }
+            .filter { (($0["lastSeen"] as? NSNumber)?.int64Value ?? 0) > 0 }.count
+    }
+    await MainActor.run { rch?.heartbeatInterval = 0.1; rch?.presencePollInterval = 0.1 }
+    try? await Task.sleep(nanoseconds: 400_000_000)
+    let asleep = beats()
+    try? await Task.sleep(nanoseconds: 400_000_000)
+    check(beats() == asleep, "v0.17 channel: no heartbeat after the sleep sign-off")
+    await MainActor.run { rch?.resumeAfterSignOff() }
+    try? await Task.sleep(nanoseconds: 800_000_000)   // the schedule's floor is 0.5 s
+    check(beats() >= asleep + 2, "v0.17 channel: resumeAfterSignOff (wake) heartbeats again (\(beats() - asleep) beats)")
+    await MainActor.run { rch?.stop() }
+    st.wipe()
+}
+do {
+    // a web device heartbeating on my seat: no clash, my Mac keeps heartbeating
+    let now = nowMs()
+    StubProtocol.replies = [
+        "PUT /pairs/PAIR/presence/lulu.json": .init(status: 200, body: "{}"),
+        "GET /pairs/PAIR/presence/lulu.json": .init(status: 200, body: "{\"lastSeen\":\(now + 60_000),\"device\":\"web-abc\",\"client\":\"web\"}"),
+        "GET /pairs/PAIR/messages.json": .init(status: 200, body: "event: keep-alive\ndata: null\n\n", contentType: "text/event-stream"),
+    ]
+    StubProtocol.requests = []
+    nonisolated(unsafe) var clashes: [Bool] = []
+    nonisolated(unsafe) var wch: PairChannel?
+    await MainActor.run {
+        let ch = PairChannel(config: AppConfig(role: .lulu, pairCode: "PAIR", databaseURL: "https://stub.firebaseio.com"),
+                             store: ConfigStore(profile: "test-\(UUID().uuidString)"), client: fb)
+        ch.heartbeatInterval = 0.1; ch.presencePollInterval = 0.1; ch.seatCheckInterval = 0.2
+        ch.setIdentity(character: .lulu, mode: .couple, device: "MAC-1")
+        ch.onSeatClash = { clashes.append($0) }
+        ch.start()
+        wch = ch
+    }
+    try? await Task.sleep(nanoseconds: 1_200_000_000)
+    let seatReads = StubProtocol.requests.filter { $0.method == "GET" && $0.url.path == "/pairs/PAIR/presence/lulu.json" }.count
+    let myBeats = StubProtocol.requests.filter { $0.method == "PUT" && $0.url.path == "/pairs/PAIR/presence/lulu.json" }.count
+    await MainActor.run {
+        check(seatReads >= 3 && clashes.isEmpty && wch?.seatClash == false && wch?.mySeatPresence?.isWeb == true, "v0.17 channel: web-* on my seat (\(seatReads) reads) → no 配对冲突")
+        check(myBeats >= 3, "v0.17 channel: my Mac keeps heartbeating while the web device is live (\(myBeats) beats)")
+        wch?.stop()
+    }
+}
+StubProtocol.replies = [:]
+
 try? FileManager.default.removeItem(at: tmp)
 // UserDefaults suites leave their plist behind even after removePersistentDomain; delete test ones.
 let prefsDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Preferences")

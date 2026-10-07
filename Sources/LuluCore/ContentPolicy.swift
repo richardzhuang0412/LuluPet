@@ -80,9 +80,11 @@ public struct ContentPolicy: Equatable, Sendable {
 /// Two machines on the same seat (both tapped 生成, or picked the same side).
 public enum SeatClash {
     /// My seat's presence is online (within the presence threshold) and published by another device. A presence
-    /// without `device` (older client) is never a clash.
+    /// without `device` (older client) is never a clash. v0.17: neither is my own web version (`device` starting with
+    /// `web-`): it shares the seat on purpose and stops writing while this Mac is online (web spec §4.2).
     public static func detect(mySeatPresence: PresenceInfo?, myDevice: String, nowMs: Int64) -> Bool {
-        guard let p = mySeatPresence, let device = p.device, device != myDevice else { return false }
+        guard let p = mySeatPresence, let device = p.device, device != myDevice,
+              !WebClient.isWebDevice(device) else { return false }
         return Presence.isOnline(lastSeen: p.lastSeen, now: nowMs)
     }
 

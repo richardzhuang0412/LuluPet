@@ -85,6 +85,8 @@ public final class PairChannel {
     public var presenceThresholdMs: Int64 = Presence.thresholdMs
     /// v0.11: time between reads of my own seat (`SeatClashMonitor`); tests shorten it (hidden `--seat-check-interval`).
     public var seatCheckInterval: TimeInterval = SeatClashMonitor.defaultInterval
+    /// v0.17: at most one write of the shared read cursor per this many seconds (tests shorten it).
+    public var readWriteInterval: TimeInterval = SharedRead.writeInterval
     static let outboxRetryInterval: TimeInterval = 5
     static let misconfiguredRetryInterval: TimeInterval = 60
     static let maxBackoff: TimeInterval = 30
@@ -96,7 +98,12 @@ public final class PairChannel {
     private var lastPartnerCharacterTs: Int64 = 0
     private var lastReportedIdentity: PartnerIdentity?
     private var seatMonitor = SeatClashMonitor()
+    /// The stream loop (non-empty = the channel runs). The presence loop is `presenceTask`.
     private var tasks: [Task<Void, Never>] = []
+    private var presenceTask: Task<Void, Never>?
+    /// v0.17: shared read cursor (`read/<seat>`, web spec §5.2): write-back throttle + the pending write.
+    private var readThrottle = SharedReadThrottle()
+    private var cursorWriteTask: Task<Void, Never>?
     private var flushTask: Task<Void, Never>?
     private var flushGeneration = 0
     private var delivered = Set<String>()
@@ -224,10 +231,9 @@ public final class PairChannel {
         if WireLimits.isFuture(ts: store.lastReadTs, now: now) { store.lastReadTs = now }
         setState(.connecting)
         seatMonitor = SeatClashMonitor(interval: seatCheckInterval)
-        tasks = [
-            Task { [weak self] in await self?.streamLoop() },
-            Task { [weak self] in await self?.presenceLoop() },
-        ]
+        readThrottle = SharedReadThrottle(interval: readWriteInterval)
+        tasks = [Task { [weak self] in await self?.streamLoop() }]
+        presenceTask = Task { [weak self] in await self?.presenceLoop() }
         flush()
     }
 
@@ -238,6 +244,10 @@ public final class PairChannel {
         lookBeatTask = nil
         tasks.forEach { $0.cancel() }
         tasks = []
+        presenceTask?.cancel()
+        presenceTask = nil
+        cursorWriteTask?.cancel()
+        cursorWriteTask = nil
         flushTask?.cancel()
         flushTask = nil
         backfillTask?.cancel()
@@ -272,7 +282,57 @@ public final class PairChannel {
         var cursor = readHigh
         if let oldest = unread.values.min() { cursor = min(cursor, oldest - 1) }
         cursor = WireLimits.clampCursor(cursor, now: nowMs())   // prelaunch-A: never past what the rules allow
-        store.lastReadTs = max(store.lastReadTs, cursor)
+        let before = store.lastReadTs
+        store.lastReadTs = max(before, cursor)
+        if store.lastReadTs > before { scheduleCursorWrite() }   // v0.17: tell my other devices (throttled)
+    }
+
+    // MARK: Shared read cursor (v0.17, web spec §5.2)
+
+    private func monotonicNow() -> TimeInterval { ProcessInfo.processInfo.systemUptime }
+
+    /// Before every stream connection: start from `max(local, read/<seat>)`, so what I already read on another device
+    /// of my seat (the web version) doesn't come back as away messages. A failed / slow read = the local cursor alone.
+    private func adoptSharedCursor() async {
+        let client = client, role = config.role
+        let shared: SharedReadCursor?
+        do { shared = try await client.readCursor(role, timeout: SharedRead.readTimeout) } catch { return }
+        guard !Task.isCancelled, !stopped else { return }
+        let local = store.lastReadTs
+        let start = SharedRead.startCursor(local: local, shared: shared?.ts, now: nowMs())
+        if let s = shared?.ts, !WireLimits.isFuture(ts: s, now: nowMs()) { readThrottle.noteRemote(s) }
+        if start > local {
+            store.lastReadTs = start
+            NSLog("[lulu] read cursor: adopted the shared one (%lld ms ahead of local, from %@)", start - local, shared?.device ?? "?")
+        }
+        scheduleCursorWrite()   // mine is ahead (e.g. first launch of 0.17): share it
+    }
+
+    /// Writes my cursor back at most once per `readWriteInterval`; a write that fails is not retried on its own
+    /// (the next `markRead`, connection or sign-off tries again).
+    private func scheduleCursorWrite() {
+        guard !stopped, !signedOff, cursorWriteTask == nil,
+              let wait = readThrottle.delay(local: store.lastReadTs, now: monotonicNow()) else { return }
+        cursorWriteTask = Task { [weak self] in
+            if wait > 0 { try? await Task.sleep(for: .seconds(wait), tolerance: .seconds(Presence.tolerance(for: wait))) }
+            guard let self, !Task.isCancelled, !self.stopped, !self.signedOff else { return }
+            let ok = await self.writeCursorNow()
+            guard !Task.isCancelled else { return }
+            self.cursorWriteTask = nil
+            if ok { self.scheduleCursorWrite() }   // advanced again meanwhile → the next one after the gap
+        }
+    }
+
+    private func writeCursorNow() async -> Bool {
+        let client = client, role = config.role, mine = store.lastReadTs, device = identity?.device
+        readThrottle.noteWrite(at: monotonicNow())
+        do {
+            let held = try await client.advanceReadCursor(role, ts: mine, device: device)
+            readThrottle.noteRemote(held)
+            return true
+        } catch {
+            return false
+        }
     }
 
     // MARK: Stream
@@ -302,6 +362,8 @@ public final class PairChannel {
 
     /// Runs one stream connection until it fails, closes, or goes idle; returns why it ended.
     private func connectOnce() async -> Error {
+        await adoptSharedCursor()   // v0.17
+        if Task.isCancelled { return CancellationError() }
         let stream = client.messageStream(since: store.lastReadTs)
         lastStreamActivity = Date()
         do {
@@ -533,15 +595,36 @@ public final class PairChannel {
     }
 
     /// Clean sign-off before quitting or sleeping: blocks up to `timeout` so the write can finish.
+    /// v0.17: also flushes my read cursor to `read/<seat>` when it is ahead of what was last shared (same time budget).
     public func signOffBlocking(timeout: TimeInterval = 1.5) {
         let client = client, role = config.role, dnd = dnd, identity = identity, app = appVersion, place = place
         let signOffLook = look.map { PresenceLook(outfit: $0.outfit) }   // the pose is not on TA's desk any more
+        let cursor: Int64? = readThrottle.needsWrite(local: store.lastReadTs) ? store.lastReadTs : nil
         signedOff = true   // prelaunch-A: nothing may heartbeat over the sign-off
         lookBeatTask?.cancel()
         lookBeatTask = nil
+        cursorWriteTask?.cancel()   // the flush below replaces it
+        cursorWriteTask = nil
         let done = DispatchSemaphore(value: 0)
-        Task.detached { try? await client.markOffline(role, dnd: dnd, identity: identity, app: app, place: place, look: signOffLook); done.signal() }
+        Task.detached {
+            async let off: Void = { try? await client.markOffline(role, dnd: dnd, identity: identity, app: app, place: place, look: signOffLook) }()
+            if let cursor { _ = try? await client.advanceReadCursor(role, ts: cursor, device: identity?.device, timeout: timeout) }
+            _ = await off
+            done.signal()
+        }
         _ = done.wait(timeout: .now() + timeout)
+    }
+
+    /// After a sleep sign-off (`signOffBlocking`), on wake: heartbeat again. The sign-off ended the presence loop, so
+    /// it is started afresh (heartbeat at once, my seat re-read for the clash check). Without a sign-off this is
+    /// just `heartbeatNow()`.
+    public func resumeAfterSignOff() {
+        guard signedOff else { heartbeatNow(); return }
+        signedOff = false
+        guard !stopped, !tasks.isEmpty else { return }
+        presenceTask?.cancel()
+        presenceTask = Task { [weak self] in await self?.presenceLoop() }
+        scheduleCursorWrite()
     }
 
     /// Heartbeat immediately (after wake).

@@ -246,10 +246,13 @@ public struct PresenceInfo: Equatable, Sendable {
     /// v0.14.2: what the partner's pet is doing on their desk (`presence/<role>/pose`); nil = not published; an
     /// unknown word reads as `.idle`.
     public var pose: PetPose?
+    /// v0.17: which kind of client wrote it (`presence/<role>/client`): `"web"` = the web version; nil = a Mac (Macs
+    /// never write it). Read-only for now (display only); unknown values are kept as read (clipped to 64).
+    public var client: String?
 
     public init(lastSeen: Int64?, dnd: DNDStatus? = nil, focus: FocusStatus? = nil,
                 character: PetCharacter? = nil, mode: PairMode? = nil, device: String? = nil, app: String? = nil,
-                place: WeatherPlace? = nil, outfit: String? = nil, pose: PetPose? = nil) {
+                place: WeatherPlace? = nil, outfit: String? = nil, pose: PetPose? = nil, client: String? = nil) {
         self.lastSeen = lastSeen
         self.dnd = dnd
         self.focus = focus
@@ -260,7 +263,11 @@ public struct PresenceInfo: Equatable, Sendable {
         self.place = place
         self.outfit = outfit
         self.pose = pose
+        self.client = client
     }
+
+    /// v0.17: written by the web version (`client: "web"` or a `web-…` device id).
+    public var isWeb: Bool { client == WebClient.presenceClient || WebClient.isWebDevice(device) }
 
     /// JSON body of `GET presence/<role>`: null → nil; an object → its fields; a bare number (never
     /// written by any version, tolerated) → lastSeen.
@@ -276,7 +283,8 @@ public struct PresenceInfo: Equatable, Sendable {
                             app: WireLimits.clipped(d["app"] as? String).flatMap { $0.isEmpty ? nil : $0 },
                             place: WeatherPlace(json: d["place"]),
                             outfit: PresenceLook.cleanOutfit(WireLimits.clipped(d["outfit"] as? String)),
-                            pose: WireLimits.clipped(d["pose"] as? String).map(PetPose.init(raw:)))
+                            pose: WireLimits.clipped(d["pose"] as? String).map(PetPose.init(raw:)),
+                            client: WireLimits.clipped(d["client"] as? String).flatMap { $0.isEmpty ? nil : $0 })
     }
 
     /// Body of the presence PUT (heartbeat / sign-off).

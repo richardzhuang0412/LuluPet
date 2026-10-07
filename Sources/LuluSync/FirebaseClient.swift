@@ -115,6 +115,28 @@ public final class FirebaseClient: Sendable {
         return PresenceInfo.decode(try await data(for: req))
     }
 
+    /// v0.17: the read cursor shared by my seat's devices (`read/<role>`); nil = never written / unreadable.
+    public func readCursor(_ role: Role, timeout: TimeInterval = FirebaseClient.presenceTimeout) async throws -> SharedReadCursor? {
+        var req = URLRequest(url: try Self.url(databaseURL: databaseURL, pairCode: pairCode, path: "read/\(role.rawValue)"))
+        req.timeoutInterval = timeout
+        return SharedReadCursor.decode(try await data(for: req))
+    }
+
+    /// v0.17: read-modify-write of `read/<role>`: PUTs `{ts, device, at}` only when `ts` is ahead of what the server
+    /// holds (never moves it backwards). Returns the ts the server holds afterwards (as far as this client knows).
+    @discardableResult
+    public func advanceReadCursor(_ role: Role, ts: Int64, device: String?, timeout: TimeInterval = FirebaseClient.presenceTimeout) async throws -> Int64 {
+        let remote = try await readCursor(role, timeout: timeout)?.ts
+        guard SharedRead.shouldPut(mine: ts, remote: remote) else { return remote ?? 0 }
+        var req = URLRequest(url: try Self.url(databaseURL: databaseURL, pairCode: pairCode, path: "read/\(role.rawValue)"))
+        req.httpMethod = "PUT"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = timeout
+        req.httpBody = try JSONSerialization.data(withJSONObject: SharedReadCursor(ts: ts, device: device, at: nowMs()).payload)
+        _ = try await data(for: req)
+        return ts
+    }
+
     /// Server-Sent Events for messages with `ts > since`. The first `put` (path "/") holds the matching
     /// backlog; later `put`s are single children. Keep-alive events are yielded too, so callers can
     /// detect a silent connection. Ends with `.cancelled` on `cancel` / `auth_revoked`.
@@ -150,7 +172,7 @@ public final class FirebaseClient: Sendable {
 
     /// v0.8.1: heartbeat / presence reads share one loop, so a stalled request must not hold it for the
     /// 60 s URLSession default (it would delay the next heartbeat past the 75 s offline threshold).
-    static let presenceTimeout: TimeInterval = 10
+    public static let presenceTimeout: TimeInterval = 10
     /// prelaunch-A: a message write that hangs is abandoned and retried (the PUT is idempotent).
     static let sendTimeout: TimeInterval = 20
 
