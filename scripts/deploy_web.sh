@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Deploy the web version (web/) to Firebase Hosting of the pair's own Firebase project.
 #
-#   scripts/deploy_web.sh [--dry-run]
+#   scripts/deploy_web.sh [--dry-run] [--preview NAME]
+#
+# --preview NAME deploys to a Firebase Hosting preview channel instead of the live site: a separate URL
+# (https://<project>--NAME-<hash>.web.app, printed at the end) that expires after 30 days. Used to let the user try
+# web iterations without touching the live version.
 #
 # The project id is NOT in the repo (it is part of the database host name): it is read from
 # ~/.config/lulupet/firebase_project (override: $LULUPET_FIREBASE_PROJECT_FILE). `firebase login` is done once by the
@@ -10,7 +14,15 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-DRY=0; [[ "${1:-}" == "--dry-run" ]] && DRY=1
+DRY=0; PREVIEW=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run) DRY=1 ;;
+    --preview) PREVIEW="${2:-}"; shift; [[ "$PREVIEW" =~ ^[a-z0-9-]{1,20}$ ]] || { echo "✗ --preview needs a short name like v2a" >&2; exit 1; } ;;
+    *) echo "✗ unknown option $1" >&2; exit 2 ;;
+  esac
+  shift
+done
 PROJECT_FILE="${LULUPET_FIREBASE_PROJECT_FILE:-$HOME/.config/lulupet/firebase_project}"
 die() { echo "✗ $*" >&2; exit 1; }
 [[ -d web ]] || die "web/ not found"
@@ -56,6 +68,12 @@ PY
 
 echo "==> 网页版 v$VER：$(find "$STAGE/public" -type f | wc -l | tr -d ' ') 个文件，$(du -sh "$STAGE/public" | cut -f1)"
 if (( DRY )); then echo "==> dry run：不部署 / not deploying"; exit 0; fi
-( cd "$STAGE" && npx --yes firebase-tools@latest deploy --only hosting --project "$PROJECT" --non-interactive 2>&1 | grep -v "npm warn" ) \
-  || die "firebase deploy failed（没登录？运行 npx firebase-tools login）"
-echo "✓ 网页版 v$VER 已部署 / deployed"
+if [[ -n "$PREVIEW" ]]; then
+  ( cd "$STAGE" && npx --yes firebase-tools@latest hosting:channel:deploy "$PREVIEW" --expires 30d --project "$PROJECT" --non-interactive 2>&1 | grep -v "npm warn" ) \
+    || die "firebase preview deploy failed（没登录？运行 npx firebase-tools login）"
+  echo "✓ 网页版 v$VER 预览版「$PREVIEW」已部署（正式网址不变）/ preview deployed"
+else
+  ( cd "$STAGE" && npx --yes firebase-tools@latest deploy --only hosting --project "$PROJECT" --non-interactive 2>&1 | grep -v "npm warn" ) \
+    || die "firebase deploy failed（没登录？运行 npx firebase-tools login）"
+  echo "✓ 网页版 v$VER 已部署 / deployed"
+fi

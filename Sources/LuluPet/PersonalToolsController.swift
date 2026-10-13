@@ -15,10 +15,14 @@ final class PersonalToolsController {
         var pet: () -> PetWindow?
         var channel: () -> PairChannel?
         var character: () -> Role?
-        var bubble: BubbleWindow
+        /// v0.18: my own pet's bubble. The app picks the window: personal reminders are never held by 勿扰 / 专注.
+        var showBubble: (BubbleItem) -> Void
         var sound: SoundPlayer
-        /// The pet is off screen (hidden / full screen) or 勿扰 is on: bubbles wait, reminders stay pending.
+        /// The pet is off screen (hidden / full screen): bubbles wait, reminders stay pending.
+        /// v0.18 (user decision 2026-10-12): 勿扰 / 专注 no longer block — water / stand / pomodoro fire normally.
         var blocked: () -> Bool
+        /// 勿扰 is on (only the focus-loop clip still pauses for it: the pet holds its quiet 勿扰 pose).
+        var dnd: () -> Bool = { false }
         /// Focusing started or ended: the pet's rest pose has to be re-evaluated.
         var restChanged: () -> Void
         /// A deadline changed: re-arm the housekeeping timer.
@@ -145,7 +149,7 @@ final class PersonalToolsController {
         }
     }
 
-    /// Full screen / hide / 勿扰 ended: the postponed pomodoro bubbles pop now, and the reminders (still due)
+    /// Full screen / hide ended (v0.18: 勿扰 no longer holds them): the postponed pomodoro bubbles pop now, and the reminders (still due)
     /// are looked at right away.
     func unblocked() {
         guard !env.blocked() else { return }
@@ -245,7 +249,7 @@ final class PersonalToolsController {
     /// minute tick (the countdown refresh), holding the still frame in between — not a 25-minute nonstop loop
     /// (省电). 噜妹 has no focus clip and keeps the quiet still frame; nothing plays while 勿扰 / full screen blocks.
     private func playFocusClip() {
-        guard isFocusing, !env.blocked() else { return }
+        guard isFocusing, !env.blocked(), !env.dnd() else { return }
         _ = playToolClip(.focus)
     }
 
@@ -282,7 +286,7 @@ final class PersonalToolsController {
         }
     }
 
-    /// Shows a pomodoro bubble now, or after full screen / 勿扰 ends.
+    /// Shows a pomodoro bubble now, or after hide / full screen ends (v0.18: not held by 勿扰).
     private func deliver(_ item: BubbleItem, character: Role?, happy: Bool) {
         if env.blocked() {
             pendingBubbles.append((item, happy ? character : nil))
@@ -296,7 +300,7 @@ final class PersonalToolsController {
             if let pet = env.pet(), !pet.isBusy, !playToolClip(.breakTime) { pet.playOnce(.happy) }
             env.sound.play(.happy)
         }
-        env.bubble.enqueueAtHome(item)
+        env.showBubble(item)
     }
 
     // MARK: Reminders
@@ -337,7 +341,7 @@ final class PersonalToolsController {
     /// Housekeeping woke up for a reminder: count the active time and pop the bubble when it is due.
     private func reminderStep(_ kind: ReminderKind) {
         guard var r = reminders[kind] else { reminderDue[kind] = nil; return }
-        let fire = r.tick(now: wall, idleSeconds: Self.idleSeconds(), blocked: env.blocked() || isFocusing)
+        let fire = r.tick(now: wall, idleSeconds: Self.idleSeconds(), blocked: env.blocked())
         reminders[kind] = r
         store.setReminder(r, for: kind)
         if r.snoozeUntil == nil { store.setRemindSnooze(nil, for: kind) }   // B17: away reset ends the 「等会儿」 too
@@ -346,8 +350,14 @@ final class PersonalToolsController {
         env.needsArm()
     }
 
+    /// Hidden `--fake-idle S` (v0.18 tests): pretend the user has been idle S seconds.
+    static let fakeIdle: TimeInterval? = CommandLine.arguments.firstIndex(of: "--fake-idle").flatMap {
+        $0 + 1 < CommandLine.arguments.count ? TimeInterval(CommandLine.arguments[$0 + 1]) : nil
+    }
+
     /// Seconds since the last keyboard / mouse input (any event type), read only when housekeeping wakes.
     static func idleSeconds() -> TimeInterval {
+        if let fake = fakeIdle { return fake }
         guard let any = CGEventType(rawValue: ~0) else { return 0 }
         return CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: any)
     }
@@ -391,7 +401,7 @@ final class PersonalToolsController {
                           if self?.claimBubble(kind, id) == true { self?.snoozed(kind) } })],
             onClose: { [weak self] in
                 if self?.claimBubble(kind, id) == true { self?.dismissed(kind) } })   // clicked away: start over, no cup
-        env.bubble.enqueueAtHome(item)
+        env.showBubble(item)
         NSLog("[lulu] tools: %@ reminder shown", kind.rawValue)
     }
 
@@ -497,7 +507,7 @@ final class PersonalToolsController {
         let on = kind == .water ? settings.waterEnabled : settings.standEnabled
         guard on else { return nil }
         let r = reminders[kind] ?? ActiveTimeReminder(interval: kind == .water ? settings.waterInterval : settings.standInterval)
-        return ToolsCopy.cycleLine(kind, r.status(now: wall, idleSeconds: Self.idleSeconds(), blocked: env.blocked() || isFocusing))
+        return ToolsCopy.cycleLine(kind, r.status(now: wall, idleSeconds: Self.idleSeconds(), blocked: env.blocked()))
     }
 
     private func refreshMenu() {

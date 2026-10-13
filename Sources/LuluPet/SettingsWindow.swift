@@ -422,6 +422,8 @@ final class ToolsPrefsModel: ObservableObject {
 
 private struct ToolsPage: View {
     @ObservedObject var model: ToolsPrefsModel
+    /// v0.18 眼药水 (EyeDropsController's model; one per app).
+    @ObservedObject var eyedrops: EyeDropsPanelModel = .shared
     private static let accent = Color(red: 0.91, green: 0.54, blue: 0.29)
 
     /// A whole-minutes stepper over a seconds value.
@@ -442,7 +444,7 @@ private struct ToolsPage: View {
                 Text("🧰").font(.system(size: 26))
                 VStack(alignment: .leading, spacing: 2) {
                     Text("小工具").font(.system(size: 17, weight: .bold, design: .rounded))
-                    Text("番茄钟、喝水和站立提醒；改了马上生效")
+                    Text(eyedrops.attached ? "番茄钟、喝水、站立和眼药水提醒；改了马上生效" : "番茄钟、喝水和站立提醒；改了马上生效")
                         .font(.system(size: 12, design: .rounded)).foregroundStyle(.secondary)
                 }
             }
@@ -478,8 +480,73 @@ private struct ToolsPage: View {
                     .disabled(!model.settings.standEnabled)
                 hint(ToolsCopy.explanation(.stand, interval: model.settings.standInterval))
             }
+            if eyedrops.attached {
+                Divider().padding(.vertical, -4)
+                eyedropsSection
+            }
         }
         .padding(22)
+    }
+
+    // MARK: 眼药水 (v0.18)
+
+    private var eyedropsSection: some View {
+        let e = eyedrops
+        return section("👁️💧 眼药水") {
+            Toggle(isOn: Binding(get: { e.settings.enabled }, set: { e.setEnabled($0) })) {
+                Text("开启").font(.system(size: 12, design: .rounded))
+            }
+            .toggleStyle(.checkbox)
+            Group {
+                Stepper(value: Binding(get: { max(1, e.settings.times.count) }, set: { e.setCount($0) }), in: 1...8) {
+                    HStack {
+                        Text("一天几次").font(.system(size: 12, design: .rounded))
+                        Spacer(minLength: 0)
+                        Text("\(e.settings.times.count) 次").font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
+                    }
+                }
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8, alignment: .leading), count: 4), alignment: .leading, spacing: 6) {
+                    ForEach(Array(e.settings.times.enumerated()), id: \.offset) { i, t in
+                        DatePicker("", selection: Self.timeBinding(t) { e.setTime(i, $0) }, displayedComponents: .hourAndMinute)
+                            .labelsHidden()
+                            .datePickerStyle(.stepperField)
+                            .environment(\.locale, Locale(identifier: "en_GB"))   // 24 小时制
+                            .help("第 \(i + 1) 次")
+                    }
+                }
+                if let err = e.error {
+                    Text(err).font(.system(size: 11, design: .rounded)).foregroundStyle(.red)
+                }
+                if e.notifyAvailable {
+                    Toggle(isOn: Binding(get: { e.settings.notify }, set: { e.setNotify($0) })) {
+                        HStack(spacing: 6) {
+                            Text("同时发系统通知").font(.system(size: 12, design: .rounded))
+                            if e.notifyDenied {
+                                Text("系统设置里没允许通知").font(.system(size: 11, design: .rounded)).foregroundStyle(.red)
+                            }
+                        }
+                    }
+                    .toggleStyle(.checkbox)
+                }
+            }
+            .disabled(!e.settings.enabled)
+            hint(EyeDropsPanelModel.explanation + " 相邻两次至少隔 30 分钟；改次数会换成建议的时间。")
+            Text(e.syncLine)
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundStyle(e.syncOK ? Color.green : Color.secondary)
+        }
+        .onAppear { e.refresh() }
+    }
+
+    /// "HH:mm" as a Date today (the picker shows hours and minutes only); writes back "HH:mm".
+    private static func timeBinding(_ time: String, set: @escaping (String) -> Void) -> Binding<Date> {
+        Binding(get: {
+            let m = EyeDrops.parseTime(time) ?? 480
+            return Calendar.current.date(bySettingHour: m / 60, minute: m % 60, second: 0, of: Date()) ?? Date()
+        }, set: { d in
+            let c = Calendar.current.dateComponents([.hour, .minute], from: d)
+            set(String(format: "%02d:%02d", c.hour ?? 0, c.minute ?? 0))
+        })
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {

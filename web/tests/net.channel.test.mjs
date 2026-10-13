@@ -11,11 +11,11 @@ before(async () => { fake = await startFake(); });
 after(async () => { await fake?.stop(); });
 
 const open = [];
-function make({ seat = "lulu", code = testPairCode(), store = createMemoryStore(), fetch, ES, timing = {}, deviceId = "web-test-" + Math.random().toString(36).slice(2, 8), lock = false, lockName } = {}) {
+function make({ seat = "lulu", code = testPairCode(), store = createMemoryStore(), fetch, ES, timing = {}, deviceId = "web-test-" + Math.random().toString(36).slice(2, 8), lock = false, lockName, defaultOutfits } = {}) {
   const ch = createChannel({
     config: { databaseURL: fake.url, pairCode: code, seat }, store, deviceId,
     fetch, EventSource: ES ?? makeEventSource(), timing: { ...FAST, ...timing, feed: { ...FAST.feed, ...(timing.feed ?? {}) } },
-    lock, lockName, lifecycle: false, isHidden: () => false,
+    lock, lockName, lifecycle: false, isHidden: () => false, defaultOutfits,
   });
   open.push(ch);
   return { ch, code, store, deviceId, log: record(ch), r: rest(fake.url, code) };
@@ -302,6 +302,16 @@ test("seat yield: another web device or a stale Mac on my seat → heartbeat", a
   assert.equal(g.ch.yielding, false);
 });
 
+test("never-written seat: messages and heartbeat carry the character's default outfit (§4.3)", async () => {
+  const { ch, log, r } = make({ seat: "lumei", defaultOutfits: { lulu: "classic", lumei: "lace" } });
+  await ch.start();
+  await connected(log);
+  const m = ch.send({ kind: "poke", ts: Date.now(), v: 1 });
+  await waitFor(() => log.of("sent").length === 1, { what: "sent" });
+  assert.equal((await r.get("messages"))[m.id].outfit, "lace");
+  await waitFor(async () => (await r.get("presence/lumei"))?.outfit === "lace", { what: "heartbeat outfit" });
+});
+
 test("partner presence: event on change with online flag", async () => {
   const code = testPairCode();
   const r = rest(fake.url, code);
@@ -309,7 +319,7 @@ test("partner presence: event on change with online flag", async () => {
   await ch.start();
   await waitFor(() => log.of("partner").length >= 1, { what: "first partner read" });
   assert.deepEqual(log.of("partner")[0], { presence: null, online: false });
-  assert.deepEqual(log.of("mySeat")[0], { presence: null, yielding: false, identity: { character: "lulu", mode: "couple" } },
+  assert.deepEqual(log.of("mySeat")[0], { presence: null, yielding: false, identity: { character: "lulu", mode: "couple", outfit: null, place: null } },
     "the first read of a never-written seat is reported");
   await r.put("presence/lumei", { lastSeen: Date.now(), character: "lumei", mode: "couple", device: "mac-ta", outfit: "angel" });
   await waitFor(() => log.of("partner").some((p) => p.online), { what: "online" });

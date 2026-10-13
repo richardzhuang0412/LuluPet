@@ -3804,6 +3804,68 @@ do {
 }
 StubProtocol.replies = [:]
 
+// MARK: v0.18 eye drops (EyeDrops, docs/superpowers/specs/2026-10-12-eyedrops-and-web-v2.md §2.4)
+do {
+    let la = TimeZone(identifier: "America/Los_Angeles")!, sh = TimeZone(identifier: "Asia/Shanghai")!
+    func t(_ d: String, _ hm: String, _ tz: TimeZone = la) -> Int64 { EyeDrops.slotInstant(day: d, time: hm, tz: tz)! }
+    check((1...8).allSatisfy { EyeDrops.suggestedTimes($0).count == $0 && EyeDrops.validateTimes(EyeDrops.suggestedTimes($0)).ok }, "eyedrops: suggested times 1–8 are valid")
+    check(EyeDrops.suggestedTimes(0) == ["09:00"] && EyeDrops.suggestedTimes(99).count == 8, "eyedrops: suggested count clamped")
+    check(EyeDrops.validateTimes(["08:00", "08:29"]).error == EyeDrops.Errors.gap && EyeDrops.validateTimes(["08:00", "08:30"]).ok, "eyedrops: 30-minute gap")
+    check(EyeDrops.validateTimes(["8:00"]).error == EyeDrops.Errors.format && EyeDrops.validateTimes([]).error == EyeDrops.Errors.empty, "eyedrops: format / empty")
+    check(EyeDrops.validateTimes(["21:00", "09:00"]).times == ["09:00", "21:00"], "eyedrops: validate sorts")
+    check(EyeDrops.slotKey("08:05") == "0805" && EyeDrops.slotTime("0805") == "08:05" && EyeDrops.slotKey("24:00") == nil && EyeDrops.slotTime("2400") == nil, "eyedrops: HHmm keys")
+    check(EyeDrops.parseSlotId("2026-10-12/1400")?.time == "14:00" && EyeDrops.parseSlotId("2026-02-30/1400") == nil, "eyedrops: slot ids")
+
+    // Wall clock / DST: a skipped time fires at the jump, a repeated one at its first occurrence.
+    check(t("2026-03-08", "02:30") == t("2026-03-08", "03:00") && t("2026-03-08", "03:00") - t("2026-03-08", "01:59") == 60_000, "eyedrops: DST spring 02:30 → 03:00")
+    check(t("2026-11-01", "01:30") == 1_793_521_800_000 && t("2026-11-01", "02:00") - t("2026-11-01", "01:30") == 90 * 60_000, "eyedrops: DST fall 01:30 = first one")
+    check(EyeDrops.dayKey(t("2026-10-12", "00:00") - 1, tz: la) == "2026-10-11" && EyeDrops.dayKey(t("2026-10-12", "23:59"), tz: la) == "2026-10-12", "eyedrops: local day key")
+    check(t("2026-10-12", "08:00", sh) == t("2026-10-11", "17:00"), "eyedrops: other time zone = its own local time")
+    check(LocalClock.addDays("2026-12-31", 1) == "2027-01-01" && LocalClock.addDays("2028-03-01", -1) == "2028-02-29" && LocalClock.daysBetween("2026-02-17", "2026-03-04") == 15, "eyedrops: day arithmetic")
+
+    // JSON round trips + tolerance.
+    let s = EyeDropsSettings(enabled: true, times: ["08:00", "12:00", "16:00", "21:00"], notify: true, at: t("2026-10-01", "09:00"), device: "mac-1")
+    check(EyeDropsSettings(json: s.json) == s, "eyedrops: settings round trip")
+    let rt = try JSONSerialization.jsonObject(with: JSONSerialization.data(withJSONObject: ["settings": s.json, "days": EyeDrops.daysJSON(["2026-10-12": ["0800": EyeDropsMark(done: 5, device: "web-a")]])]))
+    check(EyeDrops.decode(json: rt).settings == s && EyeDrops.decode(json: rt).days["2026-10-12"]?["0800"] == EyeDropsMark(done: 5, device: "web-a"), "eyedrops: node round trip through JSON")
+    check(EyeDropsSettings(json: ["enabled": 1, "times": "08:00"])?.enabled == false && EyeDropsSettings(json: ["times": ["08:00", 7, "08:00"]])?.times == ["08:00"], "eyedrops: tolerant settings")
+    check(EyeDrops.mergeSettings(local: s, remote: EyeDropsSettings(at: s.at + 1))?.times == [] && EyeDrops.mergeSettings(local: s, remote: EyeDropsSettings(at: s.at))?.times == s.times, "eyedrops: newer at wins, tie keeps local")
+    let n0 = t("2026-10-12", "08:05")
+    check(EyeDropsNag(json: EyeDropsNag(slot: "2026-10-12/0800", shown: 2, next: n0 + 99 * 3_600_000).json, nowMs: n0)?.next == n0 + EyeDrops.nagEveryMs, "eyedrops: nag next clamped on read")
+
+    // A whole day minute by minute, never answering: each slot is shown exactly 3 times, at +0 / +15 / +30.
+    var nag: EyeDropsNag?
+    var shows: [String: [Int64]] = [:]
+    var wakesAhead = true
+    var minute = t("2026-10-12", "00:00")
+    while minute < t("2026-10-13", "00:00") {
+        let p = EyeDrops.plan(settings: s, today: [:], nag: nag, now: minute, active: true, tz: la)
+        if p.action == .show, let slot = p.slot {
+            shows[slot, default: []].append(minute)
+            nag = EyeDrops.afterShow(nag, slot: slot, now: minute)
+        }
+        wakesAhead = wakesAhead && p.nextWakeMs > minute
+        minute += 60_000
+    }
+    check(wakesAhead, "eyedrops: next wake always in the future")
+    check(shows.count == 4 && shows.allSatisfy { k, v in v == [0, 15, 30].map { t("2026-10-12", EyeDrops.parseSlotId(k)!.time) + Int64($0) * 60_000 } }, "eyedrops: 3 shows per slot at 0/15/30 (\(shows.mapValues(\.count)))")
+    let pr = EyeDrops.progress(settings: s, today: [:], now: t("2026-10-12", "23:59"), tz: la, nag: nag)
+    check(pr.done == 0 && pr.total == 4 && pr.slots.last?.state == .unconfirmed && pr.slots.first?.state == .missed, "eyedrops: unanswered day → last unconfirmed, earlier missed")
+
+    // Checked in on another device: no more shows; the check-in shows on the card.
+    let days: EyeDropsDays = ["2026-10-12": ["1200": EyeDropsMark(done: t("2026-10-12", "12:03"), device: "web-x")]]
+    let n12 = t("2026-10-12", "12:15")
+    check(EyeDrops.plan(settings: s, today: days, nag: EyeDropsNag(slot: "2026-10-12/1200", shown: 1, next: n12), now: n12, active: true, tz: la).action == .none, "eyedrops: done elsewhere → no second show")
+    let p2 = EyeDrops.progress(settings: s, today: days, now: n12, tz: la)
+    check(p2.done == 1 && p2.slots[1] == .init(time: "12:00", state: .done, device: "web-x") && p2.badge == "👁️ 1/4", "eyedrops: progress shows the device")
+    // Away: no show, poll each minute; never shown until the 2 h window closes → missed.
+    let away = EyeDrops.plan(settings: s, today: [:], nag: nil, now: t("2026-10-12", "16:10"), active: false, tz: la)
+    check(away.action == .wait && away.nextWakeMs == t("2026-10-12", "16:11"), "eyedrops: away → wait 60 s")
+    check(EyeDrops.plan(settings: s, today: [:], nag: nil, now: t("2026-10-12", "18:00"), active: true, tz: la).action == .none, "eyedrops: 2 h later → missed, no show")
+    check(EyeDrops.bubbleCopy(slot: "2026-10-12/1400", index: 3, total: 4).line == "该滴眼药水啦（14:00 · 今天第 3 次）", "eyedrops: bubble copy")
+}
+
+runWebVectors()   // web/tests/vectors/wire.json (WebVectors.swift)
 try? FileManager.default.removeItem(at: tmp)
 // UserDefaults suites leave their plist behind even after removePersistentDomain; delete test ones.
 let prefsDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Preferences")

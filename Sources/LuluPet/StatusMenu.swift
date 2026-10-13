@@ -44,6 +44,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     var onToolsOpen: (() -> Void)?
     /// 「这是什么？」 in the 番茄钟 / 提醒 submenus: opens the compose panel's 小工具 tab.
     var onToolsHelp: (() -> Void)?
+    /// v0.18 「👁️ 眼药水 2/4」 in the 提醒 submenu: opens the compose panel's 小工具 tab.
+    var onEyedrops: (() -> Void)?
 
     let menu = NSMenu()
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -96,6 +98,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private let pomodoroHelpItem = NSMenuItem(title: "这是什么？", action: #selector(toolsHelp), keyEquivalent: "")
     private let remindHelpItem = NSMenuItem(title: "这是什么？", action: #selector(toolsHelp), keyEquivalent: "")
     private let cupsItem = NSMenuItem(title: "今天喝了 0 杯", action: nil, keyEquivalent: "")
+    private let eyedropsItem = NSMenuItem(title: "👁️ 眼药水", action: #selector(openEyedrops), keyEquivalent: "")
     /// Its key equivalent only shows the global ⌃⌥Q (v0.6.5: no ⌘Q).
     // v0.13 更新日志… + 待设置（N） (only while N > 0)
     private let setupTodosItem = NSMenuItem(title: "待设置", action: #selector(openSetupTodos), keyEquivalent: "")
@@ -260,6 +263,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         r.addItem(.separator())
         cupsItem.isEnabled = false
         r.addItem(cupsItem)
+        eyedropsItem.target = self
+        eyedropsItem.isHidden = true
+        eyedropsItem.toolTip = "眼药水提醒：点一下打开小工具"
+        r.addItem(eyedropsItem)
         r.addItem(.separator())
         remindHintLine.attributedTitle = Self.smallNote("开着后，你累计用电脑满间隔，宠物就来提醒；离开 5 分钟以上重新计时")
         remindHintLine.isEnabled = false
@@ -301,6 +308,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         waterItem.toolTip = ToolsCopy.explanation(.water, interval: waterInterval)
         standItem.toolTip = ToolsCopy.explanation(.stand, interval: standInterval)
         cupsItem.title = "今天喝了 \(cups) 杯"
+    }
+
+    /// v0.18: 「👁️ 眼药水 2/4」 (today's check-ins); nil hides the row (eye drops off).
+    func setEyedrops(_ title: String?) {
+        eyedropsItem.isHidden = title == nil
+        if let title { eyedropsItem.title = title }
     }
 
     /// Small grey explanation line (disabled menu row).
@@ -588,6 +601,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     @objc private func pomodoroStop() { onPomodoro?(.stop) }
     @objc private func toggleWater() { onReminder?(.water, waterItem.state != .on) }
     @objc private func toggleStand() { onReminder?(.stand, standItem.state != .on) }
+    @objc private func openEyedrops() { onEyedrops?() }
 
     @objc private func changeOutfit() { onChangeOutfit?() }
     @objc private func togglePin() { onTogglePin?() }

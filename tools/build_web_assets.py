@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
-"""Web version assets (spec docs/superpowers/specs/2026-10-06-web-design.md §6.2).
+"""Web version assets v2 (spec docs/superpowers/specs/2026-10-12-eyedrops-and-web-v2.md §5; v1 was 2026-10-06 §6.2).
 
 Reads only committed inputs (never assets/library, which is private):
-  Resources/Sprites/<character>/{order.json, outfits.json, <outfit>/<action>/meta.json, fidgets.json}
+  Resources/Sprites/<character>/{order.json, outfits.json, weather.json, _weather/<dir>/meta.json}
+  Resources/Sprites/<character>/<outfit>/{<action>/meta.json, fidgets.json, stay.json, clips.json, <dir>/meta.json}
+  Resources/Couples/<name>/meta.json                (two-character clips; facing / sound / heightFactor / intimate)
   Resources/Clips/<id>/{meta.json, NNN.webp}        (content-addressed frames, tools/build_sprites.py)
+  Resources/reactions.json, Resources/changelog.json (copied into the manifest as they are)
   Resources/Stickers/{stickers.json, <id>.gif}
   Sources/LuluCore/StickerPanel.swift               (defaultFavorites, StickerGroup order + titles)
+  Sources/LuluCore/ToolClips.swift                  (named clip pools of the personal tools)
 and writes web/assets/:
-  manifest.json
-  sprites/<clipid>-h200.<sha10>.webp     one sprite sheet per clip: distinct frames ("cells"), 200 px tall, 8 columns
+  manifest.json                                     (format: web/assets/README.md)
+  sprites/<clipid>-h240.<sha10>.webp     one sprite sheet per stored clip: distinct frames ("cells"), 240 px tall, 8 columns
   stickers/<id>.<sha10>.webp             animated WebP, longest side 200 px
   stickers/thumbs.<sha10>.webp           every sticker's first frame in a 72 px cell (one request)
 
@@ -16,52 +20,53 @@ File names carry the first 10 hex digits of the file's sha256, so a file never c
 name (cache forever). Output is deterministic (same inputs -> byte-identical files); files under
 sprites/ and stickers/ that the new manifest does not reference are deleted.
 
-Size rules (so the budgets hold at 200 px):
-  - a sheet stores each distinct frame once; the clip's `seq` lists the cell shown for every frame
-    (most idle loops are ping-pong, so this roughly halves them);
-  - clips faster than ~8 fps (median delay < 0.09 s, e.g. 蕾丝帽) keep every other frame, delays summed;
-  - an outfit over budget is re-encoded at a lower quality step (QUALITY_STEPS), then loses fidgets
-    (last first), then its largest one-shot clip (react / happy) keeps every 2nd, then 3rd frame
-    (delays summed, so the clip lasts as long); still over = the build fails.
+v2 rules: every frame is kept (full frame rate, no thinning); every fidget, stay, clips.json, weather and
+couple clip is exported. A sheet stores each distinct frame once (`seq` lists the cell of every frame).
+When a budget is exceeded the offending sheet is re-encoded one quality step lower (QUALITY_STEPS; for an
+outfit over budget, its largest sheet first) until everything fits; still over at the lowest step = the
+build fails naming the clip / outfit.
 
-Budgets (§6.2; the build fails when one is exceeded): idle clip <= 200 KB; outfit (core actions +
-fidgets, distinct sheet files) <= 600 KB; first screen (largest idle + largest default-outfit idle +
-manifest + thumbs) <= 1 MB; sticker <= 400 KB (quality steps down 75 -> 65 -> 55 before failing);
-web/assets total <= 40 MB.
+Budgets (§5; the build fails when one is exceeded): idle sheet <= 320 KB; outfit (core actions + all
+fidgets, distinct sheet files) <= 2.5 MB; weather sheet <= 600 KB; couple sheet and every clip a
+reactions.json `visitor` pool names (click / poke included) <= 900 KB; first screen (manifest + largest
+idle + largest default-outfit idle + thumbs) <= 1.5 MB; sticker <= 400 KB; web/assets total <= 150 MB.
 
 usage: nice -n 10 python3 tools/build_web_assets.py
 """
-import glob, hashlib, io, json, math, os, re, statistics, sys
+import collections, glob, hashlib, io, json, math, os, re, sys
 from PIL import Image
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
 SPRITES, CLIPS, STICKERS = 'Resources/Sprites', 'Resources/Clips', 'Resources/Stickers'
+COUPLES = 'Resources/Couples'
 OUT = 'web/assets'
 
 CHARACTERS = ('lulu', 'lumei')
-FRAME_H = 200
+FRAME_H = 240
 COLS = 8
-# (quality, alpha_quality) tried in order per outfit; spec §6.2 asks for quality 80.
-QUALITY_STEPS = ((80, 90), (72, 80), (65, 70))
-FAST_DELAY = 0.09      # clips whose median frame delay is below this keep every other frame
-MAX_THIN = 3           # last resort: a one-shot clip of an outfit still over budget keeps every 2nd / 3rd frame
+# (quality, alpha_quality) tried in order per sheet; step 0 is the normal encoding.
+QUALITY_STEPS = ((80, 90), (72, 80), (65, 70), (58, 60), (50, 50), (45, 40))
 STICKER_MAX = 200
 STICKER_QUALITIES = (75, 65, 55)
 THUMB = 72
 THUMB_COLS = 10
-MAX_FIDGETS = 2
 # Actions exported per outfit (missing ones are simply absent; see "modes" in the manifest).
 ACTIONS = ('idle', 'happy', 'react', 'sleep', 'quiet', 'run', 'wave')
 MODES = {'idle': 'loop', 'sleep': 'loop', 'run': 'loop', 'quiet': 'still',
          'happy': 'once', 'react': 'once', 'wave': 'once', 'fidget': 'once'}
+# ToolClips kinds always present in the manifest (eyedrops: spec §2.5; an empty pool = play `happy`).
+TOOL_KINDS = ('water', 'stand', 'focus', 'breakTime', 'eyedrops')
 
 KB = 1024
-BUDGET_IDLE = 200 * KB
-BUDGET_OUTFIT = 600 * KB
-BUDGET_FIRST = 1024 * KB
+MB = 1024 * KB
+BUDGET_IDLE = 320 * KB
+BUDGET_CLIP = 900 * KB        # couple sheets and the visitor clips named by reactions.json (incl. click / poke)
+BUDGET_WEATHER = 600 * KB
+BUDGET_OUTFIT = 2560 * KB
+BUDGET_FIRST = 1536 * KB
 BUDGET_STICKER = 400 * KB
-BUDGET_TOTAL = 40 * 1024 * KB
+BUDGET_TOTAL = 150 * MB
 
 
 def fail(msg):
@@ -95,11 +100,15 @@ def write(rel, data):
     _written[rel] = len(data)
 
 
-# ---------------------------------------------------------------- sprites
+def safe_dir(d):
+    return isinstance(d, str) and d and '/' not in d and d not in ('.', '..')
 
-def clip_use(character, outfit, d):
-    """A clip use (`<outfit>/<d>/meta.json`): (store id, delays) or None."""
-    p = f'{SPRITES}/{character}/{outfit}/{d}/meta.json'
+
+# ---------------------------------------------------------------- clips
+
+def clip_use(dirpath):
+    """A clip use (`<dirpath>/meta.json`): (store id, delays) or None when the directory has no meta."""
+    p = f'{dirpath}/meta.json'
     if not os.path.exists(p):
         return None
     m = load_json(p)
@@ -109,6 +118,23 @@ def clip_use(character, outfit, d):
     n = load_json(f'{CLIPS}/{cid}/meta.json')['frames']
     delays = tuple(round(float(m['delays'][i]) if i < len(m['delays']) else 0.1, 4) for i in range(n))
     return cid, delays
+
+
+def clip_index(path, base):
+    """fidgets.json / stay.json / clips.json / a weather.json look: [(name, use, sound)] (SpriteCatalog.ClipIndex:
+    a bare string is a dir that doubles as the name; unsafe dirs and dirs without a clip are skipped)."""
+    out = []
+    for e in (load_json(path) if isinstance(path, str) and os.path.exists(path) else path or []):
+        if isinstance(e, str):
+            name, d, sound = e, e, None
+        elif isinstance(e, dict):
+            d = e.get('dir')
+            name, sound = e.get('name') or d, e.get('sound') or None
+        else:
+            continue
+        if safe_dir(d) and (u := clip_use(f'{base}/{d}')):
+            out.append((name, u, sound))
+    return out
 
 
 _cells = {}   # store id -> (cells resized to FRAME_H, seq, [src w, src h], w)
@@ -136,126 +162,201 @@ def source_cells(cid):
     return _cells[cid]
 
 
-_sheets = {}   # (store id, step, level) -> (cell map, sheet bytes, cols, rows)
+_sheets = {}   # (store id, level) -> sheet bytes
 
 
-def variant(use, level, thin=1):
-    """The web clip for a use at quality step `level`, keeping every `thin`-th frame (on top of the fast-clip
-    rule): manifest entry (without key) + sheet bytes."""
+def sheet(cid, level):
+    """The sprite sheet of stored clip `cid` at quality step `level` (every distinct frame, in first-use order)."""
+    if (cid, level) not in _sheets:
+        cells, seq, src, w = source_cells(cid)
+        cols = min(COLS, len(cells))
+        rows = math.ceil(len(cells) / cols)
+        im = Image.new('RGBA', (cols * w, rows * FRAME_H), (0, 0, 0, 0))
+        for j, c in enumerate(cells):       # cells are numbered in first-use order already
+            im.paste(c, ((j % cols) * w, (j // cols) * FRAME_H))
+        q, aq = QUALITY_STEPS[level]
+        _sheets[(cid, level)] = webp_bytes(im, quality=q, alpha_quality=aq, method=6)
+    return _sheets[(cid, level)]
+
+
+def entry_for(use, level):
+    """Manifest clip entry (the v1 fields) for a use at the sheet's quality step."""
     cid, delays = use
     cells, seq, src, w = source_cells(cid)
-    step = (2 if len(delays) > 2 and statistics.median(delays) < FAST_DELAY else 1) * thin
-    kept = range(0, len(seq), step)
-    new_delays = [round(sum(delays[i:i + step]), 4) for i in kept]
-    picked = [seq[i] for i in kept]
-    order = list(dict.fromkeys(picked))            # cells in first-use order
-    skey = (cid, step, level)
-    if skey not in _sheets:
-        cols = min(COLS, len(order))
-        rows = math.ceil(len(order) / cols)
-        sheet = Image.new('RGBA', (cols * w, rows * FRAME_H), (0, 0, 0, 0))
-        for j, c in enumerate(order):
-            sheet.paste(cells[c], ((j % cols) * w, (j // cols) * FRAME_H))
-        q, aq = QUALITY_STEPS[level]
-        _sheets[skey] = webp_bytes(sheet, quality=q, alpha_quality=aq, method=6)
-    data = _sheets[skey]
-    pos = {c: j for j, c in enumerate(order)}
-    entry = {'file': f'sprites/{cid}-h{FRAME_H}.{sha10(data)}.webp', 'frames': len(new_delays),
-             'cells': len(order), 'cols': min(COLS, len(order)), 'w': w, 'h': FRAME_H, 'src': src,
-             'delays': new_delays, 'seq': [pos[c] for c in picked]}
-    return entry, data
+    data = sheet(cid, level)
+    return {'file': f'sprites/{cid}-h{FRAME_H}.{sha10(data)}.webp', 'frames': len(delays), 'cells': len(cells),
+            'cols': min(COLS, len(cells)), 'w': w, 'h': FRAME_H, 'src': src, 'delays': list(delays),
+            'seq': list(seq)}, data
 
+
+# ---------------------------------------------------------------- characters, couples
 
 def outfit_plan(character):
-    order_file = load_json(f'{SPRITES}/{character}/order.json')
-    index = load_json(f'{SPRITES}/{character}/outfits.json')
-    available = sorted(o for o in os.listdir(f'{SPRITES}/{character}')
-                       if not o.startswith('_') and os.path.exists(f'{SPRITES}/{character}/{o}/idle/meta.json'))
+    base = f'{SPRITES}/{character}'
+    order_file = load_json(f'{base}/order.json')
+    index = load_json(f'{base}/outfits.json')
+    available = sorted(o for o in os.listdir(base)
+                       if not o.startswith('_') and os.path.exists(f'{base}/{o}/idle/meta.json'))
     order = [o for o in order_file if o in available]
     order += [o for o in available if o not in order]
     outfits = {}
     for o in order:
-        actions = {a: u for a in ACTIONS if (u := clip_use(character, o, a))}
-        fid = []
-        fpath = f'{SPRITES}/{character}/{o}/fidgets.json'
-        for e in (load_json(fpath) if os.path.exists(fpath) else []):
-            d = e if isinstance(e, str) else e.get('dir')
-            if d and (u := clip_use(character, o, d)):
-                fid.append(u)
-            if len(fid) == MAX_FIDGETS:
-                break
+        d = f'{base}/{o}'
         info = index.get(o, {})
-        outfits[o] = {'label': info.get('label', o), 'season': info.get('season'), 'actions': actions, 'fidgets': fid}
-    return order, outfits
+        outfits[o] = {
+            'label': info.get('label', o), 'season': info.get('season'),
+            'actions': {a: u for a in ACTIONS if (u := clip_use(f'{d}/{a}'))},
+            'fidgets': clip_index(f'{d}/fidgets.json', d),
+            'stay': clip_index(f'{d}/stay.json', d),
+            'extras': clip_index(f'{d}/clips.json', d),
+        }
+    weather = {}
+    wpath = f'{base}/weather.json'
+    for look, items in (load_json(wpath) if os.path.exists(wpath) else {}).items():
+        if isinstance(items, list) and (entries := clip_index(items, f'{base}/_weather')):
+            weather[look] = entries
+    return order, outfits, weather
 
 
-def build_characters():
-    chosen = {}     # character -> outfit -> (actions {a: (use, level, thin)}, fidgets [(use, level, thin)])
-    report, notes = [], []
+def couple_plan():
+    out = {}
+    for name in sorted(os.listdir(COUPLES)):
+        d = f'{COUPLES}/{name}'
+        if not (u := clip_use(d)):
+            continue
+        m = load_json(f'{d}/meta.json')
+        out[name] = (u, {'intimate': m.get('intimate') is True, 'sound': m.get('sound') or None,
+                         'heightFactor': min(1.5, max(0.3, float(m.get('heightFactor', 1)))),
+                         'luluOnLeft': m.get('facing') != 'lulu-right'})
+    return out
+
+
+def build_clips():
     plans = {c: outfit_plan(c) for c in CHARACTERS}
+    couples = couple_plan()
+
+    # reactions.json visitor clip names per character (the `click` / `poke` pools included).
+    visitor_names = {c: set() for c in CHARACTERS}
+    for r in load_json('Resources/reactions.json').values():
+        for c, v in ((r.get('visitor') or {}) if isinstance(r, dict) else {}).items():
+            if c in visitor_names:
+                visitor_names[c] |= set([v] if isinstance(v, str) else v if isinstance(v, list) else [])
+
+    # Constraints: per-sheet caps (strictest use wins) and per-outfit totals.
+    cap = {}
+
+    def limit(use, budget):
+        cap[use[0]] = min(cap.get(use[0], budget), budget)
+    groups = []    # (label, [store ids]) for outfits: core actions + all fidgets
     for c in CHARACTERS:
-        order, outfits = plans[c]
-        chosen[c] = {}
+        order, outfits, weather = plans[c]
         for o in order:
             spec = outfits[o]
-            fids = list(spec['fidgets'])
-            thin = {}   # action -> extra frame thinning (last resort, one-shot clips only)
+            if 'idle' in spec['actions']:
+                limit(spec['actions']['idle'], BUDGET_IDLE)
+            for lst in ('fidgets', 'stay', 'extras'):
+                for name, u, _ in spec[lst]:
+                    if name in visitor_names[c]:
+                        limit(u, BUDGET_CLIP)
+            groups.append((f'{c}/{o}', sorted({u[0] for u in spec['actions'].values()} |
+                                              {u[0] for _, u, _ in spec['fidgets']})))
+        for entries in weather.values():
+            for _, u, _ in entries:
+                limit(u, BUDGET_WEATHER)
+    for u, _ in couples.values():
+        limit(u, BUDGET_CLIP)
 
-            def sizes(level, fs):
-                vs = [variant(u, level, thin.get(a, 1)) for a, u in spec['actions'].items()]
-                vs += [variant(u, level) for u in fs]
-                files = {e['file']: len(d) for e, d in vs}
-                return len(variant(spec['actions']['idle'], level)[1]), sum(files.values()), files
-            level = 0
-            while True:
-                idle, total, files = sizes(level, fids)
-                if idle <= BUDGET_IDLE and total <= BUDGET_OUTFIT:
-                    break
-                if level + 1 < len(QUALITY_STEPS):
-                    level += 1
-                elif idle > BUDGET_IDLE:
-                    fail(f'{c}/{o} idle is {idle / KB:.0f} KB > {BUDGET_IDLE // KB} KB at the lowest quality step')
-                elif fids:
-                    notes.append(f'dropped {c}/{o} fidget {fids.pop()[0]} (outfit over {BUDGET_OUTFIT // KB} KB)')
-                else:
-                    once = [a for a in spec['actions'] if MODES[a] == 'once' and thin.get(a, 1) < MAX_THIN]
-                    if not once:
-                        fail(f'{c}/{o} is {total / KB:.0f} KB > {BUDGET_OUTFIT // KB} KB with nothing left to cut')
-                    big = max(once, key=lambda a: len(variant(spec['actions'][a], level, thin.get(a, 1))[1]))
-                    thin[big] = thin.get(big, 1) + 1
-            if level:
-                notes.append(f'{c}/{o} encoded at quality {QUALITY_STEPS[level][0]} (budget)')
-            for a, t in sorted(thin.items()):
-                notes.append(f'{c}/{o} {a} keeps 1 frame in {t} (budget)')
-            chosen[c][o] = ({a: (u, level, thin.get(a, 1)) for a, u in spec['actions'].items()},
-                            [(u, level, 1) for u in fids])
-            report.append((f'{c}/{o}', total, idle, len(fids), QUALITY_STEPS[level][0]))
+    level = collections.defaultdict(int)   # store id -> quality step (0 unless a budget needs less)
+    last = len(QUALITY_STEPS) - 1
+    changed = True
+    while changed:
+        changed = False
+        for cid in sorted(cap):
+            while len(sheet(cid, level[cid])) > cap[cid]:
+                if level[cid] == last:
+                    fail(f'clip {cid} is {len(sheet(cid, last)) / KB:.0f} KB > {cap[cid] // KB} KB '
+                         f'at the lowest quality step')
+                level[cid] += 1
+                changed = True
+        for label, cids in groups:
+            while (total := sum(len(sheet(x, level[x])) for x in cids)) > BUDGET_OUTFIT:
+                bumpable = [x for x in cids if level[x] < last]
+                if not bumpable:
+                    fail(f'{label} is {total / KB:.0f} KB > {BUDGET_OUTFIT // KB} KB at the lowest quality step')
+                big = max(bumpable, key=lambda x: (len(sheet(x, level[x])), x))
+                level[big] += 1
+                changed = True
 
-    # Name the clips: "<id>-h200", plus a short hash when one stored clip is used in several ways
-    # (another speed or quality step).
-    all_uses = sorted({x for ch in chosen.values() for acts, fs in ch.values() for x in list(acts.values()) + fs})
-    per_cid = {}
-    for (cid, delays), level, thin in all_uses:
-        per_cid.setdefault(cid, []).append((delays, level, thin))
+    # Clip keys: "<id>-h240", plus a short hash of the delays when one stored clip is used at several speeds.
+    uses = set()
+    for c in CHARACTERS:
+        order, outfits, weather = plans[c]
+        for spec in outfits.values():
+            uses |= set(spec['actions'].values())
+            for lst in ('fidgets', 'stay', 'extras'):
+                uses |= {u for _, u, _ in spec[lst]}
+        for entries in weather.values():
+            uses |= {u for _, u, _ in entries}
+    uses |= {u for u, _ in couples.values()}
+    variants = {}
+    for cid, delays in uses:
+        variants.setdefault(cid, set()).add(delays)
     clips, key_of = {}, {}
-    for (cid, delays), level, thin in all_uses:
-        entry, data = variant((cid, delays), level, thin)
+    for use in sorted(uses):
+        cid, delays = use
+        entry, data = entry_for(use, level[cid])
         k = f'{cid}-h{FRAME_H}'
-        if len(per_cid[cid]) > 1:
-            k += '-' + hashlib.sha256(json.dumps([list(delays), level, thin]).encode()).hexdigest()[:6]
+        if len(variants[cid]) > 1:
+            k += '-' + hashlib.sha256(json.dumps(list(delays)).encode()).hexdigest()[:6]
         write(entry['file'], data)
         clips[k] = entry
-        key_of[((cid, delays), level, thin)] = k
-    characters = {}
+        key_of[use] = k
+
+    characters, notes = {}, []
     for c in CHARACTERS:
-        order, outfits = plans[c]
+        order, outfits, weather = plans[c]
         out = {}
         for o in order:
-            acts, fs = chosen[c][o]
-            out[o] = {'label': outfits[o]['label'], 'season': outfits[o]['season'],
-                      'actions': {a: key_of[x] for a, x in acts.items()}, 'fidgets': [key_of[x] for x in fs]}
-        characters[c] = {'order': order, 'outfits': out}
-    return clips, characters, report, notes
+            spec = outfits[o]
+            named, sounds = {}, {}
+            for lst in ('fidgets', 'stay', 'extras'):         # PetWindow: fidgets + stays + extras, first wins
+                for name, u, sound in spec[lst]:
+                    if name not in named:
+                        named[name] = key_of[u]
+                        if sound:
+                            sounds[name] = sound
+            out[o] = {'label': spec['label'], 'season': spec['season'],
+                      'actions': {a: key_of[u] for a, u in spec['actions'].items()},
+                      'fidgets': [key_of[u] for _, u, _ in spec['fidgets']],
+                      'fidgetNames': [n for n, _, _ in spec['fidgets']],
+                      'stay': [n for n, _, _ in spec['stay']],
+                      'extras': [n for n, _, _ in spec['extras']],
+                      'named': named, 'clipSounds': sounds}
+        wout = {look: [dict({'name': n, 'clip': key_of[u]}, **({'sound': s} if s else {})) for n, u, s in entries]
+                for look, entries in weather.items()}
+        characters[c] = {'order': order, 'outfits': out, 'weather': wout}
+    couples_out = {name: dict({'clip': key_of[u]}, **extra) for name, (u, extra) in couples.items()}
+    for cid, lv in sorted(level.items()):
+        if lv:
+            notes.append(f'clip {cid} encoded at quality {QUALITY_STEPS[lv][0]} (budget)')
+    return clips, characters, couples_out, groups, level, notes
+
+
+# ---------------------------------------------------------------- tool clips
+
+def tool_clips():
+    """ToolClips.pool(kind, for: character) from Sources/LuluCore/ToolClips.swift: {kind: {character: [names]}}.
+    `case (.kind, .lulu)`, `case (.kind, _)` and `case (.kind, .lulu), (.kind, .lumei)` are understood; a kind
+    without a case (eyedrops before the Mac adds it) is an empty pool for both characters."""
+    src = open('Sources/LuluCore/ToolClips.swift', encoding='utf-8').read()
+    out = {k: {c: [] for c in CHARACTERS} for k in TOOL_KINDS}
+    for m in re.finditer(r'case\s+((?:\(\s*\.\w+\s*,\s*(?:\.\w+|_)\s*\)\s*,?\s*)+):\s*return\s*\[(.*?)\]', src, re.S):
+        names = re.findall(r'"([^"]+)"', m.group(2))
+        for kind, who in re.findall(r'\(\s*\.(\w+)\s*,\s*(\.\w+|_)\s*\)', m.group(1)):
+            for c in (CHARACTERS if who == '_' else (who[1:],)):
+                if c in CHARACTERS:
+                    out.setdefault(kind, {x: [] for x in CHARACTERS})[c] = names
+    return out
 
 
 # ---------------------------------------------------------------- stickers
@@ -351,18 +452,42 @@ def build_stickers():
 def main():
     if not os.path.isdir(CLIPS):
         fail('Resources/Clips missing')
-    clips, characters, sprite_report, notes = build_characters()
-    stickers, thumbs, favorites, groups, sticker_report, snotes = build_stickers()
+    clips, characters, couples, groups, level, notes = build_clips()
+    stickers, thumbs, favorites, groups_st, sticker_report, snotes = build_stickers()
+    tools = tool_clips()
+    reactions = load_json('Resources/reactions.json')
+    changelog = load_json('Resources/changelog.json') if os.path.exists('Resources/changelog.json') else []
+
+    # Cross-checks (notes only: the Mac skips what an outfit lacks the same way).
+    for c, ch in characters.items():
+        names = {n for of in ch['outfits'].values() for n in of['named']}
+        for kind, pools in tools.items():
+            for n in pools.get(c, []):
+                if n not in names:
+                    notes.append(f'toolClips {kind}/{c}: no outfit has clip {n}')
+    for key, r in reactions.items():
+        pool = r.get('couple') if isinstance(r, dict) else None
+        for n in ([pool] if isinstance(pool, str) else pool or []):
+            if n != 'none' and n not in couples:
+                notes.append(f'reactions {key}: unknown couple {n}')
+
+    assets_total = sum(_written.values())   # every referenced file (manifest itself excluded)
     manifest = {
-        'version': 1,
+        'version': 2,
         'frameHeight': FRAME_H,
         'modes': MODES,
         'clips': dict(sorted(clips.items())),
         'characters': characters,
+        'couples': couples,
+        'reactions': reactions,
+        'toolClips': tools,
+        'sounds': {},   # the web plays no character voice files (office use); W5 synthesizes UI tones
         'stickers': stickers,
-        'stickerGroups': groups,
+        'stickerGroups': groups_st,
         'thumbs': thumbs,
         'defaultFavorites': favorites,
+        'changelog': changelog,
+        'totalBytes': assets_total,
     }
     text = json.dumps(manifest, ensure_ascii=False, indent=1, separators=(',', ': '))
     # Number arrays (delays / seq / src) on one line each: readable diffs, smaller file.
@@ -377,30 +502,50 @@ def main():
             os.remove(path)
             print(f'removed stale {rel}')
 
-    idle_of = {(c, o): _written[clips[of['actions']['idle']]['file']]
-               for c, ch in characters.items() for o, of in ch['outfits'].items()}
+    size = lambda k: _written[clips[k]['file']]
+    idle_of = {(c, o): size(of['actions']['idle']) for c, ch in characters.items() for o, of in ch['outfits'].items()}
     worst_mine = max(idle_of.values())
     worst_partner = max(idle_of[(c, characters[c]['order'][0])] for c in CHARACTERS)
     first = worst_mine + worst_partner + len(mdata) + _written[thumbs['file']]
-    total = sum(os.path.getsize(p) for p in glob.glob(f'{OUT}/**', recursive=True) if os.path.isfile(p))
+    total = sum(os.path.getsize(p) for p in glob.glob(f'{OUT}/**', recursive=True)
+                if os.path.isfile(p) and not p.endswith('README.md'))
 
-    print(f'{"outfit":22} {"KB":>5} {"idle KB":>8} fidgets quality')
-    for name, t, idle, nf, q in sprite_report:
-        print(f'{name:22} {t / KB:5.0f} {idle / KB:8.0f} {nf:7} {q}')
-    sprites_total = sum(v for k, v in _written.items() if k.startswith('sprites/'))
-    stickers_total = sum(v for k, v in _written.items() if k.startswith('stickers/'))
+    def files_of(keys):
+        return {clips[k]['file'] for k in keys}
+
+    def kb(files):
+        return sum(_written[f] for f in files) / KB
+
+    print(f'{"outfit":22} {"core KB":>8} {"idle KB":>8} {"fidgets":>7} {"stay+extras KB":>15}')
+    for c, ch in characters.items():
+        for o in ch['order']:
+            of = ch['outfits'][o]
+            core = files_of(list(of['actions'].values()) + of['fidgets'])
+            rest = files_of(of['named'].values()) - core
+            print(f'{c + "/" + o:22} {kb(core):8.0f} {idle_of[(c, o)] / KB:8.0f} {len(of["fidgets"]):7} {kb(rest):15.0f}')
+    cats = {
+        'outfit core (actions + fidgets)': files_of(k for ch in characters.values() for of in ch['outfits'].values()
+                                                    for k in list(of['actions'].values()) + of['fidgets']),
+        'stay + clips.json (named, not core)': files_of(k for ch in characters.values() for of in ch['outfits'].values()
+                                                        for k in of['named'].values()),
+        'weather': files_of(e['clip'] for ch in characters.values() for es in ch['weather'].values() for e in es),
+        'couples': files_of(x['clip'] for x in couples.values()),
+    }
+    cats['stay + clips.json (named, not core)'] -= cats['outfit core (actions + fidgets)']
+    cats['stickers + thumbs'] = {k for k in _written if k.startswith('stickers/')}
+    for name, fs in cats.items():
+        print(f'{name:38} {len(fs):4} files {kb(fs) / 1024:7.2f} MB')
     big = max(sticker_report, key=lambda r: r[1])
-    print(f'sprites: {sum(1 for k in _written if k.startswith("sprites/"))} sheets, {sprites_total / KB:.0f} KB')
-    print(f'stickers: {len(stickers)} + thumbs ({_written[thumbs["file"]] / KB:.0f} KB), {stickers_total / KB:.0f} KB; '
-          f'largest {big[0]} {big[1] / KB:.0f} KB')
+    print(f'sprites: {sum(1 for k in _written if k.startswith("sprites/"))} sheets; largest sticker {big[0]} '
+          f'{big[1] / KB:.0f} KB; sheets below quality {QUALITY_STEPS[0][0]}: {sum(1 for v in level.values() if v)}')
     print(f'manifest {len(mdata) / KB:.1f} KB; first screen (worst case) {first / KB:.0f} KB; '
-          f'web/assets total {total / KB / 1024:.2f} MB')
+          f'web/assets total {total / MB:.2f} MB')
     for n in notes + snotes:
         print(f'note: {n}')
     if first > BUDGET_FIRST:
         fail(f'first screen {first / KB:.0f} KB > {BUDGET_FIRST // KB} KB')
     if total > BUDGET_TOTAL:
-        fail(f'web/assets total {total / KB / 1024:.1f} MB > {BUDGET_TOTAL // KB // 1024} MB')
+        fail(f'web/assets total {total / MB:.1f} MB > {BUDGET_TOTAL // MB} MB')
     print('budgets OK')
 
 

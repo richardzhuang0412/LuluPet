@@ -2,7 +2,7 @@
 // feed: an EventSource stream with our own reconnect backoff, a watchdog and a polling fallback (spec §2.3).
 // Paths are relative to /pairs/<code>/ ("messages", "messages/<key>", "presence/lulu", "read/lulu").
 
-import { backoffAfter } from "./_shim_core.js";   // TEMP → ../core/wire.js
+import { backoffAfter } from "../core/wire.js";
 
 export const SEND_TIMEOUT_MS = 20_000;       // FirebaseClient.sendTimeout
 export const PRESENCE_TIMEOUT_MS = 10_000;   // FirebaseClient.presenceTimeout
@@ -50,6 +50,7 @@ export function misconfigurationReason(err) {
  *   get(path, {query, timeoutMs})            → parsed JSON (null = nothing there)
  *   put(path, body, {timeoutMs, keepalive})  → echoed body
  *   patch(path, body, {timeoutMs, keepalive})
+ *   del(path, {timeoutMs})                   → null (DELETE; deleting what is not there succeeds too)
  *   openEventSource(path, query)             → EventSource
  * Errors are FirebaseError.
  */
@@ -89,6 +90,7 @@ export function createFirebase({ databaseURL, pairCode, fetch: fetchImpl, EventS
     get: (path, opts = {}) => request("GET", path, opts),
     put: (path, body, opts = {}) => request("PUT", path, { ...opts, body }),
     patch: (path, body, opts = {}) => request("PATCH", path, { ...opts, body }),
+    del: (path, opts = {}) => request("DELETE", path, opts),
     openEventSource(path, query) {
       if (typeof ES !== "function") throw new FirebaseError("network");
       return new ES(url(path, query));

@@ -35,6 +35,8 @@ final class ToolsPanelModel: ObservableObject {
 struct ToolsTabView: View {
     @ObservedObject var model: ToolsPanelModel
     let onOpenSettings: () -> Void
+    /// v0.18 眼药水 (EyeDropsController's model; one per app).
+    @ObservedObject var eyedrops: EyeDropsPanelModel = .shared
 
     private static let accent = Color(red: 0.91, green: 0.54, blue: 0.29)
 
@@ -43,7 +45,83 @@ struct ToolsTabView: View {
             pomodoroCard
             reminderCard(.water)
             reminderCard(.stand)
+            if eyedrops.attached { eyedropsCard }
         }
+    }
+
+    // MARK: 眼药水 (v0.18)
+
+    private var eyedropsCard: some View {
+        let e = eyedrops
+        let on = Binding(get: { e.settings.enabled }, set: { e.setEnabled($0) })
+        let count = Binding(get: { max(1, e.settings.times.count) }, set: { e.setCount($0) })
+        return card {
+            HStack {
+                Text("👁️💧 眼药水").font(.system(size: 12, weight: .bold, design: .rounded)).foregroundStyle(Self.accent)
+                InfoBadge(text: EyeDropsPanelModel.explanation)
+                Spacer(minLength: 0)
+                Toggle("", isOn: on).labelsHidden().toggleStyle(.switch).controlSize(.mini).tint(Self.accent)
+            }
+            if on.wrappedValue {
+                Stepper(value: count, in: 1...8) {
+                    Text("一天 \(count.wrappedValue) 次")
+                        .font(.system(size: 11, weight: .medium, design: .rounded)).monospacedDigit()
+                }
+                .controlSize(.small)
+                // Refreshes once a minute, only while this tab is on screen (○ → ⏰ → –).
+                TimelineView(.periodic(from: .now, by: 60)) { _ in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("👁️ 今天 \(e.progress.done)/\(e.progress.total)")
+                            .font(.system(size: 11, weight: .semibold, design: .rounded)).monospacedDigit()
+                            .foregroundStyle(Self.accent)
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 4), alignment: .leading, spacing: 4) {
+                            ForEach(Array(e.progress.slots.enumerated()), id: \.offset) { _, slot in dot(slot) }
+                        }
+                    }
+                }
+                HStack(spacing: 4) {
+                    Text(e.syncLine).font(.system(size: 10, design: .rounded)).foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    Button("改时间…") { e.openSettings() }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Self.accent)
+                        .help("到设置 → 小工具 里改每次的时间")
+                }
+            }
+        }
+        .onAppear { e.refresh() }
+    }
+
+    /// One of today's slots: ✓ 滴了（哪台设备）/ ⏰ 正在提醒 / ○ 还没到 / – 错过了 · 没确认. Click = 补记, or undo my own.
+    private func dot(_ slot: EyeDropsProgress.Slot) -> some View {
+        let symbol: String
+        let help: String
+        switch slot.state {
+        case .done: symbol = "✓"; help = "滴了" + (eyedrops.deviceLabel(slot.device).map { "（\($0)）" } ?? "") + (slot.device == eyedrops.myDevice ? " · 点一下撤销" : "")
+        case .showing: symbol = "⏰"; help = "正在提醒 · 点一下打卡"
+        case .upcoming: symbol = "○"; help = "还没到 · 点一下提前打卡"
+        case .missed: symbol = "–"; help = "错过了 · 点一下补记"
+        case .unconfirmed: symbol = "–"; help = "提醒了 3 遍没确认 · 点一下补记"
+        }
+        let done = slot.state == .done
+        return Button { eyedrops.toggle(slot.time) } label: {
+            VStack(spacing: 0) {
+                Text("\(symbol) \(slot.time)")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .foregroundStyle(done ? Color.white : slot.state == .showing ? Self.accent : Color(white: 0.4))
+                if done, let label = eyedrops.deviceLabel(slot.device) {
+                    Text(label).font(.system(size: 8, design: .rounded)).foregroundStyle(Color.white.opacity(0.85))
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 26)
+            .background(RoundedRectangle(cornerRadius: 7).fill(done ? Self.accent : Color(white: 0.94)))
+            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Self.accent.opacity(slot.state == .showing ? 0.8 : 0), lineWidth: 1))
+            .contentShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(help)
     }
 
     // MARK: 番茄钟

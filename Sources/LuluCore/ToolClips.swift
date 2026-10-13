@@ -6,7 +6,7 @@ import Foundation
 /// the extra ones; the break clips are the default outfits' own celebrate / clap / eat clips). An outfit that lacks
 /// a clip simply skips it (the caller filters by what the pet has).
 public enum ToolClips {
-    public enum Kind: String, Sendable, CaseIterable { case water, stand, focus, breakTime }
+    public enum Kind: String, Sendable, CaseIterable { case water, stand, focus, breakTime, eyedrops }
 
     public static func pool(_ kind: Kind, for character: Role) -> [String] {
         switch (kind, character) {
@@ -18,6 +18,8 @@ public enum ToolClips {
         case (.focus, .lumei): return []   // 噜妹 keeps the quiet still frame
         case (.breakTime, .lulu): return ["lulu_celebrate_01", "lulu_clap_01"]
         case (.breakTime, .lumei): return ["lumei_celebrate_01", "lumei_clap_01", "lumei_eat_01"]
+        // v0.18 eye drops: no rub-eyes / blink clip yet (the user picks one later); empty = the pet plays `happy`.
+        case (.eyedrops, _): return []
         }
     }
 

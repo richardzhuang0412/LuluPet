@@ -1,0 +1,9 @@
+body { font: 13px/1.4 -apple-system, "PingFang SC", sans-serif; margin: 16px; background: #faf6f2; color: #3b2a1f; }
+h1 { font-size: 16px; margin: 0 0 10px; }
+.row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+.box { width: 380px; height: 230px; border-radius: 14px; overflow: hidden; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12); flex: none; }
+.box.pip { width: 300px; height: 260px; }
+.side { flex: 1 1 320px; min-width: 280px; }
+.buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.buttons button { border: 1px solid #ddd; background: #fff; border-radius: 999px; padding: 4px 10px; cursor: pointer; font: inherit; }
+.log { height: 300px; overflow: auto; background: #fff; border: 1px solid #eee; border-radius: 8px; padding: 6px; font-size: 11.5px; margin: 0; white-space: pre-wrap; }

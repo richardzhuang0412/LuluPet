@@ -20,7 +20,7 @@ public enum ToolsCopy {
         let act = kind == .water ? "喝水" : "起来动一动"
         let tail = kind == .water ? "点「喝了」记一杯；" : "点「好的」收到；"
         return "开着的话，你用电脑累计满 \(n) 分钟，宠物会跑出来提醒你\(act)。\(tail)「等会儿」10 分钟后再提醒。"
-            + "离开电脑 5 分钟以上会重新计时；全屏、勿扰、专注时先不打扰。"
+            + "离开电脑 5 分钟以上会重新计时；全屏或隐藏时先等等；勿扰、专注时照常提醒。"
     }
 
     /// Short description line for the menu.
@@ -28,7 +28,7 @@ public enum ToolsCopy {
         kind == .water ? "累计用电脑满间隔，宠物来提醒你喝水" : "累计用电脑满间隔，宠物来提醒你起来动动"
     }
 
-    public static let pomodoroHint = "专注一段时间，到点宠物提醒你休息；专注中宠物安静，其他提醒先不打扰"
+    public static let pomodoroHint = "专注一段时间，到点宠物提醒你休息；专注中宠物安静（喝水、站立、眼药水提醒照常）"
 
     /// 「25 分钟专注 / 5 分钟休息」
     public static func pomodoroDurations(_ c: PomodoroConfig) -> String {
@@ -53,7 +53,7 @@ public enum ToolsCopy {
         case .showing: return "正在提醒你\(what) ⏰"
         case .snoozed(let left): return "「等会儿」：\(mins(left)) 分钟后再提醒"
         case .away: return "你离开电脑了，回来后重新计时"
-        case .waiting: return "到点啦，等你退出全屏 / 勿扰 / 专注就提醒"
+        case .waiting: return "到点啦，等宠物出来就提醒"
         case .counting(let left): return left <= 0 ? "马上提醒你\(what)" : "还差约 \(mins(left)) 分钟提醒你\(what)（只算用电脑的时间）"
         }
     }

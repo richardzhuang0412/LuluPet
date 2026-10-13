@@ -1,7 +1,7 @@
 // Open-Meteo current weather (port of LuluSync/WeatherClient.current): same request as the Mac, 10 s timeout.
 // No NWS (spec §9). `place` is a presence `place` object: {name, latitude, longitude, timezone, admin?, country?}.
 
-import { parseForecast } from "./_shim_core.js";   // TEMP → ../core/weather.js
+import { parseForecast } from "../core/weather.js";
 
 export const FORECAST_BASE = "https://api.open-meteo.com/v1/forecast";
 export const WEATHER_TIMEOUT_MS = 10_000;
@@ -36,5 +36,6 @@ export async function fetchCurrent(place, { fetch: fetchImpl, base, timeoutMs = 
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const snapshot = parseForecast(await res.json());
+  if (!snapshot) throw new Error("bad forecast");
   return { ...snapshot, fetchedAt: now() };
 }

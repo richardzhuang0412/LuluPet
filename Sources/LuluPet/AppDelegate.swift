@@ -527,6 +527,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tools.onOpenPanel = { [weak self] in self?.openCompose(tab: .tools) }
         tools.testSnoozeDelay = options.demoSnoozeDelay
         tools.start(menu: statusMenu)   // v0.10: 🍅 / 提醒 menus, restore the pomodoro, arm the reminders
+        eyedrops.start()   // v0.18 (after tools: it chains the menu's onToolsOpen)
         // v0.14.4: 「喝了」 on the re-reminder a partner-remind 等会儿 caused → tell TA 「终于做到了」.
         NotificationCenter.default.addObserver(forName: PersonalToolsNotification.didCompleteLate, object: nil, queue: .main) { [weak self] n in
             guard let kind = (n.userInfo?["kind"] as? String).flatMap(ReminderKind.init(rawValue:)), let ackOf = n.userInfo?["ackOf"] as? String else { return }
@@ -1386,10 +1387,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var tools = PersonalToolsController(
         store: PersonalToolsStore(defaults: store.defaults),
         env: .init(pet: { [weak self] in self?.pet }, channel: { [weak self] in self?.channel },
-                   character: { [weak self] in self?.role }, bubble: bubble, sound: sound,
-                   blocked: { [weak self] in self.map { $0.windowsHidden || $0.dndOn } ?? true },
+                   character: { [weak self] in self?.role },
+                   showBubble: { [weak self] in self?.showPersonalBubble($0) }, sound: sound,
+                   blocked: { [weak self] in self?.windowsHidden ?? true },   // v0.18: 勿扰 / 专注 no longer hold my own reminders
+                   dnd: { [weak self] in self?.dndOn ?? false },
                    restChanged: { [weak self] in self?.applyRestPose() },
                    needsArm: { [weak self] in self?.housekeeping.setNeedsArm() }))
+
+    // MARK: v0.18 eye drops + personal reminders that 勿扰 never holds (W2)
+    /// Eye-drop reminder (`EyeDropsController`; its timing rides on the housekeeping timer as `.eyedrops`).
+    private lazy var eyedrops = EyeDropsController(
+        env: .init(pet: { [weak self] in self?.pet }, character: { [weak self] in self?.role },
+                   showBubble: { [weak self] in self?.showPersonalBubble($0) },
+                   config: { [weak self] in self.flatMap { $0.usingDummyConfig ? nil : $0.config } },
+                   deviceId: store.deviceId,
+                   petVisible: { [weak self] in self.map { $0.pet != nil && !$0.windowsHidden } ?? false },
+                   menu: { [weak self] in self?.statusMenu },
+                   openPanel: { [weak self] in self?.openCompose(tab: .tools) },
+                   openSettings: { [weak self] in self?.tools.onOpenSettings?() },
+                   needsArm: { [weak self] in self?.housekeeping.setNeedsArm() },
+                   closeBubble: { [weak self] header in
+                       guard let self else { return }
+                       for b in [self.bubble, self.personalBubble] where b.currentItem?.header == header { b.dismissCurrent(viaButton: true) }
+                   }),
+        store: toolsStore)
+    /// 勿扰 suspends the shared bubble (TA's messages wait); my own reminders (eye drops, water / stand, pomodoro) are
+    /// never held (user decision 2026-10-12), so while it is suspended they use this second bubble at the home pet.
+    private lazy var personalBubble: BubbleWindow = {
+        let b = BubbleWindow()
+        b.onShow = { [weak self] _ in self?.sound.play(.bubble) }
+        return b
+    }()
+
+    private func showPersonalBubble(_ item: BubbleItem) {
+        guard dndOn, !windowsHidden, let pet else { bubble.enqueueAtHome(item); return }
+        personalBubble.follow(pet.spriteScreenRect)
+        personalBubble.enqueueAtHome(item)
+    }
 
     // v0.8.1 省电: one housekeeping timer for every deadline below (see `HousekeepingScheduler`).
     private let housekeeping = HousekeepingScheduler()
@@ -1422,6 +1456,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var d = HousekeepingDeadlines(quiet: quietDue, doze: dozeDue, rotation: rotationDue, fidget: fidgetDue,
                                       dndEnd: dndEnd, hideEnd: hideEnd)
         tools.fill(&d)   // v0.10 pomodoro / water / stand
+        eyedrops.fill(&d)   // v0.18
         d.weather = weatherDeadline()   // v0.12
         d.updateCheck = updater.deadline()   // v0.14
         d.location = LocationRules.deadline(auto: weatherStore.myPlaceAuto && !locating, last: locationLastAttempt, now: wallClock)   // v0.14.1
@@ -1437,6 +1472,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .dndEnd: checkDNDExpiry(reason: "timer")
         case .hideEnd: hideTimeUp()
         case .pomodoro, .water, .stand: tools.run(task)   // v0.10
+        case .eyedrops: eyedrops.run(task)   // v0.18
         case .weather: refreshWeather(force: true)   // v0.12: the job only exists (and is only due) when weather is needed
         case .updateCheck: updater.runAuto()   // v0.14: the daily update check
         case .location: refreshLocation(userInitiated: false)   // v0.14.1: 3 h after the last look-up, only while auto-location is on
@@ -2071,6 +2107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let home = bubble.currentItem?.atHome == true
         bubble.follow(home ? pet.spriteScreenRect : (visits.bubbleAnchor ?? pet.spriteScreenRect))
         thinkWindow.follow(pet.spriteScreenRect)
+        personalBubble.follow(pet.spriteScreenRect)   // v0.18
     }
 
     // MARK: Incoming
@@ -2727,6 +2764,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             moveTripMessagesToAwayBatch()
             waiting.forEach(bubble.enqueue)
             bubble.suspend()
+            personalBubble.suspend()   // v0.18
             notice.dismiss()
             pet?.orderOut(nil)
             NSLog("[lulu] hidden (%@)%@", hide.manual ? "manual" : "fullscreen",
@@ -2737,6 +2775,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pet.didAppear()
             petMoved()
             if !dndOn { bubble.resume() }
+            personalBubble.resume()   // v0.18
             if rotationDeferred {
                 rotationDeferred = false
                 rotationDue = uptime + IdleRules.retry

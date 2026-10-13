@@ -1,5 +1,5 @@
-// web/assets integrity (tools/build_web_assets.py output): files exist, names carry their content hash,
-// sheet geometry matches the manifest, references resolve, and the §6.2 budgets hold.
+// web/assets integrity (tools/build_web_assets.py output, manifest v2 — spec 2026-10-12 §5): files exist, names
+// carry their content hash, sheet geometry matches the manifest, every reference resolves, and the budgets hold.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
@@ -9,7 +9,13 @@ import { fileURLToPath } from 'node:url';
 
 const ASSETS = join(dirname(fileURLToPath(import.meta.url)), '..', 'assets');
 const KB = 1024;
-const BUDGET = { idle: 200 * KB, outfit: 600 * KB, firstScreen: 1024 * KB, sticker: 400 * KB, total: 40 * 1024 * KB };
+const MB = 1024 * KB;
+const BUDGET = {
+  idle: 320 * KB, clip: 900 * KB, weather: 600 * KB, outfit: 2560 * KB, firstScreen: 1536 * KB,
+  sticker: 400 * KB, total: 150 * MB,
+};
+const DIRS = ['sprites', 'stickers'];
+const CHARACTERS = ['lulu', 'lumei'];
 
 const manifestBytes = readFileSync(join(ASSETS, 'manifest.json'));
 const manifest = JSON.parse(manifestBytes.toString('utf8'));
@@ -47,21 +53,29 @@ function hashOK(rel, data) {
   assert.equal(createHash('sha256').update(data).digest('hex').slice(0, 10), m[1], `hash matches content: ${rel}`);
 }
 
-test('manifest shape', () => {
-  assert.equal(manifest.version, 1);
-  assert.equal(manifest.frameHeight, 200);
-  for (const k of ['modes', 'clips', 'characters', 'stickers', 'stickerGroups', 'thumbs', 'defaultFavorites']) {
+const clip = (k, where) => {
+  assert.ok(typeof k === 'string' && manifest.clips[k], `${where} -> clip ${k}`);
+  return manifest.clips[k];
+};
+const asList = (v) => (v == null ? [] : Array.isArray(v) ? v : [v]);
+
+test('manifest shape (v2)', () => {
+  assert.equal(manifest.version, 2);
+  assert.equal(manifest.frameHeight, 240);
+  for (const k of ['modes', 'clips', 'characters', 'couples', 'reactions', 'toolClips', 'sounds', 'stickers',
+    'stickerGroups', 'thumbs', 'defaultFavorites', 'changelog', 'totalBytes']) {
     assert.ok(k in manifest, k);
   }
-  assert.deepEqual(Object.keys(manifest.characters).sort(), ['lulu', 'lumei']);
+  assert.deepEqual(Object.keys(manifest.characters).sort(), CHARACTERS);
+  assert.ok(Array.isArray(manifest.changelog) && manifest.changelog.length > 0, 'changelog');
 });
 
-test('clips: files, hashes, sheet geometry, timing', () => {
+test('clips: files, hashes, sheet geometry, timing (full frame rate)', () => {
   for (const [key, c] of Object.entries(manifest.clips)) {
-    assert.match(key, /^[0-9a-f]+-h200(-[0-9a-f]{6})?$/, key);
+    assert.match(key, /^[0-9a-f]+-h240(-[0-9a-f]{6})?$/, key);
     const data = file(c.file);
     hashOK(c.file, data);
-    assert.equal(c.h, 200, key);
+    assert.equal(c.h, 240, key);
     assert.ok(c.cols >= 1 && c.cols <= 8 && c.cols <= c.cells, key);
     assert.deepEqual(webpSize(data), [c.cols * c.w, Math.ceil(c.cells / c.cols) * c.h], `${key} sheet size`);
     assert.equal(c.delays.length, c.frames, `${key} delays`);
@@ -73,26 +87,77 @@ test('clips: files, hashes, sheet geometry, timing', () => {
   }
 });
 
-test('characters: order, outfits, actions, fidgets', () => {
-  const used = new Set();
+const used = new Set();
+
+test('characters: order, outfits, actions, all fidgets, named clips, weather', () => {
   for (const [name, ch] of Object.entries(manifest.characters)) {
     assert.deepEqual([...ch.order].sort(), Object.keys(ch.outfits).sort(), `${name} order lists every outfit`);
     assert.ok(ch.order.length > 0);
     for (const [o, of] of Object.entries(ch.outfits)) {
+      const where = `${name}/${o}`;
       assert.equal(typeof of.label, 'string');
       assert.ok(of.season === null || typeof of.season === 'string');
-      assert.ok(of.actions.idle, `${name}/${o} has idle`);
+      assert.ok(of.actions.idle, `${where} has idle`);
       for (const [a, k] of Object.entries(of.actions)) {
-        assert.ok(a in manifest.modes, `${name}/${o} action ${a} has a mode`);
-        assert.ok(manifest.clips[k], `${name}/${o}/${a} -> ${k}`);
+        assert.ok(a in manifest.modes, `${where} action ${a} has a mode`);
+        clip(k, `${where}/${a}`);
         used.add(k);
       }
-      assert.ok(of.fidgets.length <= 2, `${name}/${o} at most 2 fidgets`);
-      for (const k of of.fidgets) { assert.ok(manifest.clips[k], `${name}/${o} fidget ${k}`); used.add(k); }
-      if (of.actions.quiet) assert.equal(manifest.clips[of.actions.quiet].frames, 1, `${name}/${o} quiet is a still`);
+      if (of.actions.quiet) assert.equal(manifest.clips[of.actions.quiet].frames, 1, `${where} quiet is a still`);
+      assert.equal(of.fidgetNames.length, of.fidgets.length, `${where} fidgetNames parallel to fidgets`);
+      of.fidgets.forEach((k, i) => { clip(k, `${where} fidget ${i}`); used.add(k); });
+      for (const n of [...of.fidgetNames, ...of.stay, ...of.extras]) {
+        assert.ok(Object.hasOwn(of.named, n), `${where} named has ${n}`);
+      }
+      for (const [n, k] of Object.entries(of.named)) { clip(k, `${where} named ${n}`); used.add(k); }
+      of.fidgetNames.forEach((n, i) => {
+        if (of.fidgetNames.indexOf(n) === i) assert.equal(of.named[n], of.fidgets[i], `${where} fidget ${n}`);
+      });
+      for (const [n, s] of Object.entries(of.clipSounds)) {
+        assert.ok(Object.hasOwn(of.named, n), `${where} clipSounds ${n} is a named clip`);
+        assert.equal(typeof s, 'string', `${where} clip sound key`);
+      }
+    }
+    for (const [look, entries] of Object.entries(ch.weather)) {
+      assert.ok(entries.length > 0, `${name} weather ${look}`);
+      for (const e of entries) {
+        assert.equal(typeof e.name, 'string');
+        clip(e.clip, `${name} weather ${look}/${e.name}`);
+        used.add(e.clip);
+        assert.ok(e.sound === undefined || typeof e.sound === 'string', `${name} weather sound key`);
+      }
     }
   }
+});
+
+test('couples, reactions, toolClips resolve', () => {
+  for (const [n, c] of Object.entries(manifest.couples)) {
+    clip(c.clip, `couple ${n}`);
+    used.add(c.clip);
+    assert.equal(typeof c.intimate, 'boolean');
+    assert.equal(typeof c.luluOnLeft, 'boolean');
+    assert.ok(c.heightFactor >= 0.3 && c.heightFactor <= 1.5, `couple ${n} heightFactor`);
+    assert.ok(c.sound === null || typeof c.sound === 'string', `couple ${n} sound key`);
+  }
+  const namedOf = (c) => new Set(Object.values(manifest.characters[c].outfits).flatMap((of) => Object.keys(of.named)));
+  const names = Object.fromEntries(CHARACTERS.map((c) => [c, namedOf(c)]));
+  for (const [key, r] of Object.entries(manifest.reactions)) {
+    for (const n of asList(r.couple)) assert.ok(n === 'none' || manifest.couples[n], `reactions ${key} couple ${n}`);
+    for (const [c, v] of Object.entries(r.visitor || {})) {
+      for (const n of asList(v)) assert.ok(names[c].has(n), `reactions ${key} visitor ${c}: some outfit has ${n}`);
+    }
+  }
+  assert.deepEqual(Object.keys(manifest.toolClips).sort(), ['breakTime', 'eyedrops', 'focus', 'stand', 'water']);
+  for (const [kind, pools] of Object.entries(manifest.toolClips)) {
+    assert.deepEqual(Object.keys(pools).sort(), CHARACTERS, `toolClips ${kind}`);
+    for (const c of CHARACTERS) for (const n of pools[c]) assert.ok(names[c].has(n), `toolClips ${kind}/${c} ${n}`);
+  }
   assert.deepEqual([...used].sort(), Object.keys(manifest.clips).sort(), 'no unreferenced clip entries');
+});
+
+test('sounds: none on the web (office use; W5 synthesizes UI tones)', () => {
+  assert.deepEqual(manifest.sounds, {});
+  assert.ok(!existsSync(join(ASSETS, 'sounds')), 'no web/assets/sounds');
 });
 
 test('stickers: files, hashes, metadata, thumbs, favorites', () => {
@@ -120,38 +185,48 @@ test('stickers: files, hashes, metadata, thumbs, favorites', () => {
   assert.equal(manifest.defaultFavorites.length, 24);
 });
 
-test('no stray files in sprites/ and stickers/', () => {
-  const referenced = new Set([
+function referencedFiles() {
+  return new Set([
     ...Object.values(manifest.clips).map((c) => c.file),
     ...manifest.stickers.map((s) => s.file),
     manifest.thumbs.file,
   ]);
-  for (const dir of ['sprites', 'stickers']) {
+}
+
+test('no stray files; totalBytes matches', () => {
+  const referenced = referencedFiles();
+  for (const dir of DIRS) {
     for (const f of readdirSync(join(ASSETS, dir))) assert.ok(referenced.has(`${dir}/${f}`), `stray ${dir}/${f}`);
   }
   for (const rel of referenced) assert.ok(existsSync(join(ASSETS, rel)), rel);
+  for (const f of readdirSync(ASSETS)) assert.ok(['manifest.json', 'README.md', ...DIRS].includes(f), `stray ${f}`);
+  assert.equal(manifest.totalBytes, [...referenced].reduce((n, f) => n + size(f), 0), 'totalBytes');
 });
 
-test('budgets (spec §6.2)', () => {
+test('budgets (spec §5)', () => {
   const idleOf = new Map();
   for (const [name, ch] of Object.entries(manifest.characters)) {
     for (const [o, of] of Object.entries(ch.outfits)) {
       const idle = size(manifest.clips[of.actions.idle].file);
       assert.ok(idle <= BUDGET.idle, `${name}/${o} idle ${idle} B`);
       idleOf.set(`${name}/${o}`, idle);
-      const files = new Set([...Object.values(of.actions), ...of.fidgets].map((k) => manifest.clips[k].file));
-      const total = [...files].reduce((n, f) => n + size(f), 0);
+      const core = new Set([...Object.values(of.actions), ...of.fidgets].map((k) => manifest.clips[k].file));
+      const total = [...core].reduce((n, f) => n + size(f), 0);
       assert.ok(total <= BUDGET.outfit, `${name}/${o} outfit ${total} B`);
+      for (const k of [...Object.values(of.actions), ...Object.values(of.named)]) {
+        assert.ok(size(manifest.clips[k].file) <= BUDGET.clip, `${name}/${o} clip ${k}`);
+      }
+    }
+    for (const es of Object.values(ch.weather)) {
+      for (const e of es) assert.ok(size(manifest.clips[e.clip].file) <= BUDGET.weather, `${name} weather ${e.name}`);
     }
   }
+  for (const [n, c] of Object.entries(manifest.couples)) assert.ok(size(manifest.clips[c.clip].file) <= BUDGET.clip, `couple ${n}`);
   for (const s of manifest.stickers) assert.ok(size(s.file) <= BUDGET.sticker, `sticker ${s.id} ${size(s.file)} B`);
   const worstMine = Math.max(...idleOf.values());
   const worstPartner = Math.max(...Object.entries(manifest.characters).map(([n, ch]) => idleOf.get(`${n}/${ch.order[0]}`)));
   const first = worstMine + worstPartner + manifestBytes.length + size(manifest.thumbs.file);
   assert.ok(first <= BUDGET.firstScreen, `first screen ${first} B`);
-  let total = manifestBytes.length;
-  for (const dir of ['sprites', 'stickers']) {
-    for (const f of readdirSync(join(ASSETS, dir))) total += size(`${dir}/${f}`);
-  }
+  const total = manifestBytes.length + [...referencedFiles()].reduce((n, f) => n + size(f), 0);
   assert.ok(total <= BUDGET.total, `total ${total} B`);
 });

@@ -4,13 +4,18 @@
 //   ch.addEventListener("message", (e) => e.detail.msg);
 //   await ch.start();
 //
-// Methods: start() → Promise, stop(), send(msg) → msg (as queued), markRead(msg), signOff() → Promise<boolean>.
+// Methods: start() → Promise, stop(), send(msg, {trip}) → msg (as queued), markRead(msg), signOff() → Promise<boolean>,
+// setLook({outfit, pose}), setDnd(dnd|null), setFocus(focus|null), peekPartner() → Promise<Presence|null>.
 // Events (CustomEvent, payload in `event.detail`) — see EVENT SHAPES at the bottom of this file.
 
+import { decodeChild, encodePayload } from "../core/message.js";
+import { generatePushKey, isValidPushKey } from "../core/pushkey.js";
+import { clampCursor, isFuture, queueFold, outboxVerdict } from "../core/wire.js";
 import {
-  decodeChild, encodePayload, generatePushKey, isValidPushKey, clampCursor, isFuture, queueFold, outboxVerdict,
-  decodePresence, isOnline, heartbeatPayload, signOffPayload, seatYield, isWebDevice, adoptIdentity, ReadCursor,
-} from "./_shim_core.js";   // TEMP → ../core/{message,pushkey,wire,presence,seat,cursor}.js (see _shim_core.js)
+  decodePresence, isOnline, heartbeatPayload, signOffPayload, cleanOutfit, normalizePose, dndActive, focusActive,
+} from "../core/presence.js";
+import { seatYield, isWebDevice, adoptIdentity } from "../core/seat.js";
+import { ReadCursor } from "../core/cursor.js";
 import { createFirebase, MessageFeed, SEND_TIMEOUT_MS, PRESENCE_TIMEOUT_MS } from "./firebase.js";
 import { createScheduler } from "./scheduler.js";
 
@@ -28,6 +33,7 @@ export const CHANNEL_TIMING = Object.freeze({
   sendTimeoutMs: SEND_TIMEOUT_MS,
   presenceTimeoutMs: PRESENCE_TIMEOUT_MS,
   signOffTimeoutMs: 2_000,
+  lookBeatMinMs: 5_000,    // upgrade-compat §12: a look / 勿扰 / 专注 change beats at once, at most every 5 s (coalesced)
 });
 
 export function createChannel(opts) {
@@ -45,9 +51,10 @@ export class Channel extends EventTarget {
    * @param {string} o.deviceId   "web-<uuid>"
    * Optional (tests): fetch, EventSource, scheduler, timing {…, feed: {…}}, lock (false = no Web Lock),
    * lockName, lifecycle (false = no pagehide / visibility listeners), isHidden, now.
+   * defaultOutfits {lulu?, lumei?}: the outfit published while no Mac has written my seat (§4.3).
    */
   constructor({ config, store, deviceId, fetch, EventSource, scheduler, timing = {}, lock = true, lockName = LOCK_NAME,
-                lifecycle, isHidden, now } = {}) {
+                lifecycle, isHidden, now, defaultOutfits = {} } = {}) {
     super();
     if (config?.seat !== "lulu" && config?.seat !== "lumei") throw new Error("config.seat must be lulu or lumei");
     this.config = config;
@@ -71,7 +78,8 @@ export class Channel extends EventTarget {
     this._state = null;
     this._reason = null;
 
-    this.identity = adoptIdentity(null, this.seat);
+    this.defaultOutfits = defaultOutfits;
+    this.identity = adoptIdentity(null, this.seat, defaultOutfits);
     this.mySeatPresence = undefined;   // undefined = not read yet; null = never written
     this.yielding = false;
     this.partnerPresence = undefined;
@@ -80,6 +88,13 @@ export class Channel extends EventTarget {
     this.lastSeatReadAt = 0;
     this.beaten = false;
     this.signedOff = false;
+    // What this web pet looks like / is doing (v2 §4.4). Written into the heartbeat only while this tab owns my seat;
+    // while yielding to my Mac it is only remembered (and goes out with the first heartbeat after taking over).
+    this.look = { outfit: null, pose: "idle" };
+    this.dnd = null;      // {mood, until} (until 0 = until turned off), same as the Mac's presence `dnd`
+    this.focus = null;    // {phase, until}, same as the Mac's presence `focus`
+    this.lastLookBeatAt = -Infinity;
+    this.lookTimer = null;
 
     this.delivered = new Set();
     this.ownSeen = new Set();
@@ -129,6 +144,10 @@ export class Channel extends EventTarget {
   get running() { return this.session !== null; }
   /** Unsent messages, oldest first (copies). */
   get pending() { return this.outbox.map((m) => ({ ...m })); }
+  /** The outfit my messages and heartbeats carry: this web pet's own while it owns my seat, else my Mac's. */
+  get outfit() {
+    return (!this.yielding && cleanOutfit(this.look.outfit)) || this.identity.outfit || null;
+  }
 
   // ---- lifecycle ----
 
@@ -182,6 +201,7 @@ export class Channel extends EventTarget {
     this.timers.clear();
     this.cursorTimer = null;
     this.retryTimer = null;
+    this.lookTimer = null;
     if (this.ownsScheduler) this.sched?.dispose();
     this.sched = null;
     this.lockWait?.abort();
@@ -358,15 +378,19 @@ export class Channel extends EventTarget {
   /**
    * Queues the message (persisted) and sends it as an idempotent PUT to its own push key; retried every 5 s until
    * it succeeds or is parked (400 / 413 / 422; 401 / 403 while reads work). `from` is my seat; `character` /
-   * `outfit` default to my seat's identity, `trip` to "local"; `ts` is made strictly increasing. Returns the
-   * message as queued (with its `id` = Firebase key). Messages queued before start() go out once started.
+   * `outfit` default to my seat's identity (my own look while owning the seat, see `outfit`), `trip` to
+   * `opts.trip`, else `msg.trip`, else "local" (v2 §4.1: "deliver" only when the little world really went out);
+   * `ts` is made strictly increasing. Returns the message as queued (with its `id` = Firebase key). Messages queued
+   * before start() go out once started.
    */
-  send(msg) {
+  send(msg, { trip } = {}) {
     const m = { ...msg };
     delete m.localId;
     m.from = this.seat;
     if (m.character == null) m.character = this.identity.character;
-    if (m.outfit == null && this.identity.outfit) m.outfit = this.identity.outfit;
+    const outfit = this.outfit;
+    if (m.outfit == null && outfit) m.outfit = outfit;
+    if (trip != null) m.trip = trip;
     if (m.trip == null) m.trip = "local";
     const now = this.clock();
     m.ts = Math.max(Number.isInteger(m.ts) ? m.ts : now, this.lastSentTs + 1);
@@ -438,8 +462,8 @@ export class Channel extends EventTarget {
       const before = { presence: this.mySeatPresence, yielding: this.yielding, identity: this.identity };
       this.mySeatPresence = mine ?? null;
       // §4.3: copy my Mac's identity; a seat written by a web client (which copied it earlier) only until a Mac's is known.
-      if (mine && !isWebDevice(mine.device)) { this.identity = adoptIdentity(mine, this.seat); this.identityFromMac = true; }
-      else if (mine && !this.identityFromMac) this.identity = adoptIdentity(mine, this.seat);
+      if (mine && !isWebDevice(mine.device)) { this.identity = adoptIdentity(mine, this.seat, this.defaultOutfits); this.identityFromMac = true; }
+      else if (mine && !this.identityFromMac) this.identity = adoptIdentity(mine, this.seat, this.defaultOutfits);
       this.yielding = seatYield({ mine: mine ?? null, myDevice: this.deviceId, now }) === "yield";
       if (before.presence === undefined || !same(before.presence, this.mySeatPresence) || before.yielding !== this.yielding || !same(before.identity, this.identity)) {
         this.emit("mySeat", { presence: this.mySeatPresence, yielding: this.yielding, identity: { ...this.identity } });
@@ -454,11 +478,71 @@ export class Channel extends EventTarget {
     this.lastBeatAt = now;
     this.beaten = true;
     try {
-      await this.fb.put(`presence/${this.seat}`, heartbeatPayload({ ...this.identity, device: this.deviceId }, now),
+      await this.fb.put(`presence/${this.seat}`, heartbeatBody(this.myIdentity(), now, this.extras(now)),
         { timeoutMs: this.t.presenceTimeoutMs });
     } catch {
       // Next tick tries again.
     }
+  }
+
+  myIdentity() { return { ...this.identity, outfit: this.outfit, device: this.deviceId }; }
+
+  /** {dnd, focus, pose} for presence.js: only what is on right now (a passed `until` = off). */
+  extras(now) {
+    const x = { pose: normalizePose(this.look.pose) };
+    if (dndActive(this.dnd, now)) x.dnd = { mood: this.dnd.mood, until: this.dnd.until };
+    if (focusActive(this.focus, now)) x.focus = { phase: this.focus.phase, until: this.focus.until };
+    return x;
+  }
+
+  // ---- my look / 勿扰 / 专注 (v2 §4.4) ----
+
+  /**
+   * This web pet's outfit / pose (`pose` = PresenceLook.derive's word: idle | doze | quiet | focus | dnd | hidden |
+   * weather:<look>). A field left undefined keeps its value; null clears it (outfit → my Mac's / the default).
+   */
+  setLook({ outfit, pose } = {}) {
+    const next = { ...this.look };
+    if (outfit !== undefined) next.outfit = cleanOutfit(outfit);
+    if (pose !== undefined) next.pose = pose == null ? "idle" : normalizePose(pose);
+    if (same(next, this.look)) return;
+    this.look = next;
+    this.lookChanged();
+  }
+
+  /** 勿扰 on this web: {mood, until} (Unix ms, 0 = until turned off), or null = off. */
+  setDnd(dnd) {
+    const next = dnd && typeof dnd === "object"
+      ? { mood: typeof dnd.mood === "string" ? dnd.mood : "unsaid", until: Number.isFinite(dnd.until) ? Math.trunc(dnd.until) : 0 }
+      : null;
+    if (same(next, this.dnd)) return;
+    this.dnd = next;
+    this.lookChanged();
+  }
+
+  /** Pomodoro focus round running (not paused): {phase: "focus", until: Unix ms}, or null. */
+  setFocus(focus) {
+    const next = focus && typeof focus === "object" && Number.isFinite(focus.until)
+      ? { phase: typeof focus.phase === "string" ? focus.phase : "focus", until: Math.trunc(focus.until) }
+      : null;
+    if (same(next, this.focus)) return;
+    this.focus = next;
+    this.lookChanged();
+  }
+
+  /** Beat now (at most every lookBeatMinMs; closer changes coalesce into one) — only while owning my seat. */
+  lookChanged() {
+    if (!this.active || this.yielding || this.signedOff || this.lookTimer != null) return;
+    const s = this.session;
+    const fire = () => {
+      this.lookTimer = null;
+      if (s !== this.session || this.yielding || this.signedOff) return;
+      this.lastLookBeatAt = this.clock();
+      this.beat(s);
+    };
+    const wait = this.lastLookBeatAt + this.t.lookBeatMinMs - this.clock();
+    // Even "now" waits for the end of this task: the shell sets look + 勿扰 + 专注 together, and they must leave in one beat.
+    this.lookTimer = this.later(fire, Math.max(0, wait));
   }
 
   /**
@@ -471,7 +555,8 @@ export class Channel extends EventTarget {
     const lastWriterIsMe = this.mySeatPresence?.device === this.deviceId || (this.beaten && this.lastBeatAt >= this.lastSeatReadAt);
     if (!this.beaten || this.yielding || !lastWriterIsMe) return false;
     try {
-      await this.fb.put(`presence/${this.seat}`, signOffPayload({ ...this.identity, device: this.deviceId }),
+      const x = this.extras(this.clock());
+      await this.fb.put(`presence/${this.seat}`, signOffBody(this.myIdentity(), x.dnd ? { dnd: x.dnd } : {}),
         { keepalive: true, timeoutMs: this.t.signOffTimeoutMs });
       return true;
     } catch {
@@ -484,18 +569,43 @@ export class Channel extends EventTarget {
     try {
       const p = decodePresence(await this.fb.get(`presence/${this.partnerSeat}`, { timeoutMs: this.t.presenceTimeoutMs })) ?? null;
       if (s !== this.session) return;
-      const online = isOnline(p?.lastSeen, this.clock());
-      if (!same(p, this.partnerPresence) || online !== this.partnerOnline) {
-        this.partnerPresence = p;
-        this.partnerOnline = online;
-        this.emit("partner", { presence: p, online });
-      }
+      this.partnerRead(p);
     } catch {
       // Network trouble: keep the last known presence.
     }
     if (s === this.session) this.later(() => this.partnerTick(s), this.t.partnerPollMs);
   }
+
+  partnerRead(p) {
+    const online = isOnline(p?.lastSeen, this.clock());
+    if (!same(p, this.partnerPresence) || online !== this.partnerOnline) {
+      this.partnerPresence = p;
+      this.partnerOnline = online;
+      this.emit("partner", { presence: p, online });
+    }
+  }
+
+  /**
+   * 偷看 (v2 §4.1): read the partner's presence right now (works before start() too). Resolves the decoded
+   * presence, null = never written; a change also fires `partner`. Network trouble → the last known presence, or
+   * the FirebaseError when nothing was ever read.
+   */
+  async peekPartner() {
+    let p;
+    try {
+      p = decodePresence(await this.fb.get(`presence/${this.partnerSeat}`, { timeoutMs: this.t.presenceTimeoutMs })) ?? null;
+    } catch (e) {
+      if (this.partnerPresence !== undefined) return this.partnerPresence;
+      throw e;
+    }
+    this.partnerRead(p);
+    return p;
+  }
 }
+
+// W1 presence.js v2 bodies: heartbeatPayload(identity, now, {dnd?, focus?, pose}) / signOffPayload(identity, {dnd?}).
+const heartbeatBody = (identity, now, extras) => heartbeatPayload(identity, now, extras);
+const signOffBody = (identity, extras) => signOffPayload(identity, extras);
 
 /*
  * EVENT SHAPES (event.detail). `Msg` = W1's decodeChild() result: {id, from, kind, ts, text?, stickerId?, remind?,
@@ -515,5 +625,10 @@ export class Channel extends EventTarget {
  *   parked     {msg: Msg, status: number|null}   the server refused this message for good (「有一条消息没发出去」).
  *   sent       {msg: Msg}        (extra) the message reached the server.
  *   own        {msg: Msg}        (extra) a message from MY seat written elsewhere (home Mac / another web): not shown,
- *                                for sticker send counts.
+ *                                for sticker send counts and the 记录 history (history-db.js put).
+ *
+ * HEARTBEAT (PUT presence/{seat}, only while not yielding): {lastSeen, character, mode, device: "web-…", client: "web",
+ * outfit?, place?, pose, dnd?: {mood, until}, focus?: {phase, until}} — outfit = setLook's while owning the seat
+ * (else my Mac's); dnd / focus only while on. Sign-off: {lastSeen: 0, character, mode, device, client, outfit?,
+ * place?, dnd?} (no pose / focus).
  */

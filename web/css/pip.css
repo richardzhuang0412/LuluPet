@@ -1,0 +1,30 @@
+/* The Document PiP window (300×260; 360×560 with the compose panel). Loaded after app.css + world.css.
+   Layout: the world fills the window above a slim mini bar (❤️ 💬 👁️ ↩︎); expanded = world, bar, compose. */
+
+.pip { margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; background: var(--paper); position: relative; }
+.pip-sim.pip { height: 260px; }
+.pip-sim.pip.expanded { height: 560px; }
+
+.pip-world { flex: 1 1 auto; min-height: 0; display: flex; position: relative; }
+.pip-world > * { flex: 1; min-width: 0; }
+.pip.expanded .pip-world { flex: 0 0 200px; }
+
+.pip-bar {
+  flex: none; display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 4px 8px; border-top: 1px solid var(--line); background: var(--paper);
+}
+.pip-tool {
+  appearance: none; min-width: 30px; height: 26px; padding: 0 9px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: rgba(255, 253, 250, 0.86); backdrop-filter: blur(6px);
+  font-size: 13px; line-height: 1; font-weight: 700; color: var(--ink); white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(120, 66, 22, 0.14);
+}
+.pip-tool:hover { background: #fff; }
+.pip-tool.eye.due { background: var(--accent); color: #fff; border-color: transparent; animation: nudge 1.6s ease-in-out infinite; }
+@keyframes nudge { 50% { transform: translateY(-2px); } }
+
+.pip-compose { flex: 1 1 auto; overflow-y: auto; border-top: 1px solid var(--line); }
+.pip .compose { border-radius: 0; box-shadow: none; padding: 8px 10px; gap: 7px; }
+.pip .action-row .chip-btn { padding: 3px 8px; font-size: 11.5px; }
+.pip .quickbar { gap: 0; }
+.pip .bar-hint { display: none; }

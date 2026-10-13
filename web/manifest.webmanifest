@@ -1,0 +1,26 @@
+{
+  "id": "./",
+  "name": "噜噜桌宠 · 网页版",
+  "short_name": "噜噜",
+  "description": "在公司也能和 TA 互动的噜噜",
+  "lang": "zh-CN",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "any",
+  "background_color": "#fbf3ea",
+  "theme_color": "#fbeee0",
+  "categories": ["social", "lifestyle"],
+  "icons": [
+    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable"},
+    {"src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ],
+  "shortcuts": [
+    {"name": "传话", "short_name": "传话", "url": "./?tab=compose", "icons": [{"src": "icons/icon-192.png", "sizes": "192x192"}]},
+    {"name": "小工具", "short_name": "小工具", "url": "./?tab=tools", "icons": [{"src": "icons/icon-192.png", "sizes": "192x192"}]}
+  ]
+}

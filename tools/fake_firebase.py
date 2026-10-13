@@ -8,6 +8,8 @@ Then set the app's database URL to http://127.0.0.1:8765.
 Supported:
   GET    <path>.json                      subtree or null
   GET    <path>.json?orderBy="ts"&startAt=N   children with ts >= N
+         &endAt=N                         … and ts <= N (either bound alone works too)
+         &limitToFirst=K / &limitToLast=K only the K children with the smallest / largest ts (ties by key)
          + Accept: text/event-stream      SSE: initial `put` of the matching children, then one
                                           `put` per new child, `keep-alive` every 15 s
   PUT    <path>.json                      store body, echo it
@@ -83,34 +85,60 @@ def next_push_id():
     return "-%013d%06d" % (int(time.time() * 1000), push_counter)
 
 
+class Query:
+    """orderBy (a child key) with optional startAt / endAt (inclusive) and limitToFirst / limitToLast."""
+
+    def __init__(self, order_by=None, start_at=None, end_at=None, first=None, last=None):
+        self.order_by, self.start_at, self.end_at, self.first, self.last = order_by, start_at, end_at, first, last
+
+
 def parse_query(query):
     q = {k: v[-1] for k, v in parse_qs(query).items()}
     order_by = q.get("orderBy")
     if order_by is not None:
         order_by = json.loads(order_by)
     start_at = json.loads(q["startAt"]) if "startAt" in q else None
-    return order_by, start_at
+    end_at = json.loads(q["endAt"]) if "endAt" in q else None
+    first = int(q["limitToFirst"]) if "limitToFirst" in q else None
+    last = int(q["limitToLast"]) if "limitToLast" in q else None
+    if (first is not None and first < 1) or (last is not None and last < 1) or (first is not None and last is not None):
+        raise ValueError("bad limit")
+    return Query(order_by, start_at, end_at, first, last)
 
 
-def matches(value, order_by, start_at):
-    if order_by is None or start_at is None:
+def matches(value, q):
+    if q.order_by is None or (q.start_at is None and q.end_at is None):
         return True
     if not isinstance(value, dict):
         return False
-    v = value.get(order_by)
+    v = value.get(q.order_by)
     try:
-        return v is not None and v >= start_at
+        return v is not None and (q.start_at is None or v >= q.start_at) and (q.end_at is None or v <= q.end_at)
     except TypeError:
         return False
 
 
-def filtered(node, order_by, start_at):
-    if order_by is None:
+def sort_key(item, order_by):
+    key, value = item
+    v = value.get(order_by) if isinstance(value, dict) else None
+    # Firebase order: missing first, then numbers, then strings; ties by key.
+    if v is None:
+        return (0, 0, "", key)
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return (1, v, "", key)
+    return (2, 0, str(v), key)
+
+
+def filtered(node, q):
+    if q.order_by is None:
         return node
     if not isinstance(node, dict):
         return None
-    out = {k: v for k, v in node.items() if matches(v, order_by, start_at)}
-    return out or None
+    items = [(k, v) for k, v in node.items() if matches(v, q)]
+    if q.first is not None or q.last is not None:
+        items.sort(key=lambda it: sort_key(it, q.order_by))
+        items = items[: q.first] if q.first is not None else items[-q.last:]
+    return dict(items) or None
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -165,15 +193,15 @@ class Handler(BaseHTTPRequestHandler):
             return
         parts, query = r
         try:
-            order_by, start_at = parse_query(query)
+            q = parse_query(query)
         except (ValueError, KeyError):
             self.send_json(400, {"error": "bad query"})
             return
         if "text/event-stream" in (self.headers.get("Accept") or ""):
-            self.stream(parts, order_by, start_at)
+            self.stream(parts, q)
             return
         with cond:
-            node = filtered(get_node(parts), order_by, start_at)
+            node = filtered(get_node(parts), q)
         self.send_json(200, node)
 
     def do_PUT(self):
@@ -231,7 +259,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(("event: %s\ndata: %s\n\n" % (event, json.dumps(data, ensure_ascii=False))).encode())
         self.wfile.flush()
 
-    def stream(self, parts, order_by, start_at):
+    def stream(self, parts, q):
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
@@ -240,7 +268,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             with cond:
                 cursor = len(changes)
-                snapshot = filtered(get_node(parts), order_by, start_at)
+                snapshot = filtered(get_node(parts), q)
             self.sse("put", {"path": "/", "data": snapshot})
             deadline = time.monotonic() + KEEPALIVE_SECONDS
             while True:
@@ -252,12 +280,12 @@ class Handler(BaseHTTPRequestHandler):
                 for _, parent, key, value in new:
                     if key is None:   # PATCH of this very node: one `patch` event with the changed children
                         if parent == parts:
-                            data = {k: v for k, v in value.items() if v is None or matches(v, order_by, start_at)}
+                            data = {k: v for k, v in value.items() if v is None or matches(v, q)}
                             if data:
                                 self.sse("patch", {"path": "/", "data": data})
                                 deadline = time.monotonic() + KEEPALIVE_SECONDS
                         continue
-                    if parent == parts and value is not None and matches(value, order_by, start_at):
+                    if parent == parts and value is not None and matches(value, q):
                         if self.stream_delay:
                             time.sleep(self.stream_delay)
                         self.sse("put", {"path": "/" + key, "data": value})
