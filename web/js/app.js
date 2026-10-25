@@ -282,7 +282,7 @@ async function run(config) {
     canChooseLayout: () => (isStandalone() || !!DEV) && !isPhone(),
     canChooseBackdrop: () => !isPhone() && (popupSupported() || pipSupported()),
     setLayout: (v) => { store.set("layout", v); petMode?.closePanel(); location.reload(); },
-    openTodos: () => openTodos(todoCtx, setTodoCount),
+    openTodos: (page) => openTodos(todoCtx, setTodoCount, page === "set" ? "set" : "todo"),
     openChangelog: () => openChangelog(version),
     todoCount: () => todoCount,
     version: () => (version ? `网页版 v${version}` : "网页版"),

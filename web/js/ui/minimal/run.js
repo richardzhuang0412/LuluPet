@@ -141,7 +141,7 @@ export async function runMinimal(config, { version }) {
     seatInfo: () => ({ character: myCharacter(), mode: myMode(), place: state.mine?.place }),
     editConnection: () => openSheet({ icon: "🔗", title: "连接", body: createSetup({ current: config, onSave: () => location.reload() }).el }),
     placeWindow: () => placeWindow(true), canPlaceWindow: () => isStandalone(),
-    openTodos: () => openTodos(todoCtx, () => {}),
+    openTodos: (page) => openTodos(todoCtx, () => {}, page === "set" ? "set" : "todo"),
     openChangelog: () => openChangelog(version()),
     todoCount: () => todoCount,
     version: () => (version() ? `网页版 v${version()}` : "网页版"),

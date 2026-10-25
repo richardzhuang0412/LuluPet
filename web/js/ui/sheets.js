@@ -76,28 +76,39 @@ const verLess = (a, b) => {
   return false;
 };
 
-/** macApp() → my Mac's presence `app` version or null. → [{id, icon, title, detail, button?, go?}]. */
-export async function setupTodos({ macApp }) {
+/** macApp() → my Mac's presence `app` version or null.
+ * → [{id, icon, title, detail, button?, go?, state: "todo"|"done"|"dismissed", doneLine?}] — every item, done ones
+ * included, so the sheet's 「已设置」 page can still show how each was set up (and bring back a dismissed one). */
+export async function allSetupItems({ macApp }) {
   const dismissed = new Set(store.get("setupTodoDismissed", []) || []);
   const out = [];
-  if (notify.permission() === "default") {
-    out.push({ id: "notify", icon: "🔔", title: "允许通知", detail: "页面在后台时，TA 来消息、该喝水 / 滴眼药水了也能弹出来。", button: "允许", go: () => notify.requestPermission() });
-  }
-  if (await activity.idlePermission() === "prompt") {
-    out.push({ id: "idle", icon: "🪑", title: "允许检测我在不在电脑前", detail: "提醒只在你真的在用电脑时出现；你离开了就等你回来。", button: "允许", go: () => activity.requestIdle() });
-  }
-  if (!isStandalone()) {
-    out.push({ id: "install", icon: "🍊", title: isIOS() ? "添加到主屏幕（推荐）" : "装成桌宠 App（推荐）", detail: installPrompt
-      ? "噜噜会有自己的小窗口，没有地址栏，就只有宠物站在桌面上。不装也行：用「打开桌宠小窗」。"
-      : isIOS() ? installHow() : `${installHow()}不装也行：用「打开桌宠小窗」。`,
-      button: installPrompt ? "安装" : null, go: () => promptInstall() });
-  }
-  out.push({ id: "keepAlive", icon: "⚡️", title: "让 Chrome 别把它睡掉", detail: "Chrome 设置 → 性能 →「始终保持这些网站处于活动状态」→ 添加这个网站，后台也一直在线。", button: "设置好了", go: () => dismiss("keepAlive") });
+  const perm = notify.permission();
+  out.push({ id: "notify", icon: "🔔", title: "允许通知", detail: "页面在后台时，TA 来消息、该喝水 / 滴眼药水了也能弹出来。",
+    button: perm === "default" ? "允许" : null, go: () => notify.requestPermission(),
+    done: perm === "granted", doneLine: "已允许。要关掉：Chrome 地址栏左边的图标 → 网站设置 → 通知。" });
+  const idle = await activity.idlePermission();
+  out.push({ id: "idle", icon: "🪑", title: "允许检测我在不在电脑前", detail: "提醒只在你真的在用电脑时出现；你离开了就等你回来。",
+    button: idle === "prompt" ? "允许" : null, go: () => activity.requestIdle(),
+    done: idle === "granted", doneLine: "已允许。要改：Chrome 地址栏左边的图标 → 网站设置 → 设备使用情况检测。" });
+  out.push({ id: "install", icon: "🍊", title: isIOS() ? "添加到主屏幕（推荐）" : "装成桌宠 App（推荐）", detail: installPrompt
+    ? "噜噜会有自己的小窗口，没有地址栏，就只有宠物站在桌面上。不装也行：用「打开桌宠小窗」。"
+    : isIOS() ? installHow() : `${installHow()}不装也行：用「打开桌宠小窗」。`,
+    button: installPrompt ? "安装" : null, go: () => promptInstall(),
+    done: isStandalone(), doneLine: isIOS() ? "已经从主屏幕打开了。" : "已经装成 App 了。" });
+  out.push({ id: "keepAlive", icon: "⚡️", title: "让 Chrome 别把它睡掉",
+    detail: "Chrome 设置 → 性能（地址栏输入 chrome://settings/performance）→「始终保持这些网站处于活动状态」→ 添加 → 填这个网站的网址，后台也一直在线。",
+    button: "设置好了", go: () => dismiss("keepAlive"), done: dismissed.has("keepAlive"), keepDetail: true });
   const app = macApp();
-  if (app && verLess(app, "0.18.0")) {
-    out.push({ id: "mac018", icon: "🍊", title: "家里的 Mac 升级到 0.18", detail: `家里的 Mac 还是 v${app}。升级后眼药水的设置和打卡会和网页同步。`, button: null });
+  if (app) {
+    out.push({ id: "mac018", icon: "🍊", title: "家里的 Mac 升级到 0.18", detail: `家里的 Mac 还是 v${app}。升级后眼药水的设置和打卡会和网页同步。`, button: null,
+      done: !verLess(app, "0.18.0"), doneLine: `家里的 Mac 是 v${app} ✓` });
   }
-  return out.filter((t) => !dismissed.has(t.id));
+  return out.map((t) => ({ ...t, state: t.done ? "done" : dismissed.has(t.id) ? "dismissed" : "todo" }));
+}
+
+/** Only the ones still to do (the badge count and the 待设置 page). */
+export async function setupTodos(ctx) {
+  return (await allSetupItems(ctx)).filter((t) => t.state === "todo");
 }
 
 function dismiss(id) {
@@ -106,18 +117,35 @@ function dismiss(id) {
   store.set("setupTodoDismissed", [...d]);
 }
 
-export async function openTodos(ctx, onChange) {
+function undismiss(id) {
+  store.set("setupTodoDismissed", (store.get("setupTodoDismissed", []) || []).filter((x) => x !== id));
+}
+
+export async function openTodos(ctx, onChange, startPage = "todo") {
   const sheet = openSheet({ icon: "🧰", title: "待设置", subtitle: "几件还没设置的小事，不急着做", body: [] });
+  let page = startPage;
   async function render() {
-    const todos = await setupTodos(ctx);
+    const items = await allSetupItems(ctx);
+    const todos = items.filter((t) => t.state === "todo");
+    const settled = items.filter((t) => t.state !== "todo");
     onChange?.(todos.length);
-    sheet.set(!todos.length ? h("div.todo-done", "都设置好啦 ✓") : todos.map((t) =>
-      h("div.todo",
-        h("span.todo-icon", { "aria-hidden": "true" }, t.icon),
-        h("div.todo-text", h("div.todo-title", t.title), h("div.todo-detail", t.detail)),
-        h("div.todo-actions",
+    const tab = (id, label) => h("button.pill-btn" + (page === id ? ".filled" : ""), { type: "button", "aria-pressed": String(page === id),
+      onclick: () => { page = id; render(); } }, label);
+    const tabs = h("div.todo-tabs", { role: "group", "aria-label": "待设置 / 已设置" }, tab("todo", `待设置 ${todos.length || ""}`.trim()), tab("set", `已设置 ${settled.length || ""}`.trim()));
+    const row = (t, actions, detail) => h("div.todo",
+      h("span.todo-icon", { "aria-hidden": "true" }, t.icon),
+      h("div.todo-text", h("div.todo-title", t.title), h("div.todo-detail", detail)),
+      h("div.todo-actions", ...actions));
+    const list = page === "todo"
+      ? (!todos.length ? [h("div.todo-done", "都设置好啦 ✓")] : todos.map((t) => row(t, [
           t.button ? h("button.pill-btn.filled", { type: "button", onclick: async () => { await t.go(); render(); } }, t.button) : null,
-          h("button.pill-btn", { type: "button", onclick: () => { dismiss(t.id); render(); } }, "不用了")))));
+          h("button.pill-btn", { type: "button", onclick: () => { dismiss(t.id); render(); } }, "不用了")], t.detail)))
+      : (!settled.length ? [h("div.todo-done", "还没有设置好的")] : settled.map((t) => row(t,
+          t.state === "dismissed" || t.id === "keepAlive"
+            ? [h("button.pill-btn", { type: "button", onclick: () => { undismiss(t.id); page = "todo"; render(); } }, "放回待设置")]
+            : [h("span.todo-state", "✓ 已设置")],
+          t.state === "dismissed" ? `（之前点了「不用了」）${t.detail}` : t.keepDetail ? t.detail : (t.doneLine || t.detail))));
+    sheet.set([tabs, ...list]);
   }
   render();
 }

@@ -154,7 +154,8 @@ export function createSettingsTab({ config, me, seatInfo, editConnection, placeW
     const n = todoCount();
     return section("更多",
       h("div.set-actions",
-        h("button.pill-btn", { type: "button", onclick: openTodos }, n ? `待设置（${n}）` : "待设置"),
+        h("button.pill-btn", { type: "button", onclick: () => openTodos("todo") }, n ? `待设置（${n}）` : "待设置"),
+        h("button.pill-btn", { type: "button", onclick: () => openTodos("set") }, "已设置"),
         h("button.pill-btn", { type: "button", onclick: openChangelog }, "更新日志")),
       h("div.set-version", version()));
   }
