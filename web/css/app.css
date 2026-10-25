@@ -264,10 +264,25 @@ body.first-run .titlebar .ta-line { visibility: hidden; }
 .counter { font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .counter.over { color: var(--bad); font-weight: 700; }
 .send { padding: 4px 16px; }
-.bar-head { display: flex; align-items: baseline; gap: 8px; }
-.bar-title { font-size: 11.5px; font-weight: 800; color: var(--accent-deep); }
-.bar-hint { flex: 1; font-size: 11px; color: var(--ink-3); }
-.quickbar { display: grid; grid-template-columns: repeat(8, minmax(0, 54px)); gap: 2px; justify-content: space-between; max-width: 480px; }
+.bar-hint { font-size: 11px; color: var(--ink-3); margin-top: -4px; }
+/* the 快捷栏: 8 favourites in one row, each with its name under it (like the Mac quick bar) */
+.quickbar { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 0; max-width: 470px; }
+.quickbar .sticker { padding: 3px 0 2px; gap: 2px; }
+.quickbar .sticker-label { max-width: 100%; font-size: 10px; letter-spacing: -0.03em; color: var(--ink-2); }
+.mini-row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.mini-act {
+  appearance: none; border: 1px solid rgba(232, 138, 74, 0.45); background: var(--card); color: var(--accent-deep);
+  border-radius: 999px; padding: 2px 9px; font-size: 11.5px; font-weight: 700; cursor: pointer; white-space: nowrap; line-height: 1.5;
+  transition: background 0.12s ease, transform 0.08s ease;
+}
+.mini-act:hover { background: var(--accent-wash); }
+.mini-act:active { transform: scale(0.95); }
+.mini-act.heart { background: var(--accent); border-color: transparent; color: #fff; }
+.mini-act.heart:hover { background: var(--accent-deep); }
+.mini-row .more { margin-left: auto; padding-right: 0; }
+.compose.compact { padding: 9px 10px 10px; gap: 7px; }
+.compose.compact .extra, .compose.compact .bar-hint, .compose.compact .enter-hint { display: none; }
+.compose.compact .compose-text { min-height: 38px; }
 .sticker {
   appearance: none; border: 0; background: transparent; padding: 3px; border-radius: 10px; cursor: pointer;
   display: inline-flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0;
@@ -440,4 +455,112 @@ body.first-run .titlebar .ta-line { visibility: hidden; }
 .pip-sim-host:empty { display: none; }
 .pip-sim-host { position: fixed; right: 12px; bottom: 12px; z-index: 30; }
 .pip-sim { width: 300px; height: 260px; border: 1px dashed var(--accent); overflow: hidden; background: var(--paper); position: relative; box-shadow: var(--shadow-pop); }
-.pip-sim.expanded { width: 360px; height: 560px; }
+.pip-sim.expanded { width: 340px; height: 400px; }
+
+/* ---- 桌宠模式 (js/ui/petmode.js): the window is just the pet ----------------------------------------------------
+   The body carries the background (backdrop.js: the wallpaper slice / a colour / the scene) and is the window's drag
+   handle (window-controls-overlay); the pet, bubbles and buttons opt out so they still take clicks. */
+body.pet-mode {
+  background-color: #e7e3de; padding-top: 0;
+  -webkit-app-region: drag; app-region: drag;
+}
+body.pet-mode .titlebar {   /* only a connection problem or 「有更新」 shows, as a small pill top-right */
+  position: fixed; top: 4px; right: 4px; left: auto; width: auto; height: auto; padding: 0; gap: 4px;
+  background: transparent; border: 0; z-index: 7; pointer-events: none;
+}
+body.pet-mode .titlebar > * { display: none; }
+body.pet-mode .titlebar .conn:not(:empty), body.pet-mode .titlebar .update:not([hidden]) {
+  display: inline-block; pointer-events: auto; -webkit-app-region: no-drag; app-region: no-drag;
+  background: rgba(255, 253, 250, 0.92); box-shadow: 0 1px 5px rgba(60, 30, 10, 0.18); border-radius: 999px; padding: 1px 8px; font-size: 11px;
+}
+body.pet-mode .main { display: block; height: 100%; }
+body.pet-mode .panel { display: none; }
+body.pet-mode .world-frame { height: 100%; background: transparent; }
+body.pet-mode .lw-world { min-height: 0; }
+body.pet-mode:not([data-backdrop="scene"]) .lw-world { background: transparent; }
+body.pet-mode:not([data-backdrop="scene"]) .lw-sky, body.pet-mode:not([data-backdrop="scene"]) .lw-ground { display: none; }
+body.pet-mode .lw-sprite, body.pet-mode .lw-bubble, body.pet-mode .lw-think.peek, body.pet-mode .world-tools,
+body.pet-mode .world-strip, body.pet-mode .menu, body.pet-mode .sheet, body.pet-mode .notice, body.pet-mode .panel {
+  -webkit-app-region: no-drag; app-region: no-drag;
+}
+/* 💬 📌 🍊 only while the pointer is over the window */
+body.pet-mode .world-tools { top: 6px; right: 6px; gap: 4px; opacity: 0; transform: translateY(-3px); transition: opacity 0.18s ease, transform 0.18s ease; }
+body.pet-mode:hover .world-tools, body.pet-mode .world-tools:focus-within { opacity: 1; transform: none; }
+body.pet-mode .world-btn { width: 26px; height: 26px; font-size: 12.5px; background: rgba(255, 253, 250, 0.9); box-shadow: 0 1px 5px rgba(60, 30, 10, 0.2); }
+body.pet-mode .world-strip { height: 100%; flex-direction: column; background: transparent; border: 0; text-align: center; }
+body.pet-mode .world-strip > span { background: rgba(255, 253, 250, 0.92); border-radius: 12px; padding: 4px 10px; }
+body.pet-mode .menu { padding: 4px; }
+body.pet-mode .menu-item { font-size: 12.5px; padding: 3px 6px 3px 2px; }
+body.pet-mode .toasts { bottom: 8px; }
+body.pet-mode .toast { font-size: 12px; padding: 5px 11px; }
+
+/* popups blocked: the window grows and the panel shows under the pet */
+body.pet-mode.panel-inline .main { display: grid; grid-template-rows: minmax(150px, 34%) minmax(0, 1fr); }
+body.pet-mode.panel-inline .panel { display: flex; background: var(--paper); border-radius: 14px 14px 0 0; box-shadow: 0 -4px 18px rgba(60, 30, 10, 0.12); }
+
+/* the panel's own window (window.open from the pet window); compact = just the 传话 box */
+body.panel-window { background: var(--paper); }
+body.panel-window .panel { flex: 1; min-height: 0; }
+body.compact-window .tabbar, body.compact-window .yield-note, body.compact-window .away, body.compact-window .weather { display: none; }
+body.compact-window .pane { padding: 8px; }
+
+/* 设置 → 窗口 */
+.wall-box { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: var(--r-ctl); background: var(--paper); }
+.color-input { width: 40px; height: 24px; padding: 0; border: 1px solid var(--line-2); border-radius: 6px; background: none; cursor: pointer; }
+
+/* ---- the tab's landing (js/ui/petpopup.js): 打开桌宠小窗 / 置顶小窗 under the pet ------------------------------- */
+.desk { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 12px; border-top: 1px solid var(--line); background: var(--paper); }
+.world-frame.folded .desk { display: none; }
+.desk-btn {
+  appearance: none; display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; cursor: pointer;
+  padding: 10px 14px; border-radius: var(--r-card); border: 1px solid var(--line-2); background: var(--card); color: var(--ink);
+  box-shadow: var(--shadow-card); transition: transform 0.08s ease, background 0.12s ease, box-shadow 0.12s ease;
+}
+.desk-btn:hover { background: #fff; box-shadow: 0 2px 4px rgba(120, 66, 22, 0.08), 0 8px 20px rgba(120, 66, 22, 0.10); }
+.desk-btn:active { transform: scale(0.985); }
+.desk-btn.primary { background: var(--accent); border-color: transparent; color: var(--accent-ink); }
+.desk-btn.primary:hover { background: var(--accent-deep); }
+.desk-icon { font-size: 22px; line-height: 1; flex: none; }
+.desk-text { display: flex; flex-direction: column; min-width: 0; }
+.desk-text b { font-size: 14px; font-weight: 800; }
+.desk-text small { font-size: 11.5px; opacity: 0.8; }
+.desk-again { display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 12px; color: var(--accent-deep); }
+@media (max-width: 639px) {   /* narrow tab: the two buttons side by side, shorter */
+  .desk { flex-direction: row; flex-wrap: wrap; padding: 8px 10px; }
+  .desk-again { flex-basis: 100%; }
+  .desk-btn { flex: 1; padding: 8px 10px; gap: 8px; }
+  .desk-text small { display: none; }
+}
+@media (min-width: 1100px) {   /* a big tab: keep it a calm, centred two-column page */
+  .main { width: 100%; max-width: 1180px; margin: 0 auto; grid-template-columns: 400px minmax(0, 1fr); }
+  .world-frame { border-left: 1px solid var(--line); }
+}
+
+/* ---- parked tab: the pet is in its popup ------------------------------------------------------------------------- */
+.parked { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
+.parked-card {
+  max-width: 400px; width: 100%; text-align: center; background: var(--card); border-radius: 22px; padding: 30px 24px 22px;
+  box-shadow: var(--shadow-card); display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.parked-card h1 { margin: 6px 0 0; font-size: 20px; }
+.parked-card p { margin: 0; }
+.parked-pet { border-radius: 24px; animation: boot-hop 2.4s ease-in-out infinite; }
+.btn.big { padding: 9px 26px; font-size: 14px; margin-top: 10px; }
+body.is-parked .titlebar .ta-line { visibility: hidden; }
+.desk-install {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 14px; border-radius: var(--r-card);
+  background: var(--accent-wash); border: 1px dashed rgba(232, 138, 74, 0.45);
+}
+.desk-install-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.desk-install-text b { font-size: 12.5px; color: var(--accent-deep); }
+.desk-install-text small { font-size: 11.5px; color: var(--ink-2); }
+@media (max-width: 639px) { .desk-install { flex-basis: 100%; } .desk-install-text small { display: none; } }
+
+/* phones (Safari 「添加到主屏幕」 too): keep the title row and edges clear of the notch / rounded corners */
+@media (pointer: coarse) and (max-width: 479px) {
+  .titlebar {
+    height: calc(var(--titlebar-h) + env(safe-area-inset-top, 0px)); padding-top: env(safe-area-inset-top, 0px);
+    padding-left: max(12px, env(safe-area-inset-left, 0px)); padding-right: max(12px, env(safe-area-inset-right, 0px));
+  }
+  .panes { padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "lulupet-functions",
+  "private": true,
+  "description": "噜噜桌宠 web push: RTDB message trigger + eye-drop scheduler (docs/superpowers/specs/2026-10-22-web-push.md)",
+  "type": "module",
+  "main": "index.js",
+  "engines": { "node": "22" },
+  "scripts": {
+    "vendor": "node scripts/vendor.mjs",
+    "test": "node --test \"test/**/*.test.mjs\""
+  },
+  "dependencies": {
+    "firebase-admin": "^13.6.0",
+    "firebase-functions": "^7.4.0",
+    "web-push": "^3.6.7"
+  }
+}

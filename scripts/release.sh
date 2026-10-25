@@ -160,7 +160,7 @@ PY
   done
   local emails
   emails="$(git grep -I -h -o -E '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' "$tree" 2>/dev/null \
-    | sort -u | grep -v -x -i -E "${AUTHOR_EMAIL//./\\.}|noreply@anthropic\.com|[^@]+@(example\.(com|org)|users\.noreply\.github\.com)" || true)"
+    | sort -u | grep -v -x -i -E "${AUTHOR_EMAIL//./\\.}|noreply@anthropic\.com|[^@]+@(example\.(com|org|net|invalid)|[a-z0-9.-]+\.(invalid|test)|users\.noreply\.github\.com)" || true)"
   if [[ -n "$emails" ]]; then
     echo "    其他邮箱 / other e-mail addresses:" >&2
     printf '      %s\n' $emails >&2; hits=1

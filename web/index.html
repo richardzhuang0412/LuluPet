@@ -7,11 +7,16 @@
   <meta name="robots" content="noindex, nofollow">
   <meta name="referrer" content="no-referrer">
   <meta name="theme-color" content="#fbeee0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="噜噜">
   <title>噜噜</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/minimal.css">
   <script type="module" src="js/app.js"></script>
 </head>
 <body>
@@ -27,16 +32,42 @@
 
   <div id="blocked" class="notice" hidden>已在另一个窗口打开。关掉那个窗口，这里会自动接上。</div>
 
+  <section id="parked" class="parked" hidden aria-live="polite">
+    <div class="parked-card">
+      <img class="parked-pet" src="icons/icon-192.png" alt="" width="96" height="96">
+      <h1>噜噜在桌宠小窗里</h1>
+      <p class="muted">在小窗里双击噜噜打开面板 · 右键是菜单 · 拖着它可以挪地方</p>
+      <button id="parked-back" class="btn primary big" type="button">收回来</button>
+      <p id="parked-hint" class="muted small">关掉小窗，这里几秒内就会接上。</p>
+    </div>
+  </section>
+
   <section id="setup-view" class="setup-view" hidden></section>
 
   <main id="main-view" class="main" hidden>
     <section id="world-frame" class="world-frame" aria-label="小世界">
       <div id="world-host" class="world-host"></div>
       <div class="world-tools">
+        <button id="compose-btn" class="world-btn" type="button" title="传话（双击宠物：打开面板）" aria-label="传话" hidden>💬</button>
         <button id="pin-btn" class="world-btn" type="button" title="置顶小窗：开会、切到别的窗口时也看得到" aria-label="置顶小窗" aria-pressed="false" hidden>📌</button>
         <button id="menu-btn" class="world-btn orange" type="button" title="菜单（也可以右键宠物）" aria-label="菜单" aria-haspopup="menu">🍊</button>
       </div>
       <div id="world-strip" class="world-strip" role="status" hidden></div>
+      <div id="desk" class="desk" hidden>
+        <div id="desk-install" class="desk-install" hidden>
+          <span class="desk-install-text"><b>推荐：装成桌宠 App</b><small>没有地址栏，屏幕上只站着噜噜</small></span>
+          <button id="install-btn" class="pill-btn filled" type="button">安装</button>
+        </div>
+        <div id="desk-again" class="desk-again" hidden><span>上次噜噜在桌宠小窗里</span><button id="desk-nope" class="link" type="button">不用了</button></div>
+        <button id="popup-btn" class="desk-btn primary" type="button">
+          <span class="desk-icon" aria-hidden="true">🪟</span>
+          <span class="desk-text"><b id="popup-title">打开桌宠小窗</b><small>不装也行：噜噜住进屏幕角落的小窗口</small></span>
+        </button>
+        <button id="desk-pip" class="desk-btn" type="button" hidden>
+          <span class="desk-icon" aria-hidden="true">📌</span>
+          <span class="desk-text"><b id="desk-pip-title">置顶小窗</b><small>开会、切到别的窗口时也浮在最上面</small></span>
+        </button>
+      </div>
     </section>
 
     <section class="panel" aria-label="面板">
@@ -54,6 +85,8 @@
       </div>
     </section>
   </main>
+
+  <section id="minimal-view" class="mini" hidden aria-label="噜噜"></section>
 
   <div id="pip-sim-host" class="pip-sim-host"></div>
   <div id="toasts" class="toasts" aria-live="polite"></div>

@@ -1,8 +1,24 @@
 // W4 polish: 眼药水「一天几次」 keeps hand-edited times and only adds / removes at the end.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resizeTimes } from "../js/ui/eyedrop-times.js";
+import { resizeTimes, commitTimes } from "../js/ui/eyedrop-times.js";
 import { validateTimes } from "../js/core/eyedrops.js";
+
+test("改时间: only the whole set is checked; moving every time later passes through invalid sets without an error", () => {
+  const saved = ["08:00", "08:30", "09:00"];
+  const draft = [...saved];
+  draft[0] = "10:00";            // midway sets: 10:00 08:30 09:00, then 10:00 10:15 09:00 (15 min apart) — not committed
+  draft[1] = "10:15";
+  assert.equal(validateTimes(draft).ok, false, "a midway set can be invalid");
+  draft[1] = "10:30";
+  draft[2] = "11:00";
+  assert.deepEqual(commitTimes(draft, saved), { save: ["10:00", "10:30", "11:00"], error: null });
+  // the final set invalid → the error, nothing saved (the last valid set stays)
+  assert.deepEqual(commitTimes(["10:00", "10:10", "09:00"], saved), { save: null, error: "相邻两次至少隔 30 分钟" });
+  assert.deepEqual(commitTimes(["08:00", "", "09:00"], saved), { save: null, error: "时间格式不对" });
+  // unchanged (any order) → nothing to save
+  assert.deepEqual(commitTimes(["09:00", "08:00", "08:30"], saved), { save: null, error: null });
+});
 
 test("no times yet → the suggested set", () => {
   assert.deepEqual(resizeTimes([], 4), ["08:00", "12:00", "16:00", "20:00"]);

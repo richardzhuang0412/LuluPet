@@ -9,12 +9,15 @@ import * as activity from "./activity.js";
 import { getManifest } from "./assets.js";
 
 let open = null;
+let sheetDoc = null;
+/** Sheets open in this document while the panel has its own window (null = the main page). */
+export function setSheetDoc(doc) { sheetDoc = doc; }
 
 export function closeSheet() {
   if (!open) return;
-  const { el, onKey, restore } = open;
+  const { el, onKey, restore, doc } = open;
   open = null;
-  document.removeEventListener("keydown", onKey, true);
+  doc.removeEventListener("keydown", onKey, true);
   el.classList.add("out");
   setTimeout(() => el.remove(), 160);
   restore?.focus?.({ preventScroll: true });
@@ -32,17 +35,39 @@ export function openSheet({ icon, title, subtitle, body }) {
   const el = h("div.sheet", card);
   el.addEventListener("pointerdown", (e) => { if (e.target === el) closeSheet(); });
   const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); closeSheet(); } };
-  document.addEventListener("keydown", onKey, true);
-  open = { el, onKey, restore: document.activeElement };
-  document.body.append(el);
+  const doc = sheetDoc || document;
+  doc.addEventListener("keydown", onKey, true);
+  open = { el, onKey, restore: doc.activeElement, doc };
+  doc.body.append(el);
   card.querySelector("button")?.focus({ preventScroll: true });
   return { el: card, set: (nodes) => setChildren(card.querySelector(".sheet-body"), nodes) };
 }
 
 // ---- 待设置 -----------------------------------------------------------------------------------------------------
 
+// Installing (Chrome 「安装」) gives the best pet: a window with no address bar (桌宠模式). It is a friendly suggestion
+// (the landing + 待设置), never a nag; Chrome's own mini banner is held back and offered from our button instead.
+// Without installing, the 桌宠小窗 popup (js/ui/petpopup.js) is the fallback.
 let installPrompt = null;
-window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; });
+const installListeners = new Set();
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; for (const fn of installListeners) fn(); });
+window.addEventListener("appinstalled", () => { installPrompt = null; for (const fn of installListeners) fn(); });
+/** Chrome offered to install (the button can show its dialog). */
+export const canInstall = () => !!installPrompt;
+export function onInstallable(fn) { installListeners.add(fn); }
+/** Shows Chrome's install dialog. → true when it was shown. */
+export async function promptInstall() {
+  if (!installPrompt) return false;
+  const p = installPrompt;
+  installPrompt = null;
+  try { await p.prompt(); } catch { return false; }
+  return true;
+}
+const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+/** How to install here, in words (Safari has no install dialog to show). */
+export const installHow = () => (isIOS()
+  ? "Safari 底部的分享按钮 →「添加到主屏幕」，以后从主屏幕的噜噜图标打开，就像一个 App。"
+  : "Chrome 地址栏右边的「安装」小图标（或 ⋮ → 投放、保存和分享 → 安装页面），装好后从程序坞打开。");
 export const isStandalone = () => matchMedia("(display-mode: standalone)").matches || matchMedia("(display-mode: window-controls-overlay)").matches;
 
 const verLess = (a, b) => {
@@ -62,8 +87,10 @@ export async function setupTodos({ macApp }) {
     out.push({ id: "idle", icon: "🪑", title: "允许检测我在不在电脑前", detail: "提醒只在你真的在用电脑时出现；你离开了就等你回来。", button: "允许", go: () => activity.requestIdle() });
   }
   if (!isStandalone()) {
-    out.push({ id: "install", icon: "🪟", title: "装成 App 窗口", detail: installPrompt ? "像桌面版一样有自己的小窗口和图标，没有地址栏。" : "Chrome 地址栏右边的「安装」图标 → 安装。公司电脑不让装也没关系，标签页里功能一样。",
-      button: installPrompt ? "安装" : null, go: async () => { await installPrompt?.prompt(); installPrompt = null; } });
+    out.push({ id: "install", icon: "🍊", title: isIOS() ? "添加到主屏幕（推荐）" : "装成桌宠 App（推荐）", detail: installPrompt
+      ? "噜噜会有自己的小窗口，没有地址栏，就只有宠物站在桌面上。不装也行：用「打开桌宠小窗」。"
+      : isIOS() ? installHow() : `${installHow()}不装也行：用「打开桌宠小窗」。`,
+      button: installPrompt ? "安装" : null, go: () => promptInstall() });
   }
   out.push({ id: "keepAlive", icon: "⚡️", title: "让 Chrome 别把它睡掉", detail: "Chrome 设置 → 性能 →「始终保持这些网站处于活动状态」→ 添加这个网站，后台也一直在线。", button: "设置好了", go: () => dismiss("keepAlive") });
   const app = macApp();

@@ -3865,6 +3865,101 @@ do {
     check(EyeDrops.bubbleCopy(slot: "2026-10-12/1400", index: 3, total: 4).line == "该滴眼药水啦（14:00 · 今天第 3 次）", "eyedrops: bubble copy")
 }
 
+// MARK: v0.19 device activity record (devices/<seat>/<deviceId> = {kind, activeAt, at}, for the push function)
+do {
+    // Pure rules.
+    check(DeviceActivity.activeAt(nowMs: 100_000, idleSeconds: 30) == 70_000, "activity: activeAt = now − idle")
+    check(DeviceActivity.activeAt(nowMs: 100_000, idleSeconds: -5) == 100_000 && DeviceActivity.activeAt(nowMs: 100_000, idleSeconds: .nan) == 100_000, "activity: bad idle → now")
+    check(DeviceActivity.activeAt(nowMs: 100_000, idleSeconds: 30, previous: 70_400) == 70_400, "activity: never moves back (jitter)")
+    let last = DeviceActivityRecord(activeAt: 1_000_000, at: 1_000_000)
+    check(DeviceActivity.shouldWrite(activeAt: 0, nowMs: 0, last: nil), "activity: first heartbeat writes")
+    check(!DeviceActivity.shouldWrite(activeAt: 1_059_999, nowMs: 1_060_000, last: last), "activity: < 60 s of new input → no write")
+    check(DeviceActivity.shouldWrite(activeAt: 1_060_000, nowMs: 1_060_000, last: last), "activity: ≥ 60 s of new input → write")
+    check(!DeviceActivity.shouldWrite(activeAt: 1_000_000, nowMs: 1_299_999, last: last), "activity: idle, < 5 min → no write")
+    check(DeviceActivity.shouldWrite(activeAt: 1_000_000, nowMs: 1_300_000, last: last), "activity: idle, 5 min → refresh at")
+    check(DeviceActivity.shouldWrite(activeAt: 1_000_000, nowMs: 999_000, last: last), "activity: clock went back → write")
+    let payload = DeviceActivityRecord(activeAt: 5, at: 9).payload
+    check(payload["kind"] as? String == "mac" && payload["activeAt"] as? Int64 == 5 && payload["at"] as? Int64 == 9 && payload.count == 3, "activity: payload shape")
+
+    var th = DeviceActivityThrottle()
+    check(th.signOff(nowMs: 1, idleSeconds: nil) == nil, "activity: no sign-off record before anything is known")
+    check(th.due(nowMs: 1_000_000, idleSeconds: 10) == DeviceActivityRecord(activeAt: 990_000, at: 1_000_000), "activity: throttle first record")
+    check(th.due(nowMs: 1_020_000, idleSeconds: 5) == DeviceActivityRecord(activeAt: 1_015_000, at: 1_020_000), "activity: unwritten (failed) record is retried")
+    th.written(DeviceActivityRecord(activeAt: 1_015_000, at: 1_020_000))
+    check(th.due(nowMs: 1_040_000, idleSeconds: 0) == nil, "activity: 25 s of new input → skip")
+    let r65 = th.due(nowMs: 1_080_000, idleSeconds: 0)
+    check(r65 != nil, "activity: 65 s of new input → write")
+    if let r65 { th.written(r65) }
+    check(th.due(nowMs: 1_100_000, idleSeconds: 999) == nil, "activity: idle reading older than known keeps activeAt")
+    check(th.signOff(nowMs: 1_200_000, idleSeconds: 120) == DeviceActivityRecord(activeAt: 1_080_000, at: 1_200_000), "activity: sign-off keeps the real last input, at = now")
+
+    // PairChannel over the stub: written with the heartbeat, throttled, final record on sign-off, none without a reader / in solo.
+    StubProtocol.replies = [
+        "PUT /pairs/PAIR/presence/lulu.json": .init(status: 200, body: "{}"),
+        "PUT /pairs/PAIR/devices/lulu/DEV-1.json": .init(status: 200, body: "{}"),
+        "GET /pairs/PAIR/presence/lumei.json": .init(status: 200, body: "null"),
+        "GET /pairs/PAIR/presence/lulu.json": .init(status: 200, body: "null"),
+        "GET /pairs/PAIR/read/lulu.json": .init(status: 200, body: "null"),
+        "GET /pairs/PAIR/messages.json": .init(status: 200, body: "event: keep-alive\ndata: null\n\n", contentType: "text/event-stream"),
+    ]
+    StubProtocol.requests = []
+    func deviceBodies() -> [[String: Any]] {
+        StubProtocol.requests.filter { $0.method == "PUT" && $0.url.path == "/pairs/PAIR/devices/lulu/DEV-1.json" }
+            .compactMap { $0.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } }
+    }
+    nonisolated(unsafe) var idle: TimeInterval = 40
+    let dch = PairChannel(config: AppConfig(role: .lulu, pairCode: "PAIR", databaseURL: "https://stub.firebaseio.com"),
+                          store: ConfigStore(profile: "test-\(UUID().uuidString)"), client: fb)
+    await MainActor.run {
+        dch.heartbeatInterval = 0.2
+        dch.presencePollInterval = 0.2
+        dch.setIdentity(character: .lulu, mode: .couple, device: "DEV-1")
+        dch.idleSeconds = { idle }
+        dch.start()
+    }
+    try? await Task.sleep(nanoseconds: 700_000_000)
+    let first = deviceBodies()
+    let a0 = (first.first?["activeAt"] as? NSNumber)?.int64Value ?? 0, at0 = (first.first?["at"] as? NSNumber)?.int64Value ?? 0
+    check(first.count == 1 && first[0]["kind"] as? String == "mac" && abs(at0 - a0 - 40_000) < 2_000 && abs(at0 - nowMs()) < 5_000,
+          "activity channel: first heartbeat writes {kind, activeAt = now − idle, at} (\(first))")
+    idle = 0   // the user is back: activeAt moves by ~40 s (< 60 s) → still nothing
+    try? await Task.sleep(nanoseconds: 500_000_000)
+    check(deviceBodies().count == 1, "activity channel: < 60 s move → no extra write over several heartbeats")
+    await MainActor.run { dch.signOffBlocking() }
+    let all = deviceBodies()
+    let lastBody = all.last ?? [:]
+    let aL = (lastBody["activeAt"] as? NSNumber)?.int64Value ?? 0, atL = (lastBody["at"] as? NSNumber)?.int64Value ?? 0
+    check(all.count == 2 && abs(atL - nowMs()) < 5_000 && aL >= a0 && aL <= atL, "activity channel: sign-off writes a final record (\(all.count))")
+    await MainActor.run { dch.stop() }
+
+    StubProtocol.requests = []
+    let nch = PairChannel(config: AppConfig(role: .lulu, pairCode: "PAIR", databaseURL: "https://stub.firebaseio.com"),
+                          store: ConfigStore(profile: "test-\(UUID().uuidString)"), client: fb)
+    await MainActor.run {
+        nch.heartbeatInterval = 0.2
+        nch.setIdentity(character: .lulu, mode: .couple, device: "DEV-1")   // no idle reader
+        nch.start()
+    }
+    try? await Task.sleep(nanoseconds: 400_000_000)
+    await MainActor.run { nch.signOffBlocking(); nch.stop() }
+    check(deviceBodies().isEmpty && StubProtocol.requests.contains { $0.url.path == "/pairs/PAIR/presence/lulu.json" }, "activity channel: no idle reader → no device record")
+
+    StubProtocol.requests = []
+    var soloCfg = AppConfig(role: .lulu, pairCode: "PAIR", databaseURL: "https://stub.firebaseio.com")
+    soloCfg.mode = .solo
+    let sch = PairChannel(config: soloCfg, store: ConfigStore(profile: "test-\(UUID().uuidString)"), client: fb)
+    await MainActor.run {
+        sch.heartbeatInterval = 0.2
+        sch.setIdentity(character: .lulu, mode: .solo, device: "DEV-1")
+        sch.idleSeconds = { 0 }
+        sch.start()
+    }
+    try? await Task.sleep(nanoseconds: 400_000_000)
+    await MainActor.run { sch.signOffBlocking(); sch.stop() }
+    check(deviceBodies().isEmpty, "activity channel: solo never writes a device record")
+    StubProtocol.replies = [:]
+}
+
 runWebVectors()   // web/tests/vectors/wire.json (WebVectors.swift)
 try? FileManager.default.removeItem(at: tmp)
 // UserDefaults suites leave their plist behind even after removePersistentDomain; delete test ones.

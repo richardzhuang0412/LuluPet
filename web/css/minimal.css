@@ -1,0 +1,286 @@
+/* 极简模式 (work mode): a quiet utility panel for a work laptop. Cool graphite neutrals instead of the pet's warm
+   paper, a deep slate-teal accent, the system UI face (not the rounded one), no motion. The app.css tokens are
+   re-pointed under body.minimal so the shared sheets / menus / toasts / settings match. Light + dark follow the system.
+   The one loud thing: the pomodoro clock. */
+
+body.minimal {
+  --m-bg: #eef0f3;
+  --m-surface: #ffffff;
+  --m-sunken: #f5f6f8;
+  --m-ink: #1f2933;
+  --m-ink-2: #59636e;
+  --m-ink-3: #8c96a1;
+  --m-line: #dfe3e8;
+  --m-line-2: #cbd1d8;
+  --m-accent: #2f6b70;
+  --m-accent-ink: #ffffff;
+  --m-accent-soft: #e2eeef;
+  --m-ta: #a5566a;
+  --m-ok: #2f8f5f;
+  --m-busy: #b9822b;
+  --m-due: #a24f22;
+  --m-shadow: 0 8px 28px rgba(18, 28, 38, 0.16), 0 1px 3px rgba(18, 28, 38, 0.08);
+
+  /* app.css tokens → this palette (sheets, menus, settings, toasts) */
+  --paper: var(--m-bg); --paper-2: #e5e8ec; --card: var(--m-surface); --card-2: var(--m-sunken);
+  --ink: var(--m-ink); --ink-2: var(--m-ink-2); --ink-3: var(--m-ink-3);
+  --line: var(--m-line); --line-2: var(--m-line-2);
+  --accent: var(--m-accent); --accent-deep: var(--m-accent); --accent-ink: var(--m-accent-ink);
+  --accent-soft: var(--m-accent-soft); --accent-wash: rgba(47, 107, 112, 0.08);
+  --shadow-card: none; --shadow-pop: var(--m-shadow);
+  --r-card: 10px; --r-ctl: 7px;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+  color-scheme: light;
+  background: var(--m-bg);
+  font-size: 13px;
+}
+@media (prefers-color-scheme: dark) {
+  body.minimal {
+    --m-bg: #15181c;
+    --m-surface: #1d2126;
+    --m-sunken: #181b1f;
+    --m-ink: #e3e6ea;
+    --m-ink-2: #a2abb5;
+    --m-ink-3: #6e7782;
+    --m-line: #2a3037;
+    --m-line-2: #39414a;
+    --m-accent: #7cb9ba;
+    --m-accent-ink: #0f1a1b;
+    --m-accent-soft: #1f3134;
+    --m-ta: #d38a9b;
+    --m-ok: #5dbb88;
+    --m-busy: #d6a24c;
+    --m-due: #e39466;
+    --m-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.4);
+    --paper-2: #23282e;
+    --accent-wash: rgba(124, 185, 186, 0.1);
+    color-scheme: dark;
+  }
+  body.minimal .switch { background: #39414a; }
+  body.minimal .switch::after { background: #e3e6ea; }
+}
+
+/* nothing moves in 极简模式 (menus and sheets just appear) */
+body.minimal *, body.minimal *::before, body.minimal *::after { animation: none !important; }
+body.minimal .titlebar, body.minimal .main, body.minimal .boot { display: none !important; }
+body.minimal .switch { background: #c9cfd6; }
+body.minimal .switch:checked { background: var(--m-accent); }
+body.minimal .btn:hover, body.minimal .pill-btn:hover { background: var(--m-sunken); }
+body.minimal .pill-btn { border-color: var(--m-line-2); color: var(--m-ink); border-radius: 7px; }
+body.minimal .pill-btn.filled, body.minimal .btn.primary { color: var(--m-accent-ink); }
+body.minimal .set-title { color: var(--m-ink); font-weight: 650; }
+body.minimal .set-section { border: 1px solid var(--m-line); }
+body.minimal .sheet { background: rgba(15, 20, 26, 0.32); }
+body.minimal .sheet-card { border: 1px solid var(--m-line); border-radius: 12px; }
+body.minimal .tool-card { border: 1px solid var(--m-line); }
+body.minimal .menu-item:hover:not(:disabled), body.minimal .menu-item:focus-visible { color: var(--m-accent-ink); }
+body.minimal .menu { background: var(--m-surface); backdrop-filter: none; border-radius: 9px; }
+body.minimal .toast { background: var(--m-ink); color: var(--m-bg); border-radius: 8px; }
+body.minimal :focus-visible { outline: 2px solid var(--m-accent); outline-offset: 1px; }
+
+/* ---- frame ---------------------------------------------------------------------------------------------------- */
+.mini { flex: 1; min-height: 0; display: flex; flex-direction: column; color: var(--m-ink); }
+
+.mi-head {
+  flex: none; display: flex; align-items: center; gap: 4px; height: 40px; padding: 0 6px 0 14px;
+  background: var(--m-surface); border-bottom: 1px solid var(--m-line);
+}
+.mi-who { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 7px; white-space: nowrap; overflow: hidden; }
+.mi-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--m-ink-3); align-self: center; }
+.mi-dot[data-tone="ok"] { background: var(--m-ok); }
+.mi-dot[data-tone="busy"] { background: var(--m-busy); }
+.mi-name-ta { font-weight: 650; font-size: 13.5px; }
+.mi-status { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--m-ink-2); font-size: 12px; }
+.mi-conn { font-size: 11.5px; color: var(--m-ink-2); white-space: nowrap; max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
+.mi-conn:empty { display: none; }
+.mi-conn[data-tone="bad"] { color: var(--m-due); }
+.mi-head .update { background: var(--m-accent-soft); color: var(--m-ink); }
+.mi-icon-btn {
+  appearance: none; flex: none; width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 7px;
+  background: transparent; color: var(--m-ink-2); cursor: pointer;
+}
+.mi-icon-btn:hover { background: var(--m-sunken); color: var(--m-ink); }
+.mi-icon-btn.on { background: var(--m-accent-soft); color: var(--m-accent); }
+.mi-icon { display: block; }
+.mi-icon path { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.mi-icon-btn[aria-label="菜单"] .mi-icon path { stroke-width: 3; }
+
+@media (display-mode: window-controls-overlay) {
+  body.minimal .mi-head {
+    position: fixed; left: env(titlebar-area-x, 0); top: env(titlebar-area-y, 0); z-index: 5;
+    width: env(titlebar-area-width, 100%); height: env(titlebar-area-height, 40px);
+    -webkit-app-region: drag; app-region: drag;
+  }
+  body.minimal .mi-head button, body.minimal .mi-head .update { -webkit-app-region: no-drag; app-region: no-drag; }
+}
+
+.mi-banner, .mi-dndrow {
+  flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; padding: 7px 14px;
+  font-size: 12px; border-bottom: 1px solid var(--m-line);
+}
+.mi-banner { background: var(--m-accent-soft); }
+.mi-banner > span { flex: 1; min-width: 160px; }
+.mi-dndrow { background: var(--m-surface); }
+.mi-dnd-label { color: var(--m-ink-2); }
+.mi-dnd-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+
+.mi-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.mi-main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+/* ---- 小工具 ---------------------------------------------------------------------------------------------------- */
+.mi-tools { flex: none; background: var(--m-surface); border-bottom: 1px solid var(--m-line); }
+.mi-strip {
+  appearance: none; width: 100%; height: 34px; display: flex; align-items: center; gap: 10px; padding: 0 10px 0 14px;
+  border: 0; background: transparent; color: var(--m-ink); cursor: pointer; font-size: 12px; text-align: left;
+}
+.mi-strip:hover { background: var(--m-sunken); }
+.mi-strip-label { flex: none; font-weight: 650; color: var(--m-ink-2); }
+.mi-strip-bits { flex: 1; min-width: 0; display: flex; gap: 12px; overflow: hidden; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mi-bit.muted { color: var(--m-ink-3); }
+.mi-bit.due { color: var(--m-due); font-weight: 650; }
+.mi-strip .mi-icon { flex: none; color: var(--m-ink-3); }
+.mi-tools.open .mi-strip .mi-icon { transform: rotate(180deg); }
+.mi-tools-body { max-height: 40vh; overflow-y: auto; padding: 0 14px 10px; }
+.mi-tool { display: flex; flex-direction: column; gap: 5px; padding: 9px 0; border-top: 1px solid var(--m-line); }
+.mi-tool:first-child { border-top: 0; padding-top: 4px; }
+.mi-tool-line { display: flex; align-items: center; gap: 8px; min-height: 24px; }
+.mi-tool-name { flex: 1; font-weight: 600; }
+.mi-tool-meta { color: var(--m-ink-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+.mi-tool-sub { flex: 1; min-width: 0; color: var(--m-ink-2); font-size: 12px; }
+.mi-tool-btns { display: flex; gap: 5px; flex: none; }
+.mi-clock { font-size: 26px; line-height: 1; font-weight: 300; letter-spacing: 0.5px; font-variant-numeric: tabular-nums; color: var(--m-ink); }
+.mi-tool.pomo:has(.mi-clock) .mi-tool-name { align-self: center; }
+.mi-dots { flex: 1; display: flex; flex-wrap: wrap; gap: 4px; }
+.mi-dot-slot {
+  display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; border: 1px solid var(--m-line); border-radius: 5px;
+  font-size: 11.5px; color: var(--m-ink-2); font-variant-numeric: tabular-nums;
+}
+.mi-dot-mark:empty { display: none; }
+.mi-dot-slot[data-state="done"] { background: var(--m-accent-soft); border-color: transparent; color: var(--m-accent); }
+.mi-dot-slot[data-state="showing"] { border-color: var(--m-due); color: var(--m-due); font-weight: 650; }
+.mi-dot-slot[data-state="missed"], .mi-dot-slot[data-state="unconfirmed"] { color: var(--m-ink-3); }
+.mi-tools-foot { padding-top: 4px; }
+.mi-link { appearance: none; border: 0; background: none; padding: 0; color: var(--m-accent); font-size: 12px; cursor: pointer; }
+.mi-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+body.minimal .mi-tools .stepper { border-color: var(--m-line-2); border-radius: 7px; background: var(--m-surface); }
+body.minimal .mi-tools .step-btn { color: var(--m-ink-2); height: 22px; }
+body.minimal .mi-tools .step-value { min-width: 58px; font-weight: 600; }
+
+/* ---- conversation --------------------------------------------------------------------------------------------- */
+.mi-chat { flex: 1; min-height: 64px; display: flex; flex-direction: column; }
+.mini .history { gap: 0; }
+.mini .history-list { padding: 10px 14px; gap: 6px; background: transparent; border-radius: 0; }
+.mini .older { align-self: center; margin-top: 6px; }
+.mini .h-bubble {
+  max-width: 82%; padding: 5px 10px; font-size: 13px; line-height: 1.45; box-shadow: none;
+  background: var(--m-surface); border: 1px solid var(--m-line); border-radius: 10px 10px 10px 3px;
+}
+.mini .h-row.mine .h-bubble { background: var(--m-accent-soft); border-color: transparent; border-radius: 10px 10px 3px 10px; }
+.mini .h-bubble.sticker-text { color: var(--m-ink-2); }
+.mini .h-bubble:has(.thumb) { display: inline-flex; align-items: center; gap: 6px; color: var(--m-ink-2); }
+.mini .h-bubble .thumb { display: inline-block; border-radius: 4px; }
+.mini .h-chip { background: transparent; padding: 0 2px; font-size: 12px; color: var(--m-ink-2); }
+.mini .h-row.theirs .h-chip { color: var(--m-ta); }
+.mini .h-day { background: transparent; color: var(--m-ink-3); font-weight: 600; }
+.mini .h-time { color: var(--m-ink-3); }
+.mini .history-empty { color: var(--m-ink-3); }
+
+/* ---- reminder cards ------------------------------------------------------------------------------------------- */
+.mi-notices { flex: none; display: flex; flex-direction: column; gap: 6px; padding: 8px 12px 0; max-height: 50vh; overflow-y: auto; }
+.mi-card {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; padding: 8px 10px 8px 12px;
+  background: var(--m-surface); border: 1px solid var(--m-line); border-left: 3px solid var(--m-accent); border-radius: 8px;
+}
+.mi-card[data-tone="ta"] { border-left-color: var(--m-ta); }
+.mi-card-text { flex: 1; min-width: 150px; }
+.mi-card-title { font-weight: 650; }
+.mi-card-line { color: var(--m-ink-2); font-size: 12px; }
+.mi-card-actions { display: flex; gap: 6px; margin-left: auto; }
+
+.mi-btn {
+  appearance: none; border: 1px solid var(--m-line-2); background: var(--m-surface); color: var(--m-ink);
+  border-radius: 7px; padding: 5px 12px; font-size: 12.5px; font-weight: 600; line-height: 1.25; cursor: pointer; white-space: nowrap;
+}
+.mi-btn:hover:not(:disabled) { background: var(--m-sunken); }
+.mi-btn.primary { background: var(--m-accent); border-color: transparent; color: var(--m-accent-ink); }
+.mi-btn.primary:hover:not(:disabled) { background: var(--m-accent); filter: brightness(1.08); }
+.mi-btn.small { padding: 3px 9px; font-size: 12px; }
+.mi-btn.ghost { border-color: transparent; color: var(--m-ink-2); }
+.mi-btn:disabled { opacity: 0.45; cursor: default; }
+
+/* ---- compose -------------------------------------------------------------------------------------------------- */
+.mi-compose { flex: none; position: relative; padding: 8px 12px 10px; }
+.mi-note { font-size: 12px; color: var(--m-ink-2); padding: 0 2px 6px; }
+.mi-input {
+  display: flex; align-items: flex-end; gap: 6px; padding: 3px 3px 3px 10px;
+  background: var(--m-surface); border: 1px solid var(--m-line-2); border-radius: 10px;
+}
+.mi-input:focus-within { border-color: var(--m-accent); }
+.mi-text {
+  flex: 1; min-width: 0; height: 30px; max-height: 96px; padding: 6px 0; border: 0; outline: none; resize: none;
+  background: transparent; color: var(--m-ink); font: inherit; font-size: 13px; line-height: 1.4;
+}
+body.minimal .mi-text:focus-visible { outline: none; }
+.mi-text::placeholder { color: var(--m-ink-3); }
+.mi-text.over { color: var(--m-due); }
+.mi-send {
+  appearance: none; flex: none; width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 7px;
+  background: var(--m-accent); color: var(--m-accent-ink); cursor: pointer;
+}
+.mi-send:disabled { background: transparent; color: var(--m-ink-3); cursor: default; }
+.mi-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.mi-chip {
+  appearance: none; border: 1px solid var(--m-line-2); background: var(--m-surface); color: var(--m-ink);
+  border-radius: 999px; padding: 3px 10px; font-size: 12px; line-height: 1.4; cursor: pointer; white-space: nowrap;
+}
+.mi-chip:hover { background: var(--m-sunken); }
+.mi-chip.on { border-color: var(--m-accent); color: var(--m-accent); }
+.mi-chip.small { padding: 2px 9px; }
+.mi-chip.strong { border-color: var(--m-accent); color: var(--m-accent); font-weight: 600; }
+
+.mi-picker {
+  position: absolute; left: 12px; right: 12px; bottom: calc(100% - 2px); z-index: 10; max-height: min(300px, 55vh); overflow-y: auto;
+  padding: 8px 10px 10px; background: var(--m-surface); border: 1px solid var(--m-line-2); border-radius: 10px; box-shadow: var(--m-shadow);
+}
+.mi-picker-group + .mi-picker-group { margin-top: 8px; }
+.mi-picker-title { font-size: 11.5px; color: var(--m-ink-3); margin-bottom: 4px; }
+.mi-names { display: flex; flex-wrap: wrap; gap: 5px; }
+.mi-name {
+  appearance: none; border: 1px solid var(--m-line); background: var(--m-sunken); color: var(--m-ink);
+  border-radius: 6px; padding: 2px 8px; font-size: 12px; cursor: pointer;
+}
+.mi-name:hover { border-color: var(--m-accent); color: var(--m-accent); }
+.mi-name.on-bar { background: var(--m-surface); border-color: var(--m-line-2); }
+.mi-picker-hint { margin-top: 8px; font-size: 11px; color: var(--m-ink-3); }
+
+/* ---- wide tab: conversation left, 小工具 always open on the right ---------------------------------------------- */
+@media (min-width: 720px) {
+  .mi-body { flex-direction: row; }
+  .mi-main { order: 1; }
+  .mi-tools { order: 2; flex: none; width: 300px; overflow-y: auto; border-bottom: 0; border-left: 1px solid var(--m-line); }
+  .mi-strip { display: none; }
+  .mi-tools-body { max-height: none; padding: 12px 16px; }
+  .mini .history-list { padding: 14px 24px; }
+  .mi-compose, .mi-notices { padding-left: 24px; padding-right: 24px; }
+  .mi-picker { left: 24px; right: 24px; }
+}
+
+/* ---- first run: 完整宠物 or 极简 (before either look is applied; uses app.css tokens) -------------------------- */
+body.choosing .main { display: none; }
+body.choosing .titlebar .ta-line { visibility: hidden; }
+.setup-view:has(.choice) { flex: 1; display: grid; place-items: center; padding: 16px; overflow-y: auto; }
+.choice { width: 100%; max-width: 560px; }
+.choice-h { margin: 0 0 4px; font-size: 19px; font-weight: 800; }
+.choice-sub { margin: 0 0 14px; color: var(--ink-2); font-size: 12.5px; }
+.choice-opts { display: grid; gap: 10px; }
+@media (min-width: 520px) { .choice-opts { grid-template-columns: 1fr 1fr; } }
+.choice-opt {
+  appearance: none; text-align: left; display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; cursor: pointer;
+  background: var(--card); border: 1px solid var(--line-2); border-radius: 12px; color: var(--ink);
+}
+.choice-opt:hover { border-color: var(--accent); }
+.choice-opt[data-kind="minimal"] { background: #f2f4f6; border-color: #cbd1d8; color: #1f2933; }
+.choice-opt[data-kind="minimal"]:hover { border-color: #2f6b70; }
+.choice-title { font-weight: 800; font-size: 14.5px; margin-bottom: 2px; }
+.choice-line { font-size: 12.5px; color: var(--ink-2); }
+.choice-opt[data-kind="minimal"] .choice-line { color: #59636e; }

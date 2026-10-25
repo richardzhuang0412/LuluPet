@@ -815,6 +815,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let ch = PairChannel(config: cfg, store: store, history: history)
         // --- v0.11: heartbeats carry who I am (character / mode / device); a second machine on my seat is noticed
         ch.setIdentity(character: cfg.myCharacter, mode: cfg.effectiveMode, device: store.deviceId)
+        // v0.19: heartbeats also keep `devices/<seat>/<deviceId>` = {kind, activeAt, at} fresh (HID idle, honours --fake-idle)
+        ch.idleSeconds = { PersonalToolsController.idleSeconds() }
         // prelaunch-A: every callback below ignores a channel that has been replaced / stopped (`self.channel === ch`).
         ch.onSeatClash = { [weak self, weak ch] clash in
             guard let self, let ch, self.channel === ch else { return }

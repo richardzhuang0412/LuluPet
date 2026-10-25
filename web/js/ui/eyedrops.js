@@ -1,7 +1,8 @@
 // 眼药水 controller (spec §2): local mirror `eyedrops` {settings, days (last 14)}, `eyedropsNag`, `eyedropsPending`;
 // W1 eyedrops.js decides (plan / progress / merge), W3 tools-sync talks to `tools/{seat}/eyedrops`. Re-plans every
-// minute (scheduler: keeps firing in a background tab) and at plan.nextWakeMs. Before every show / re-show it GETs
-// that day's check-ins (3 s timeout) so a 滴了 on the Mac stops the nag here. Fires during 勿扰 / 专注 too, with
+// minute (scheduler: keeps firing in a background tab) and at plan.nextWakeMs. Before every show / re-show, and on
+// every replan while the bubble is up, it GETs that day's check-ins (3 s timeout) so a 滴了 on the Mac closes the
+// bubble here within a minute and stops the nag. Fires during 勿扰 / 专注 too, with
 // sound and notification (user decision).
 
 import { v2, TZ } from "./deps.js";
@@ -106,11 +107,27 @@ export function createEyedrops({ sync, deviceId, scheduler, show, hide, onChange
     if (busy) return arm(now() + 5000);
     busy = true;
     try {
+      // While the bubble is up, every replan (at least once a minute) asks whether another device checked in, so the
+      // bubble and 「👁️ 该滴了」 go away within a minute like on the Mac, not only at the next 15-minute nag.
+      let pulled = null;
+      if (showingSlot) {
+        const at = E.parseSlotId(showingSlot);
+        if (at) {
+          await pullDay(at.day);
+          pulled = at.day;
+          if (days[at.day]?.[at.key]) {
+            log(`eyedrops: close ${at.key} done-elsewhere`);
+            if (nag?.slot === showingSlot) nag = E.afterDone(nag);
+            showingSlot = null; hide();
+            persist();
+          }
+        }
+      }
       let p = planNow();
       if (showingSlot && p.slot !== showingSlot) { hide(); showingSlot = null; }       // superseded / past its window
       if (p.action === "show") {
         const at = E.parseSlotId(p.slot);
-        await pullDay(at.day);
+        if (pulled !== at.day) await pullDay(at.day);
         if (days[at.day]?.[at.key]) {
           log(`eyedrops: skip ${at.key} done-elsewhere`);
           if (showingSlot === p.slot) { hide(); showingSlot = null; }

@@ -11,7 +11,9 @@ import { store } from "./store.js";
 const PAGE = 100;
 const hhmm = (ts) => new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(ts));
 
-export function createHistoryTab({ config, me, partnerName }) {
+/** stickerThumbs() = false (极简模式): stickers as 「［表情］名字」 text, no thumbnail atlas download. */
+/** thumbPx < 64: a small thumbnail with 「［表情］名字」 beside it. */
+export function createHistoryTab({ config, me, partnerName, stickerThumbs = () => true, thumbPx = 64 }) {
   const list = h("div.history-list", { role: "log", "aria-label": "聊天记录" });
   const older = h("button.pill-btn.older", { type: "button", hidden: true, onclick: () => loadOlder() }, "更早的 ↑");
   const status = h("div.history-status", { role: "status" });
@@ -37,6 +39,7 @@ export function createHistoryTab({ config, me, partnerName }) {
     if (m.kind === "text") return { text: m.text ?? "" };
     if (m.kind === "sticker") {
       const s = stickerById(m.stickerId);
+      if (s && !stickerThumbs()) return { text: `［表情］${s.label}`, stickerText: true };
       return s ? { sticker: s, text: s.label } : { text: unknownStickerText(m) };
     }
     if (m.kind === "poke") return { chip: "❤️", text: mine ? "送出一颗爱心" : `${name}送来一颗爱心` };
@@ -57,9 +60,9 @@ export function createHistoryTab({ config, me, partnerName }) {
     const l = line(m);
     const body = l.chip
       ? h("div.h-chip", h("span.h-chip-icon", { "aria-hidden": "true" }, l.chip), l.text)
-      : h("div.h-bubble", { class: l.faint ? "faint" : null },
-        l.sticker ? thumbEl(l.sticker, 64) : null,
-        l.sticker ? null : l.text);
+      : h("div.h-bubble", { class: l.faint ? "faint" : l.stickerText ? "sticker-text" : null },
+        l.sticker ? thumbEl(l.sticker, thumbPx) : null,
+        l.sticker ? (thumbPx < 64 ? h("span.h-sticker-label", `［表情］${l.text}`) : null) : l.text);
     return h("div.h-row", { class: mine ? "mine" : "theirs", title: hhmm(m.ts) }, body, h("span.h-time", hhmm(m.ts)));
   }
 
@@ -77,21 +80,21 @@ export function createHistoryTab({ config, me, partnerName }) {
   }
 
   async function loadOlder() {
-    if (!db) return;
+    if (!db || !msgs.length) return;
     older.disabled = true;
     const keep = list.scrollHeight - list.scrollTop;
-    let page = msgs.length ? await db.page({ beforeTs: msgs[0].ts, beforeId: msgs[0].id, limit: PAGE }) : [];
-    if (page.length < PAGE && !complete) {
-      status.textContent = "正在读更早的记录…";
-      try {
-        const r = await db.backfill(fetcher, { older: true });
-        complete = r.complete;
-        page = msgs.length ? await db.page({ beforeTs: msgs[0].ts, beforeId: msgs[0].id, limit: PAGE }) : page;
-        status.textContent = "";
-      } catch { status.textContent = "读不到更早的记录，等会儿再试"; }
-    }
-    localMore = page.length >= PAGE;
-    msgs = page.concat(msgs);
+    try {
+      // Fetches older server pages first whenever the local page reaches below what backfill has covered:
+      // IndexedDB can hold my own older messages (stream) with TA's in between still on the server.
+      const r = await db.olderPage(fetcher, {
+        beforeTs: msgs[0].ts, beforeId: msgs[0].id, limit: PAGE,
+        onFetch: () => { status.textContent = "正在读更早的记录…"; },
+      });
+      complete = r.complete;
+      localMore = r.page.length >= PAGE;
+      msgs = r.page.concat(msgs);
+      status.textContent = "";
+    } catch { status.textContent = "读不到更早的记录，等会儿再试"; }
     older.disabled = false;
     render(keep);
   }
@@ -118,8 +121,10 @@ export function createHistoryTab({ config, me, partnerName }) {
   return {
     el,
     open,
-    /** Live / backlog / own / sent messages: stored, and shown when the tab is open. */
-    async add(newMsgs) {
+    /** Re-draw (e.g. 「显示表情小图」 changed). */
+    refresh: () => { if (opened) render(list.scrollHeight - list.scrollTop); },
+    /** Live / backlog / own / sent messages: stored, and shown when the tab is open (toBottom: my own send, scroll to it). */
+    async add(newMsgs, { toBottom = false } = {}) {
       const list2 = (newMsgs || []).filter((m) => m && m.id);
       if (!list2.length) return;
       if (!db) { pending.push(...list2); return; }
@@ -128,7 +133,7 @@ export function createHistoryTab({ config, me, partnerName }) {
         const seen = new Set(msgs.map((m) => m.id));
         msgs = msgs.concat(list2.filter((m) => !seen.has(m.id))).sort((a, b) => a.ts - b.ts);
         const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
-        render(atBottom ? null : list.scrollHeight - list.scrollTop);
+        render(atBottom || toBottom ? null : list.scrollHeight - list.scrollTop);
       }
     },
   };

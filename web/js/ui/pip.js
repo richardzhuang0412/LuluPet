@@ -1,13 +1,14 @@
-// 置顶小窗 (Document PiP, spec §3.2): the world element is moved — whole, state and all — into an always-on-top window
-// with a mini bar (❤️ 💬 👁️ ↩︎). 💬 grows it to 360×560 with the compose panel inside; ↩︎ closes it and focuses the app
-// window. Closing the PiP (pagehide) puts everything back. The main document's JS drives the PiP DOM.
+// 置顶小窗 (Document PiP, spec §3.2): the world element is moved — whole, state and all — into an always-on-top window,
+// drawn like the 桌宠模式 window (just the pet on the chosen background, backdrop.js) with a mini bar (❤️ 💬 👁️ ↩︎) that
+// shows on hover. 💬 opens the small compose under a shorter stage (≈340×400, never the whole panel); ↩︎ closes it and
+// focuses the app window. Closing the PiP (pagehide) puts everything back. The main document's JS drives the PiP DOM.
 // ?dev=pip renders the same layout in a fixed box on the page (PiP needs a real gesture; automation can't open it).
 
 import { h } from "./dom.js";
 import { store } from "./store.js";
 
 const SMALL = { width: 300, height: 260 };
-const BIG = { width: 360, height: 560 };
+const BIG = { width: 340, height: 400 };
 
 export const pipSupported = () => "documentPictureInPicture" in window;
 
@@ -15,7 +16,7 @@ export const pipSupported = () => "documentPictureInPicture" in window;
  * world: {element, mountIn(doc)}; worldHome: where the element lives normally; compose: {el, focus()}, composeHome;
  * onHeart(); eyeLabel() → "👁️ 2/4" | ""; onEye(); onDoc(doc) for input watching / sound unlock; onState(open).
  */
-export function createPip({ world, worldHome, compose, composeHome, onHeart, eyeLabel, onEye, onDoc, onState }) {
+export function createPip({ world, worldHome, compose, composeHome, backdrop, onHeart, eyeLabel, onEye, onDoc, onState }) {
   let win = null;
   let root = null;
   let sim = null;
@@ -36,6 +37,7 @@ export function createPip({ world, worldHome, compose, composeHome, onHeart, eye
     root.classList.add("pip");
     root.append(h("div.pip-world", world.element), bar, h("div.pip-compose", { hidden: true }));
     world.mountIn(doc);
+    backdrop?.attach(sim ? window : win, root);
     onDoc?.(doc);
     refresh();
     onState(true);
@@ -66,6 +68,7 @@ export function createPip({ world, worldHome, compose, composeHome, onHeart, eye
   function restore() {
     if (win && win !== window && !expanded && win.innerWidth > 0) store.set("pipSize", { width: win.innerWidth, height: win.innerHeight });
     if (expanded) collapse(true);
+    if (root) backdrop?.detach(sim ? window : win, root);
     worldHome.append(world.element);
     world.mountIn(document);
     bar?.remove();
@@ -88,6 +91,7 @@ export function createPip({ world, worldHome, compose, composeHome, onHeart, eye
     if (!root || expanded) return;
     expanded = true;
     const slot = root.querySelector(".pip-compose");
+    compose.setCompact(true);
     slot.append(compose.el);
     slot.hidden = false;
     root.classList.add("expanded");
@@ -98,7 +102,8 @@ export function createPip({ world, worldHome, compose, composeHome, onHeart, eye
   function collapse(silent) {
     if (!expanded) return;
     expanded = false;
-    composeHome.append(compose.el);
+    compose.setCompact(false);
+    composeHome.prepend(compose.el);
     if (root) {
       root.querySelector(".pip-compose").hidden = true;
       root.classList.remove("expanded");

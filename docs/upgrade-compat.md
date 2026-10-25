@@ -229,3 +229,38 @@
   - 撞座检测（`SeatClash.detect`）：我自己座位上在线的 `web-…` **永远不算冲突**（网页版按「让座」规则在我的 Mac 在线时不写 presence；就算读到它也不报「配对冲突」）。别的 Mac（不带前缀的另一个 `device`）照旧报。
   - 我的座位上有在线的网页设备时，Mac **照常心跳**（不让、不退），网页读到 Mac 在线后自己停写。
 - 顺带修复（v0.17）：睡眠时的签退会结束 presence 循环，醒来后原来只调用一次被签退挡住的 `heartbeatNow()`，结果 Mac 醒来后一直不再心跳（TA 看到我离线、网页版也会一直接管座位）。现在醒来调用 `resumeAfterSignOff()`：重新开始心跳 / 轮询 / 撞座读取。没有格式变化。
+
+## 17. 网页推送（Web Push，Cloud Functions，docs/superpowers/specs/2026-10-22-web-push.md）
+
+全部是**纯加**：消息格式不变，Firebase 规则不变（新路径都在 `pairs/$code` 下，规则本来就允许读写；只有 `messages` 有校验），Mac App **不读、不写、不需要改**，0.16 / 0.17 / 0.18 的 Mac 照常工作。没开推送（没部署 functions/、没人订阅）时，下面的路径都不存在。
+
+- **新路径 `/pairs/{code}/push/{seat}/{subId}`（网页写，服务器读）**：一个浏览器的推送订阅。`subId` = SHA-256(endpoint) 的前 20 个十六进制字符（同一个浏览器重新订阅会覆盖同一格）。
+  `{"endpoint": "https://…", "keys": {"p256dh", "auth"}, "device": "web-…", "phone": bool, "tz": "Asia/Shanghai", "ua": "Safari · iOS", "at": 毫秒, "key": "<VAPID 公钥前 16 位>", "prefs": {"messages", "reminders", "eyedrops", "onlyWhenAway": bool, "dnd": "silent" | "skip"}, "vis"?: {"hidden": bool, "at": 毫秒}}`。
+  读的时候宽容：缺 `prefs` 字段按默认（消息 / 提醒 / 只在不在电脑前 = 开，眼药水 = 关，`dnd` = `silent`）；`endpoint` 不是 `https://` 或缺 `keys` 的整条忽略；`key` 和服务器当前公钥对不上的跳过（换过 VAPID 密钥，浏览器下次打开时重新订阅）。`vis` 只有手机写（页面切到后台 / 回来时），让服务器在 iOS 冻结页面、心跳还没过期的那 75 秒里也推。推送服务回 404 / 410 时服务器删掉这一格。**只有我的座位的设备写；服务器（Admin SDK）读。** TA 的客户端从不读它。
+- **新叶子 `/pairs/{code}/tools/{seat}/eyedrops/pushed/{day}/{HHmm}`（只有服务器写）**：`{"shown": 1…3, "next": 毫秒, "at": 毫秒}`，服务器自己的眼药水催促记录（和设备本地的 `eyedropsNag` 一样：最多 3 遍、隔 15 分钟）。服务器顺手删掉比昨天更早的日子。Mac 0.18 / 网页版的 ToolsSync 只读写 `settings` 和 `days/…`，不受影响；以后的客户端可以忽略它。
+- **新的根路径 `/pushIndex/{code}/{seat} = true`（只有服务器读写）**：哪些座位有想要眼药水推送的订阅，定时任务只看这一小格，不扫描 `/pairs`。根规则 `".read": false, ".write": false` 让客户端读不到也写不进（Admin SDK 不受规则限制）。
+- **推送内容**（发给苹果 / 谷歌 / Mozilla 的推送服务，端到端加密，只有订阅的浏览器能解开）：`{"v": 1, "kind": "message" | "partner-remind" | "eyedrops", "title", "body"（≤ 80 字）, "tag", "key"?（消息 id）, "remind"?, "slot"?（"2026-10-12/1400"）, "silent"?}`。**从不**带配对码或数据库地址。网页 `sw.js` 不认识的 `kind` 当普通消息显示；不认识的字段忽略。
+- **网页本地键 `lulupet.push`**：`{subId, endpoint, key, prefs}`（这台浏览器订阅了没有）。
+- 冻结的约定：路径名 `push` / `pushIndex` / `pushed`、`prefs` 的字段名、Secret Manager 里的密钥名 `LULUPET_VAPID`（JSON `{publicKey, privateKey, subject}`）。
+
+## 18. 每台设备的使用记录（推送发给正在用的设备，docs/superpowers/specs/2026-10-22-web-push.md §2.1）
+
+全部是**纯加**：消息格式、presence 格式不变，Firebase 规则不变（在 `pairs/$code` 下）。0.18 及以前的 Mac **不读不写**，照常工作（没有记录的设备从不挡推送：最多多收几条，不会漏）。
+
+- **新路径 `/pairs/{code}/devices/{seat}/{deviceId}`（我的座位的每台设备自己写，服务器读）**：
+  `{"kind": "mac" | "web" | "phone", "activeAt": 毫秒（最近一次真正的键盘 / 鼠标 / 触摸输入，0 = 还没有）, "at": 毫秒（这次写入的时间）, "vis"?: "visible" | "hidden"}`，整条 PUT。
+  - `deviceId` = 已有的设备 id：网页 `web-…`（`lulupet.deviceId`），Mac 的 `deviceId`（不带前缀的 UUID）。
+  - 网页（`web/js/net/devices.js`）：有输入时最多每 60 秒写一次（停下后再补一次，让 `activeAt` 跟上），`visibilitychange` 立刻写（切到后台时用 `keepalive`），页面开着时每 5 分钟心跳一次。手机（iOS 主屏幕 App，或粗指针 + 小屏幕）写 `"phone"`，电脑浏览器写 `"web"`。有 IdleDetector 权限时，电脑上任何地方的输入都算（标签页在后台也算「在用」）。
+  - Mac（≥ 0.19，另行实现）：`kind: "mac"`，`activeAt` 来自系统的 HID 空闲时间；`vis` 可以不写。
+  - 读的时候宽容：不是对象 / 没有数字 `at` 的忽略（不删，可能是以后的格式）；不认识的 `kind` 保留为文字；`at` 早于 7 天的忽略，服务器读到时顺手删掉；`activeAt` 比服务器时间晚 5 分钟以上（时钟坏了）不算。
+  - 含义（`web/js/core/devices.js`，服务器用它的 vendored 拷贝）：「在用」= `activeAt` 在 3 分钟内（`ACTIVE_WINDOW_MS = 180000`）；「页面正开着」= `vis == "visible"` 且 `at` 在 90 秒内。
+  - **只有本座位的设备写；服务器（Admin SDK）读。TA 的客户端从不读它。**
+- 冻结的约定：路径名 `devices`、字段名 `kind` / `activeAt` / `at` / `vis` 和取值 `mac` / `web` / `phone` / `visible` / `hidden`、单位毫秒。
+
+## 19. 设备活跃记录（v0.19，Mac 写，推送函数读）
+
+全部是**纯加**：消息 / presence 格式不变，规则不变（在 `pairs/$code` 下），老版本不读不写，没有新的本地键。
+
+- **新路径 `/pairs/{code}/devices/{seat}/{deviceId}`**：`{"kind": "mac", "activeAt": 毫秒, "at": 毫秒}`，整条 PUT。`deviceId` = presence 里的 `device`（Mac 的 `deviceId`）；`activeAt` = 这台 Mac 最后一次真实键鼠输入（现在 − HID 空闲秒数，和喝水 / 站立 / 眼药水同一个读数，只进不退）；`at` = 写入时间。
+- 节奏：跟着 presence 心跳（没有新计时器）；`activeAt` 比上次写的前进 ≥ 60 秒，或上次写入已 ≥ 5 分钟，才顺带写（`DeviceActivity`）。睡眠 / 退出 / 换座位签退时再写最后一条（`at` = 现在，`activeAt` 不往前推）。写失败不管，下次心跳再试。只有配对模式写，一个人模式从不写。
+- 读的时候宽容：缺字段 / 不是数字 = 不知道。冻结：路径名 `devices`、字段名、`kind` 值 `"mac"`（别的设备以后用别的值）。

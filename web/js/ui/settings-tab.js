@@ -9,6 +9,8 @@ import { toggle } from "./tools-tab.js";
 import * as notify from "./notify.js";
 import * as activity from "./activity.js";
 import { prefs, SIZES, VOLUMES } from "./prefs.js";
+import { KINDS, FIT_LABELS, DEFAULT_COLOR } from "./backdrop.js";
+import { initPush, pushSection } from "./push-section.js";
 
 const MODE = { couple: "情侣", friend: "朋友", solo: "单人" };
 
@@ -18,13 +20,15 @@ export function segmented(label, options, value, onPick) {
     h("button.seg", { type: "button", role: "radio", "aria-checked": String(o.value === value), onclick: () => onPick(o.value) }, o.label)));
 }
 
-export function createSettingsTab({ config, me, seatInfo, editConnection, placeWindow, canPlaceWindow, openTodos, openChangelog, todoCount, version, onPrefs, downloadAll, intimate }) {
+export function createSettingsTab({ config, me, seatInfo, editConnection, placeWindow, canPlaceWindow, openTodos, openChangelog, todoCount, version, onPrefs, downloadAll, intimate,
+  backdrop, layout, canChooseLayout, setLayout, canChooseBackdrop = () => false, modeSection = () => null, minimal = false }) {
   const el = h("div.settings");
   let visible = false;
   let showAllStickers = false;
   const section = (title, ...children) => h("section.set-section", h("h3.set-title", title), children);
   const row = (label, ...right) => h("div.set-row", h("span.set-label", label), h("span.set-right", right));
   const note = (text) => h("div.set-note", text);
+  initPush(config);
 
   function connection() {
     const host = (() => { try { return new URL(config.databaseURL).host; } catch { return config.databaseURL; } })();
@@ -52,6 +56,41 @@ export function createSettingsTab({ config, me, seatInfo, editConnection, placeW
         ? "也可以把鼠标放到宠物身上，拖它右下角的小角。"
         : `现在是拖出来的大小（×${p.petScale.toFixed(2)}），点上面的选项可以换回来。`),
       canPlaceWindow() ? h("div.set-actions", h("button.pill-btn", { type: "button", onclick: () => { placeWindow(true); toast("放回右下角啦"); } }, "放回右下角")) : null);
+  }
+
+  /** 桌宠模式 / 展开面板 (installed app only) and what the pet stands on (桌宠小窗 / the pet window / 置顶小窗). */
+  function windowSection() {
+    const styles = canChooseLayout();
+    if (!backdrop || !(styles || canChooseBackdrop())) return null;
+    const b = backdrop.settings();
+    const kind = b.kind;
+    const picker = h("input", { type: "file", accept: "image/*", hidden: true, onchange: async () => {
+      const f = picker.files?.[0];
+      if (!f) return;
+      try { await backdrop.setWallpaper(f); toast("对齐好啦：把窗口拖到别处试试"); } catch (e) { toast(e?.message || "这张图片打不开"); }
+      render();
+    } });
+    const has = backdrop.hasWallpaper();
+    const size = backdrop.pictureSize();
+    return section(styles ? "窗口" : "小窗",
+      styles ? row("样式", segmented("窗口样式", [{ value: "pet", label: "桌宠模式" }, { value: "panel", label: "展开面板" }], layout(), (v) => { if (v !== layout()) setLayout(v); })) : null,
+      styles ? note(layout() === "pet"
+        ? "窗口只有宠物那么大：拖宠物 = 挪窗口，双击宠物打开面板，右键是 🍊 菜单。"
+        : "宠物和面板在同一个窗口里（以前的样子）。")
+        : note("桌宠小窗和置顶小窗里，噜噜站在什么背景上。拖噜噜 = 挪小窗，双击打开面板，右键是 🍊 菜单。"),
+      row("背景", segmented("背景", KINDS, kind, (v) => { backdrop.set({ kind: v }); render(); })),
+      kind === "wallpaper" ? h("div.wall-box",
+        h("div.set-note", has
+          ? `用的是你选的桌面壁纸${size ? `（${size.width}×${size.height}）` : ""}，窗口画的是它背后那一块，看起来就像透明的。只存在这台电脑的浏览器里，不会上传。`
+          : "选一下你现在的桌面壁纸图片（只要一次），窗口就会画上它背后那一块，看起来像透明的。图片只存在这台电脑的浏览器里，不会上传。"),
+        h("div.set-actions",
+          h("button.pill-btn" + (has ? "" : ".filled"), { type: "button", onclick: () => picker.click() }, has ? "换一张…" : "选择壁纸图片…"),
+          has ? h("button.btn.small", { type: "button", onclick: async () => { await backdrop.clearWallpaper(); render(); } }, "不用了") : null,
+          picker),
+        has ? row("壁纸显示方式", segmented("壁纸显示方式", FIT_LABELS, b.fit, (v) => { backdrop.set({ fit: v }); render(); })) : null,
+        note("找不到图片？Mac：系统设置 → 墙纸 看是哪张；自带的在 Finder 里 ⌘⇧G → /System/Library/Desktop Pictures。要和系统设置里的「填充屏幕」等选项一致。")) : null,
+      kind === "solid" ? row("颜色", h("input.color-input", { type: "color", value: b.color, "aria-label": "背景颜色",
+        oninput: (e) => backdrop.set({ color: e.target.value }) }), h("button.link", { type: "button", onclick: () => { backdrop.set({ color: DEFAULT_COLOR }); render(); } }, "默认")) : null);
   }
 
   function sound() {
@@ -123,7 +162,9 @@ export function createSettingsTab({ config, me, seatInfo, editConnection, placeW
   function render() {
     if (!visible) return;
     const y = el.scrollTop;
-    setChildren(el, connection(), meSection(), display(), sound(), stickers(), perms(), offline(), more());
+    // 极简模式: no pet, so no size / window / character sounds / sticker pictures / sprite downloads.
+    if (minimal) setChildren(el, modeSection(), perms(), pushSection(render), connection(), meSection(), more());
+    else setChildren(el, connection(), meSection(), modeSection(), windowSection(), display(), sound(), stickers(), perms(), pushSection(render), offline(), more());
     el.scrollTop = y;
   }
 

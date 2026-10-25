@@ -236,6 +236,47 @@ test("history: first backfill = latest 300, older pages via endAt until complete
   assert.equal(other.meta.syncedTo, null);
 });
 
+test("history: olderPage fetches TA's older messages even when my own older ones are already stored (E10 run B)", async () => {
+  const code = testPairCode();
+  const fb = createFirebase({ databaseURL: fake.url, pairCode: code });
+  const base = 1_700_000_000_000;
+  const seed = {};
+  const key = (i) => `h${String(i).padStart(4, "0")}`;
+  for (let i = 1; i <= 700; i++) seed[key(i)] = macMsg(i % 2 ? "lumei" : "lulu", base + i);
+  await fb.put("messages", seed);
+  const queries = [];
+  const real = messagesFetcher({ databaseURL: fake.url, pairCode: code });
+  const fetcher = (q) => { queries.push(q); return real(q); };
+  const h = await openHistory({ pairCode: code, seat: "lulu" }, { backend: createMemoryBackend() });
+
+  // the channel's first GET (no read cursor) delivered all of my 350 as `own`: stored before any backfill
+  const mine = Object.fromEntries(Object.entries(seed).filter(([, v]) => v.from === "lulu"));
+  assert.equal(await h.put(mine), 350);
+  await h.backfill(fetcher);                       // tab opened: latest 300 (#401..#700)
+  let msgs = await h.page({ limit: 100 });
+  assert.equal(msgs[0].id, key(601));
+
+  let fetches = 0;
+  for (let click = 1; click <= 10; click++) {
+    const r = await h.olderPage(fetcher, { beforeTs: msgs[0].ts, beforeId: msgs[0].id, limit: 100, onFetch: () => fetches++ });
+    // every page is contiguous: TA's messages between mine are never skipped
+    r.page.forEach((m, i) => assert.equal(m.id, key(msgs[0].ts - base - r.page.length + i), `click ${click}`));
+    msgs = r.page.concat(msgs);
+    if (r.complete && r.page.length < 100) break;
+  }
+  assert.deepEqual(msgs.map((m) => m.id), Object.keys(seed), "all 700 shown, in order");
+  assert.equal(fetches, 2, "server asked when the page reached below what backfill covered (#401, #101), not before");
+  assert.deepEqual(queries.slice(1), [backfillQuery.older(base + 401), backfillQuery.older(base + 101)]);
+  assert.equal(h.meta.oldestComplete, true);
+
+  // offline: the fetch error rejects (the tab keeps what it shows); never synced + empty server: complete at once
+  const h2 = await openHistory({ pairCode: "R", seat: "lulu" }, { backend: createMemoryBackend() });
+  await h2.put(mine);
+  await assert.rejects(h2.olderPage(async () => { throw new FirebaseError("network"); }, { beforeTs: base + 1000, limit: 100 }));
+  const r2 = await h2.olderPage(async () => null, { beforeTs: base + 1000, limit: 100 });
+  assert.deepEqual(r2, { page: await h2.page({ limit: 100 }), complete: true });
+});
+
 test("history: raw JSON kept as is (unknown kind / extra fields), bad children skipped, clear()", async () => {
   const backend = createMemoryBackend();
   const h = await openHistory({ pairCode: "P", seat: "lumei" }, { backend });

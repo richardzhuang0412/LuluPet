@@ -8,3 +8,7 @@ dist/
 # Raw material library (~665MB, local only; clips used by the app are copied into assets/gifs)
 assets/library/*.gif
 __pycache__/
+
+# Cloud Functions (web push)
+functions/node_modules/
+functions/.env*

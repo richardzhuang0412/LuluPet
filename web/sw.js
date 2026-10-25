@@ -9,13 +9,14 @@
 //   kinds: message · partner-remind (马上 / 等会儿) · own-remind (喝了 / 好的 · 等会儿) · eyedrops (滴了 / 等会儿) · pomodoro.
 //   Dismissing my own reminder (own-remind / eyedrops) is posted as action "close" (= 喝了 for water / stand, the Mac
 //   bubble rule; = 等会儿 for eye drops: the nag comes back in 15 minutes).
+// - Web Push ('push', bottom of this file): TA's messages and my eye drops while no page of mine is open.
 
 const SHELL = "lulupet-shell-v2";
 const ASSETS = "lulupet-assets-v2";
 const PENDING = "lulupet-pending";
 const PENDING_URL = new URL("pending-action", self.registration.scope).href;
-const SHELL_FILES = ["./", "index.html", "css/app.css", "css/pip.css", "js/app.js", "manifest.webmanifest",
-  "icons/icon-192.png", "icons/favicon-32.png"];
+const SHELL_FILES = ["./", "index.html", "css/app.css", "css/pip.css", "css/minimal.css", "js/app.js", "manifest.webmanifest",
+  "icons/icon-192.png", "icons/favicon-32.png", "icons/bell-32.png", "icons/bell-192.png"];
 
 const scopePath = new URL(self.registration.scope).pathname;
 const isHashed = (path) => path.startsWith(scopePath + "assets/") && path !== scopePath + "assets/manifest.json"
@@ -126,7 +127,13 @@ self.addEventListener("notificationclick", (event) => {
   const n = event.notification;
   n.close();
   const action = event.action || "open";
-  event.waitUntil(deliver({ type: "lulupet-notification", action, data: n.data || null }, action === "open"));
+  const payload = { type: "lulupet-notification", action, data: n.data || null };
+  // A pushed eye drop's 等会儿 needs no page: the server nags again in 15 minutes (tell an open page, don't open one).
+  if (n.data?.push && n.data.kind === "eyedrops" && action === "later") {
+    event.waitUntil(windows().then((list) => { for (const c of list) c.postMessage(payload); }));
+    return;
+  }
+  event.waitUntil(deliver(payload, action === "open"));
 });
 
 self.addEventListener("notificationclose", (event) => {
@@ -135,4 +142,39 @@ self.addEventListener("notificationclose", (event) => {
   event.waitUntil(windows().then((list) => {
     for (const c of list) c.postMessage({ type: "lulupet-notification", action: "close", data });
   }));
+});
+
+// ---- Web Push (spec docs/superpowers/specs/2026-10-22-web-push.md): functions/ sends
+// {v, kind: "message" | "partner-remind" | "eyedrops", title, body, tag, key?, remind?, slot?, silent?}. Shown like
+// js/ui/notify.js does (same tags, so a notification the open page made itself is replaced, not doubled); the click
+// goes through notificationclick above with data.push = true. Every push must show a notification (userVisibleOnly).
+// Safari on iOS shows no action buttons: a tap opens the app, which shows the reminder bubble itself.
+const PUSH_KINDS = ["message", "partner-remind", "eyedrops"];
+
+function pushNotification(p) {
+  const kind = PUSH_KINDS.includes(p?.kind) ? p.kind : "message";
+  const text = (v, max, fallback) => (typeof v === "string" && v ? v.slice(0, max) : fallback);
+  const id = (v) => (typeof v === "string" && v.length <= 64 ? v : null);
+  const icon = new URL("icons/icon-192.png", self.registration.scope).href;
+  const actions = kind === "partner-remind" ? [{ action: "now", title: "马上" }, { action: "later", title: "等会儿" }]
+    : kind === "eyedrops" ? [{ action: "done", title: "滴了" }, { action: "later", title: "等会儿" }] : [];
+  const max = typeof self.Notification?.maxActions === "number" ? self.Notification.maxActions : actions.length;
+  const tag = text(p?.tag, 80, undefined);
+  return {
+    title: text(p?.title, 64, "噜噜桌宠"),
+    options: {
+      body: text(p?.body, 160, "有新消息"), icon, badge: icon, tag, actions: actions.slice(0, max),
+      silent: p?.silent === true, renotify: !!tag && kind !== "message",
+      requireInteraction: kind !== "message",
+      data: { kind, key: id(p?.key), remind: id(p?.remind), slot: id(p?.slot), push: true },
+    },
+  };
+}
+
+self.addEventListener("push", (event) => {
+  let p = null;
+  try { p = event.data ? event.data.json() : null; } catch { p = null; }
+  const { title, options } = pushNotification(p);
+  event.waitUntil(self.registration.showNotification(title, options)
+    .catch(() => self.registration.showNotification(title, { body: options.body, icon: options.icon, tag: options.tag, data: options.data })));
 });

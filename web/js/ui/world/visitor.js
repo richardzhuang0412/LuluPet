@@ -20,7 +20,7 @@ export class Visits {
   /** w = the world context (see world.js). */
   constructor(w) {
     this.w = w;
-    this.state = "absent";          // absent | entering | meeting | staying | leaving
+    this._state = "absent";         // absent | entering | meeting | staying | leaving (setter below)
     this.location = new PetLocation();
     this.visitor = null;
     this.visitorLook = null;        // "character/outfit"
@@ -60,6 +60,14 @@ export class Visits {
     this.danceEvent = null;
     this.afterMeeting = null;
     this.deliverDone = null;
+  }
+
+  get state() { return this._state; }
+  /** TA's pet on the stage or not: the page hears "visit" (true / false), e.g. to widen a small pet window. */
+  set state(v) {
+    const was = this._state !== "absent";
+    this._state = v;
+    if (was !== (v !== "absent")) this.w.emit?.("visit", v !== "absent");
   }
 
   log(s) { this.w.log?.("visit: " + s); }

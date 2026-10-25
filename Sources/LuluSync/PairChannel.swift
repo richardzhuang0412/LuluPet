@@ -119,6 +119,15 @@ public final class PairChannel {
     /// prelaunch-A: set by `signOffBlocking()`: no heartbeat may overwrite the sign-off afterwards.
     private var signedOff = false
     private let outboxStore: OutboxStore?
+    /// v0.19: seconds since the last real user input on this Mac (HID idle; the app passes the same reader as the
+    /// water / stand reminders). nil = no `devices/<seat>/<device>` activity record is written at all.
+    public var idleSeconds: (() -> TimeInterval)?
+    private var deviceThrottle = DeviceActivityThrottle()
+    /// Only paired modes with a device id publish activity (a solo Mac has no channel anyway).
+    private var activityDevice: String? {
+        guard idleSeconds != nil, config.effectiveMode != .solo else { return nil }
+        return identity?.device
+    }
 
     public convenience init(config: AppConfig, store: ConfigStore, history: HistoryStore? = nil) {
         self.init(config: config, store: store,
@@ -502,6 +511,11 @@ public final class PairChannel {
                 }
             }
             async let beat: Void = Self.heartbeat(client, role: role, dnd: dnd, focus: focus, identity: identity, app: app, place: place, look: look, if: due.heartbeat)
+            // v0.19: the activity record rides on the heartbeat (no timer of its own); best effort, a failure is retried
+            // at the next heartbeat because the throttle only remembers successful writes.
+            let device = due.heartbeat ? activityDevice : nil
+            let activity = device == nil ? nil : idleSeconds.flatMap { deviceThrottle.due(nowMs: nowMs(), idleSeconds: $0()) }
+            async let wrote: Bool = Self.putActivity(client, role: role, device: device, record: activity)
             if due.poll {
                 do {
                     // v0.8: the whole presence object (lastSeen + the partner's 勿扰); nil = never seen → offline.
@@ -512,9 +526,15 @@ public final class PairChannel {
                 }
             }
             _ = await beat
+            if await wrote, let activity, !Task.isCancelled, !signedOff { deviceThrottle.written(activity) }
             let wait = schedule.delay(now: now())
             try? await Task.sleep(for: .seconds(wait), tolerance: .seconds(Presence.tolerance(for: wait)))
         }
+    }
+
+    private nonisolated static func putActivity(_ client: FirebaseClient, role: Role, device: String?, record: DeviceActivityRecord?) async -> Bool {
+        guard let device, let record else { return false }
+        do { try await client.putDeviceActivity(role, device: device, record: record); return true } catch { return false }
     }
 
     private nonisolated static func heartbeat(_ client: FirebaseClient, role: Role, dnd: DNDStatus?, focus: FocusStatus?, identity: PresenceIdentity?, app: String?, place: WeatherPlace?, look: PresenceLook?, if due: Bool) async {
@@ -600,6 +620,10 @@ public final class PairChannel {
         let client = client, role = config.role, dnd = dnd, identity = identity, app = appVersion, place = place
         let signOffLook = look.map { PresenceLook(outfit: $0.outfit) }   // the pose is not on TA's desk any more
         let cursor: Int64? = readThrottle.needsWrite(local: store.lastReadTs) ? store.lastReadTs : nil
+        // v0.19: a final activity record (`at` = now, `activeAt` = the real last input, not bumped).
+        let device = activityDevice
+        let activity = device == nil ? nil : deviceThrottle.signOff(nowMs: nowMs(), idleSeconds: idleSeconds?())
+        if let activity { deviceThrottle.written(activity) }
         signedOff = true   // prelaunch-A: nothing may heartbeat over the sign-off
         lookBeatTask?.cancel()
         lookBeatTask = nil
@@ -608,8 +632,12 @@ public final class PairChannel {
         let done = DispatchSemaphore(value: 0)
         Task.detached {
             async let off: Void = { try? await client.markOffline(role, dnd: dnd, identity: identity, app: app, place: place, look: signOffLook) }()
+            async let act: Void = {
+                if let device, let activity { try? await client.putDeviceActivity(role, device: device, record: activity, timeout: timeout) }
+            }()
             if let cursor { _ = try? await client.advanceReadCursor(role, ts: cursor, device: identity?.device, timeout: timeout) }
             _ = await off
+            _ = await act
             done.signal()
         }
         _ = done.wait(timeout: .now() + timeout)

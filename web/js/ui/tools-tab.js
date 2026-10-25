@@ -4,7 +4,7 @@
 
 import { h, setChildren, toast } from "./dom.js";
 import { toolsCopy } from "./reminders.js";
-import { resizeTimes } from "./eyedrop-times.js";
+import { resizeTimes, commitTimes } from "./eyedrop-times.js";
 
 const DOT = { done: "✓", showing: "⏰", upcoming: "○", missed: "–", unconfirmed: "–", past: "·" };
 const DOT_TITLE = { done: "滴了", showing: "正在提醒", upcoming: "还没到", missed: "错过了", unconfirmed: "没确认", past: "今天已过（设好之前就过了，今天不提醒）" };
@@ -40,6 +40,8 @@ export function createToolsTab({ pomodoro, reminders, eyedrops, onSettingsChange
   const el = h("div.tools");
   let visible = false;
   let editingTimes = false;
+  let draftTimes = null;     // 「改时间」 inputs, unsaved until the whole set is valid
+  let timesError = null;
 
   function pomodoroCard() {
     const p = pomodoro.state();
@@ -109,11 +111,35 @@ export function createToolsTab({ pomodoro, reminders, eyedrops, onSettingsChange
       h("span.eye-mark", DOT[state] ?? "○"), h("span.eye-time", d.time), where ? h("span.eye-where", where) : null);
     }));
     const n = s.times.length;
-    const times = editingTimes ? h("div.eye-times", s.times.map((t, i) => {
-      const input = h("input.time-input", { type: "time", value: t, step: "60", "aria-label": `第 ${i + 1} 次的时间` });
-      input.addEventListener("change", () => { const next = [...s.times]; next[i] = input.value; apply({ times: next }); });
-      return input;
-    })) : null;
+    // 「改时间」 edits a draft; the whole set is checked (and saved when valid) once focus leaves the time inputs or
+    // on 「改好了」, so moving every time later one by one doesn't trip 「相邻两次至少隔 30 分钟」 midway.
+    if (editingTimes && !draftTimes) draftTimes = [...s.times];
+    const commit = () => {
+      const r = commitTimes(draftTimes, eyedrops.settings().times);
+      const changed = r.error !== timesError;
+      timesError = r.error;
+      if (r.save) apply({ times: r.save });
+      else if (changed) render();
+      return !r.error;
+    };
+    let times = null;
+    if (editingTimes) {
+      const err = h("div.tool-note.eye-times-error", { role: "alert", hidden: !timesError }, timesError ?? "");
+      const group = h("div.eye-times", draftTimes.map((t, i) => {
+        const input = h("input.time-input", { type: "time", value: t, step: "60", "aria-label": `第 ${i + 1} 次的时间` });
+        input.addEventListener("change", () => {
+          draftTimes[i] = input.value;
+          if (timesError && eyedrops.validate(draftTimes).ok) { timesError = null; err.hidden = true; }
+        });
+        return input;
+      }));
+      group.addEventListener("focusout", (e) => {
+        // 「改好了」 commits on its own click (re-rendering here would swallow that click)
+        if (e.relatedTarget && (group.contains(e.relatedTarget) || e.relatedTarget.dataset?.timesDone)) return;
+        commit();
+      });
+      times = [group, err];
+    }
     return card(".eyedrops",
       head("👁️💧 眼药水", info("到点宠物冒气泡提醒你滴眼药水；点「滴了」打卡，「等会儿」15 分钟后再提醒，同一次最多提醒 3 遍。设置和打卡跟家里的 Mac 同步。勿扰、专注时也照常提醒。"),
         toggle(s.enabled, "眼药水提醒", (v) => apply({ enabled: v }))),
@@ -125,9 +151,15 @@ export function createToolsTab({ pomodoro, reminders, eyedrops, onSettingsChange
           stepper(n, { min: 1, max: 8, label: "一天几次" }, (v) => {
             const next = resizeTimes(s.times, v);
             if (next.length < v) { toast("再加就太挤啦：两次之间至少隔 30 分钟"); return; }
+            draftTimes = null; timesError = null;
             apply({ times: next });
           }),
-          h("button.link", { type: "button", "aria-expanded": String(editingTimes), onclick: () => { editingTimes = !editingTimes; render(); } }, editingTimes ? "改好了" : "改时间")),
+          h("button.link", { type: "button", "aria-expanded": String(editingTimes), dataset: { timesDone: editingTimes ? "1" : "" },
+            onclick: () => {
+              if (editingTimes && !commit()) return;        // invalid: stay editing, the error shows, the last valid set stays saved
+              editingTimes = !editingTimes; draftTimes = null; timesError = null;
+              render();
+            } }, editingTimes ? "改好了" : "改时间")),
         times,
         h("label.tool-row.check-row", toggle(s.notify, "同时发系统通知", (v) => apply({ notify: v })), h("span", "同时发系统通知")),
       ] : h("div.tool-note", "打开后选一天几次，时间会自动填好，也可以单独改。"));
@@ -137,7 +169,8 @@ export function createToolsTab({ pomodoro, reminders, eyedrops, onSettingsChange
 
   function render() {
     if (!visible) return;
-    const focusEl = document.activeElement && el.contains(document.activeElement) ? document.activeElement.getAttribute("aria-label") : null;
+    const active = el.ownerDocument.activeElement;   // the panel may live in its own popup window
+    const focusEl = active && el.contains(active) ? active.getAttribute("aria-label") : null;
     const openDetails = el.querySelector("details.tool-more")?.open;
     setChildren(el, pomodoroCard(), eyedropsCard(), reminderCard("water"), reminderCard("stand"));
     if (openDetails) el.querySelector("details.tool-more").open = true;

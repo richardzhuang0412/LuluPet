@@ -30,7 +30,7 @@ function reasonText(reason) {
 
 /** PartnerBadge.make: {dot, text}. presence null = TA never came. */
 export function partnerBadge(p, online, now = Date.now()) {
-  if (!p || !(p.lastSeen > 0 || online)) return { dot: "⚪️", text: "还没上线过" };
+  if (!p || !(typeof p.lastSeen === "number" || p.dnd || online)) return { dot: "⚪️", text: "还没上线过" };
   if (online) {
     if (dndActive(p.dnd, now)) {
       const m = MOODS[p.dnd.mood];
@@ -55,6 +55,6 @@ export function partnerNote(p, online, now = Date.now()) {
 
 /** The headline about TA in the main page header. */
 export function partnerHeadline(p, online) {
-  if (!p || !(p.lastSeen > 0 || online)) return "等 TA 配对中…";
+  if (!p || !(typeof p.lastSeen === "number" || p.dnd || online)) return "等 TA 配对中…";
   return online ? "对方在线" : "对方离线";
 }

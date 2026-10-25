@@ -137,6 +137,17 @@ public final class FirebaseClient: Sendable {
         return ts
     }
 
+    /// v0.19: PUT `devices/<role>/<device>` = `{kind, activeAt, at}` (`DeviceActivityRecord`), read by the push function.
+    public func putDeviceActivity(_ role: Role, device: String, record: DeviceActivityRecord, timeout: TimeInterval = FirebaseClient.presenceTimeout) async throws {
+        let key = device.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? device
+        var req = URLRequest(url: try Self.url(databaseURL: databaseURL, pairCode: pairCode, path: "devices/\(role.rawValue)/\(key)"))
+        req.httpMethod = "PUT"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = timeout
+        req.httpBody = try JSONSerialization.data(withJSONObject: record.payload)
+        _ = try await data(for: req)
+    }
+
     /// Server-Sent Events for messages with `ts > since`. The first `put` (path "/") holds the matching
     /// backlog; later `put`s are single children. Keep-alive events are yielded too, so callers can
     /// detect a silent connection. Ends with `.cancelled` on `cancel` / `auth_revoked`.

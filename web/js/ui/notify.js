@@ -34,11 +34,11 @@ export async function requestPermission() {
  * - "pomodoro": {title, body} → no buttons
  * My own reminders make the system sound (they fire in 勿扰 / 专注 too — user decision); TA's messages are silent.
  */
-export async function notify(kind, { title, body, key, remind, comply, slot }) {
+export async function notify(kind, { title, body, key, remind, comply, slot, icon: iconURL }) {
   if (permission() !== "granted") return false;
   const r = reg || (await navigator.serviceWorker.getRegistration());
   if (!r) return false;
-  const icon = new URL("../../icons/icon-192.png", import.meta.url).href;
+  const icon = iconURL || new URL("../../icons/icon-192.png", import.meta.url).href;   // 极简模式 低调标题: a plain bell
   const own = kind === "own-remind" || kind === "eyedrops" || kind === "pomodoro";
   const actions = kind === "partner-remind" ? [{ action: "now", title: "马上" }, { action: "later", title: "等会儿" }]
     : kind === "own-remind" ? [{ action: "done", title: comply || (remind === "water" ? "喝了" : "好的") }, { action: "later", title: "等会儿" }]

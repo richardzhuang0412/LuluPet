@@ -1,7 +1,7 @@
 // 「一天几次」 changed on the 眼药水 card: keep the times the user already has (hand-edited ones included) and only
 // add or take away at the end. Pure (tested in web/tests/ui.eyedrop-times.test.mjs).
 
-import { parseTime, formatTime, suggestedTimes, SLOT_LIMITS } from "../core/eyedrops.js";
+import { parseTime, formatTime, suggestedTimes, validateTimes, SLOT_LIMITS } from "../core/eyedrops.js";
 
 const DAY_START = 7 * 60, DAY_END = 22 * 60;   // where new times may go (half-hour grid)
 
@@ -29,4 +29,17 @@ export function resizeTimes(times, n) {
     mins.push(best);
   }
   return mins.sort((a, b) => a - b).map(formatTime);
+}
+
+/**
+ * 「改时间」: the inputs edit a draft; the whole set is checked when focus leaves the time inputs or on 「改好了」, so
+ * moving every time later one by one never trips the 30-minute rule midway. → {save: sorted times | null, error}:
+ * save when the draft is valid and differs from `saved`; error (ERRORS text) when the final set is invalid, in which
+ * case the last valid set stays saved.
+ */
+export function commitTimes(draft, saved) {
+  const v = validateTimes(draft);
+  if (!v.ok) return { save: null, error: v.error };
+  const same = v.times.length === saved.length && v.times.every((t, i) => t === saved[i]);
+  return { save: same ? null : v.times, error: null };
 }

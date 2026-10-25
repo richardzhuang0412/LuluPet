@@ -57,5 +57,7 @@ export function createPomodoro({ scheduler, config, onEvent, onChange }) {
     /** Minutes left (rounded up) for the 🍅 sign under the pet. */
     minutesLeft() { const r = P.remaining(state, nowS()); return r == null ? null : Math.max(1, Math.ceil(r / 60)); },
     isPaused: () => P.isPaused(state),
+    /** Seconds left in this phase (null when idle). */
+    remaining: () => P.remaining(state, nowS()),
   };
 }

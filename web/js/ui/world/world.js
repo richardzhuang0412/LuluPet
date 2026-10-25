@@ -266,6 +266,8 @@ export function createWorld(opts = {}) {
 
   // ---- pointer: click / double click / drag / resize / hover / menu ------------------------------------------------
   let dragging = false, scaling = false, press = null, hoverTimer = 0;
+  /** 桌宠模式: dragging my pet moves the whole window (fn({phase, dx, dy}), screen px) instead of the pet on the stage. */
+  let dragWindow = null;
 
   function clickActor(actor, character) {
     if (!actor || actor.busy) return;
@@ -283,13 +285,20 @@ export function createWorld(opts = {}) {
     if (!onHandle && !me.sprite.contains(e.target)) return;
     if (visits.homeState !== "home" || me.running) return;
     e.preventDefault();
-    press = { id: e.pointerId, x0: e.clientX, y0: e.clientY, petX: me.x, scale0: w.scale, handle: onHandle, moved: false };
+    press = { id: e.pointerId, x0: e.clientX, y0: e.clientY, sx0: e.screenX, sy0: e.screenY, petX: me.x, scale0: w.scale, handle: onHandle, moved: false,
+      win: !onHandle && dragWindow ? dragWindow : null };
     try { (onHandle ? handle : me.sprite).setPointerCapture(e.pointerId); } catch { /* ignore */ }
   }
   function onPointerMove(e) {
     if (!press || e.pointerId !== press.id) return;
     const dx = e.clientX - press.x0, dy = e.clientY - press.y0;
     if (!press.moved && Math.hypot(dx, dy) < 4) return;
+    if (press.win) {   // screen deltas: the page moves under the pointer while the window follows it
+      if (!press.moved) { activity(false); me.el.classList.add("lw-dragging"); press.win({ phase: "start", dx: 0, dy: 0 }); }
+      press.moved = true;
+      press.win({ phase: "move", dx: e.screenX - press.sx0, dy: e.screenY - press.sy0 });
+      return;
+    }
     press.moved = true;
     if (press.handle) {
       scaling = true;
@@ -311,6 +320,7 @@ export function createWorld(opts = {}) {
       return;
     }
     if (!p.moved) { clickActor(me, w.myCharacter); emit("clicked"); return; }
+    if (p.win) { me.el.classList.remove("lw-dragging"); p.win({ phase: "end", dx: e.screenX - p.sx0, dy: e.screenY - p.sy0 }); return; }
     dragging = false;
     me.el.classList.remove("lw-dragging");
     if (visits.homeDragEnded(p.petX)) return;
@@ -587,6 +597,8 @@ export function createWorld(opts = {}) {
     closeBubble: (tag) => bubbles.close(tag),
     /** The top-right box (px) the page keeps for its own buttons; bubbles stay out of it ({top: 0, right: 0} = none). */
     setInsets({ top = 0, right = 0 } = {}) { w.insets = { top, right }; bubbles.layout(); },
+    /** 桌宠模式: fn({phase: "start" | "move" | "end", dx, dy}) gets my pet's drags (screen px) to move the window; null = drag on the stage. */
+    setDragWindow(fn) { dragWindow = typeof fn === "function" ? fn : null; },
     on(name, fn) {
       if (!listeners.has(name)) listeners.set(name, new Set());
       listeners.get(name).add(fn);

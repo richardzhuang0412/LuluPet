@@ -45,9 +45,13 @@ export function setChildren(el, ...children) {
 
 export const $ = (sel, root = document) => root.querySelector(sel);
 
-/** Short toast at the bottom of the main page. */
+let toastDoc = null;
+/** Toasts go to this document while the panel has its own window (null = the main page). */
+export function setToastDoc(doc) { toastDoc = doc; }
+
+/** Short toast at the bottom of the main page (or the panel window). */
 export function toast(text, ms = 3500) {
-  const host = $("#toasts");
+  const host = $("#toasts", toastDoc || document) || $("#toasts");
   if (!host) return;
   const t = h("div.toast", { role: "status" }, text);
   host.append(t);

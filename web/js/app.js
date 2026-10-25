@@ -1,9 +1,10 @@
 // Entry (web v2, spec §3–§4): the shell around W5's world and W3's channel. W1 / W3 / W5 are reached only through
-// js/ui/deps.js. Layout: world on top (narrow / phone) or left (wide); panel tabs 传话 · 记录 · 小工具 · 设置; 🍊 menu;
+// js/ui/deps.js. Two layouts: 桌宠模式 (installed app default, and the 桌宠小窗 popup a plain tab opens: a pet-sized window, the panel in its own small window —
+// js/ui/petmode.js) and 展开面板 (tabs / phones: world on top or left, panel tabs 传话 · 记录 · 小工具 · 设置); 🍊 menu;
 // 置顶小窗 (PiP) moves the world element; controllers for 勿扰 / 番茄钟 / 换装 / 喝水站立 / 眼药水 live in js/ui.
 
 import { DEV, loadNet, v2, TZ, build, msgKey, allowsIntimate, decodeReply, SEATS, dndActive, focusActive, createScheduler, createToolsSync } from "./ui/deps.js";
-import { h, $, setChildren, toast, nameOf } from "./ui/dom.js";
+import { h, $, setChildren, toast, nameOf, setToastDoc } from "./ui/dom.js";
 import { store, deviceId, loadConfig } from "./ui/store.js";
 import { loadManifest, stickerById, outfitOf, getManifest } from "./ui/assets.js";
 import { describe } from "./ui/describe.js";
@@ -23,12 +24,18 @@ import { createHistoryTab } from "./ui/history-tab.js";
 import { createToolsTab } from "./ui/tools-tab.js";
 import { createSettingsTab } from "./ui/settings-tab.js";
 import { openMenu, closeMenu } from "./ui/menu.js";
-import { openSheet, openTodos, openChangelog, setupTodos, whatsNew, isStandalone } from "./ui/sheets.js";
+import { openSheet, openTodos, openChangelog, setupTodos, whatsNew, isStandalone, setSheetDoc, canInstall, onInstallable, promptInstall, installHow } from "./ui/sheets.js";
+import { createBackdrop } from "./ui/backdrop.js";
+import { createPetMode, layoutFor } from "./ui/petmode.js";
+import { isPetPopup, popupSupported, openPetPopup, petPopupOpen, claimPetWindow, onPetOpened, askPetBack, whenPetGone } from "./ui/petpopup.js";
 import { prefs, SIZES, VOLUMES } from "./ui/prefs.js";
 import { prefetch, prefetchList } from "./ui/prefetch.js";
 import { migrateV1 } from "./ui/migrate.js";
 import * as notify from "./ui/notify.js";
 import { watchVersion } from "./ui/version.js";
+import { minimalPrefs, finePointer, switchMode, setFavicon } from "./ui/minimal/mode.js";
+import { useMinimal, shouldOffer, titleText } from "./ui/minimal/logic.js";
+import { modeSection } from "./ui/minimal/settings-section.js";
 
 const view = {
   setup: $("#setup-view"),
@@ -37,12 +44,15 @@ const view = {
   ta: $("#ta-line"),
   update: $("#update"),
   blocked: $("#blocked"),
+  parked: $("#parked"),
+  desk: $("#desk"),
   boot: $("#boot"),
   worldFrame: $("#world-frame"),
   worldHost: $("#world-host"),
   strip: $("#world-strip"),
   pinBtn: $("#pin-btn"),
   menuBtn: $("#menu-btn"),
+  composeBtn: $("#compose-btn"),
   tabbar: $("#tabbar"),
 };
 const TABS = ["compose", "history", "tools", "settings"];
@@ -63,6 +73,16 @@ async function main() {
       view.update.hidden = false;
     },
   });
+  // 极简模式 (js/ui/minimal): per device, never on a phone; no pet, so the 桌宠小窗 handover doesn't apply.
+  const mini = minimalPrefs.get();
+  let minimal = useMinimal(mini, { phone: isPhone() });
+  if (minimal) {
+    if (mini.discreet) { document.title = titleText({ discreet: true }); setFavicon(true); }
+    if (isPetPopup()) { store.set("petPopup", false); window.close(); }   // a pet popup from before: the tab takes over
+  }
+  // 桌宠小窗: the popup owns everything while it is open; a normal tab steps aside (js/ui/petpopup.js).
+  else if (isPetPopup() && popupSupported()) await claimPetWindow();
+  else if (popupSupported() && loadConfig() && await petPopupOpen()) return showParked();
   if (await idlePermission() === "granted") startIdle();
 
   try {
@@ -78,10 +98,37 @@ async function main() {
 
   const config = loadConfig();
   if (!config) return showSetup();
+  if (!minimal && shouldOffer(mini, { phone: isPhone(), fine: finePointer(), popup: isPetPopup() })) {
+    minimal = await (await import("./ui/minimal/choice.js")).chooseMode(view.setup);
+  }
+  if (minimal) {
+    view.main.hidden = true;
+    const { runMinimal } = await import("./ui/minimal/run.js");
+    return runMinimal(config, { version: () => version });
+  }
   run(config);
 }
 
+/** The pet is in its popup: this tab shows only that, and takes over again as soon as the popup is gone. */
+function showParked() {
+  view.boot.hidden = true;
+  document.body.classList.add("is-parked");
+  document.title = "噜噜 · 在桌宠小窗里";
+  view.parked.hidden = false;
+  const hint = $("#parked-hint");
+  $("#parked-back").onclick = () => {
+    askPetBack();
+    setTimeout(() => { hint.textContent = "小窗没有自己关上：直接关掉那个小窗就行。"; }, 2500);
+  };
+  whenPetGone(() => {
+    // The popup closed while this tab is still here = the user brought the pet back. (Wait a moment: when Chrome
+    // quits, both go, and the wish to have the pet out should survive that.)
+    setTimeout(() => { store.set("petPopup", false); location.reload(); }, 800);
+  });
+}
+
 async function showSetup() {
+  if (isStandalone()) try { window.resizeTo(440, 700); } catch { /* not allowed */ }   // a pet-sized window from before
   const seatsReader = DEV ? (await import("./ui/dev/fake-channel.js")).fakeReadSeats : undefined;
   const setup = createSetup({ current: null, seatsReader, onSave: () => location.reload() });
   setChildren(view.setup, setup.el);
@@ -89,8 +136,9 @@ async function showSetup() {
   view.setup.hidden = false;
 }
 
-/** First time as an installed app window: 380×680 in the bottom-right corner (Chrome remembers it afterwards). */
+/** 展开面板 as an installed app window, first time: 380×680 in the bottom-right corner (Chrome remembers it afterwards). */
 function placeWindow(force = false) {
+  if (petMode) return petMode.place(force);
   if (!isStandalone() || (!force && store.get("windowPlaced", false))) return;
   try {
     const w = 380, hgt = 680, s = window.screen;
@@ -100,11 +148,17 @@ function placeWindow(force = false) {
   } catch { /* not allowed here (a normal tab) */ }
 }
 
+let petMode = null;
+const backdrop = createBackdrop();
+const isPhone = () => matchMedia("(pointer: coarse) and (max-width: 479px)").matches;
+const layout = () => layoutFor({ standalone: isStandalone(), phone: isPhone(), pref: store.get("layout", null), petWindow: isPetPopup(),
+  dev: DEV ? new URLSearchParams(location.search).get("layout") : null });
+
 async function run(config) {
   const me = config.seat;
   const ta = SEATS.find((s) => s !== me);
   view.main.hidden = false;
-  placeWindow();
+  backdrop.load();
 
   const state = {
     mine: null, yielding: true, identity: null,
@@ -130,14 +184,16 @@ async function run(config) {
   };
   const taName = () => nameOf(partnerLook().character);
   const intimate = () => allowsIntimate(myMode(), partnerLook().mode);
-  const everSeen = () => !!(state.partner && (state.partner.lastSeen > 0 || state.online));
+  // Like the Mac's PairChannel.partnerNeverSeen: a presence with any lastSeen (0 = signed off) or a dnd means TA has paired.
+  const everSeen = () => !!(state.partner && (typeof state.partner.lastSeen === "number" || state.partner.dnd || state.online));
   const partnerDnd = () => (state.online && dndActive(state.partner?.dnd, Date.now()) ? state.partner.dnd : null);
   const partnerFocus = () => (state.online && focusActive(state.partner?.focus, Date.now()) ? state.partner.focus : null);
 
   const { createChannel, createStore } = await loadNet();
   const channel = createChannel({ config, store: createStore(), deviceId: deviceId(),
     defaultOutfits: { lulu: outfitOf("lulu"), lumei: outfitOf("lumei") } });
-  const log = (line) => console.log("[lulu]", line);
+  if (DEV !== "fake" && DEV !== "pip") import("./net/devices.js").then((m) => m.startDeviceActivity({ config, deviceId: deviceId() })).catch(console.error);   // which device I'm using → push routing
+  const log =(line) => console.log("[lulu]", line);
 
   let started = false;   // set once every piece below exists (controllers may call back while being built)
   let world = null;
@@ -180,15 +236,15 @@ async function run(config) {
     },
     onReply: (msg, answer) => reply(msg, answer),
     onRead: (m) => markRead(m),
-    onCompose: (t) => { if (t === "history") return selectTab("history"); selectTab("compose"); compose.focus(); },
+    onCompose: (t) => (t === "history" ? showPanel("history") : petMode ? petMode.togglePanel("compose") : showPanel("compose")),
     onMenu: (pt) => orangeMenu(pt),
     onPeekDone: () => {},
   });
   view.worldHost.append(world.element);
   world.mountIn(document);
   world.on("pose", (p) => { state.worldPose = typeof p === "string" ? p : "idle"; publishLook(); });
-  world.on("dragged", ({ x }) => store.set("petX", x));
-  world.on("scaled", (s) => { prefs.set({ petScale: s }); settings?.render(); });
+  world.on("dragged", ({ x }) => { if (!petMode) store.set("petX", x); });
+  world.on("scaled", (s) => { prefs.set({ petScale: s }); settings?.render(); petMode?.fit(); });
   world.on("wantThink", (reason) => { if (state.partner) world.think(reason, partnerScene(state.partner, reason)); });
   world.on("collision", (c) => log(`collision: ${c?.winner ?? "?"} goes first`));
 
@@ -199,7 +255,7 @@ async function run(config) {
   const countTodos = () => setupTodos(todoCtx).then((t) => setTodoCount(t.length));
 
   // ---- panel ----
-  const compose = createCompose({ send, act });
+  const compose = createCompose({ send, act, onExpand: () => petMode?.composeExpanded() });
   let partnerLookWas = { look: null, had: false };
   const weather = createWeatherCard({ onChange: () => {
     world.setWeather(v2.weatherlook.weatherLook(withCondition(snapshotFor(state.mine?.place))));
@@ -221,7 +277,11 @@ async function run(config) {
     config, me,
     seatInfo: () => ({ character: myCharacter(), mode: myMode(), place: state.mine?.place }),
     editConnection: () => openSheet({ icon: "🔗", title: "连接", body: createSetup({ current: config, onSave: () => location.reload() }).el }),
-    placeWindow, canPlaceWindow: isStandalone,
+    placeWindow, canPlaceWindow: () => isStandalone() || !!petMode,
+    backdrop, layout: () => (petMode ? "pet" : "panel"),
+    canChooseLayout: () => (isStandalone() || !!DEV) && !isPhone(),
+    canChooseBackdrop: () => !isPhone() && (popupSupported() || pipSupported()),
+    setLayout: (v) => { store.set("layout", v); petMode?.closePanel(); location.reload(); },
     openTodos: () => openTodos(todoCtx, setTodoCount),
     openChangelog: () => openChangelog(version),
     todoCount: () => todoCount,
@@ -229,14 +289,16 @@ async function run(config) {
     onPrefs: (o = {}) => applyPrefs(o),
     downloadAll: (onProgress) => prefetch(prefetchList(looks(), { full: true }), { onProgress }),
     intimate,
+    modeSection: () => (isPhone() ? null : modeSection({ minimal: false })),
   });
   const panes = {
-    compose: h("div.pane-stack", yieldNote, weather.el, away.el, compose.el),
+    compose: h("div.pane-stack", compose.el, yieldNote, away.el, weather.el),
     history: history.el,
     tools: tools.el,
     settings: settings.el,
   };
-  for (const t of TABS) $("#tab-" + t).append(panes[t]);
+  const paneEls = Object.fromEntries(TABS.map((t) => [t, $("#tab-" + t)]));   // kept: the panel may move to its own window
+  for (const t of TABS) paneEls[t].append(panes[t]);
   compose.render();
 
   const askedTab = new URLSearchParams(location.search).get("tab");   // manifest shortcuts: ?tab=compose / ?tab=tools
@@ -249,7 +311,7 @@ async function run(config) {
       b.setAttribute("aria-selected", String(on));
       b.tabIndex = on ? 0 : -1;
     }
-    for (const x of TABS) $("#tab-" + x).hidden = x !== t;
+    for (const x of TABS) paneEls[x].hidden = x !== t;
     if (t === "history") history.open();
     if (t === "tools") tools.show(); else tools.hide();
     if (t === "settings") settings.show(); else settings.hide();
@@ -263,9 +325,26 @@ async function run(config) {
   });
   selectTab(tab);
 
+  // ---- 桌宠模式 / where the panel shows ----
+  if (layout() === "pet") {
+    petMode = createPetMode({
+      world, panel: $(".panel"), compose, selectTab, backdrop, scale: () => prefs.get().petScale,
+      setDocHost: (doc) => { setSheetDoc(doc); setToastDoc(doc); },
+    });
+    petMode.start();
+  } else placeWindow();
+  view.composeBtn.hidden = !petMode;
+  view.composeBtn.onclick = () => showPanel("compose", { compact: true });
+  /** The panel at a tab: its own small window in 桌宠模式 (compact = just the 传话 box), else the tab here. */
+  function showPanel(t, { compact = false } = {}) {
+    if (petMode) return petMode.openPanel(t, { compact });
+    selectTab(t);
+    if (t === "compose") compose.focus();
+  }
+
   // ---- PiP ----
   const pip = createPip({
-    world, worldHome: view.worldHost, compose, composeHome: panes.compose,
+    world, worldHome: view.worldHost, compose, composeHome: panes.compose, backdrop,
     onHeart: () => act("heart"),
     eyeLabel: () => eyedrops.titleBit(),
     onEye: () => {
@@ -274,9 +353,10 @@ async function run(config) {
       else world.bubble({ header: "👁️💧 眼药水", line: eyedrops.settings().enabled ? `今天 ${eyedrops.progress().done}/${eyedrops.progress().total}` : "眼药水提醒没开", tag: "eye-peek", autoHide: 3000, sound: null });
     },
     onDoc: (doc) => { watchInput(doc); sound.unlock(doc); },
-    onState: (open) => { document.body.classList.toggle("pip-open", open); renderStrip(); view.pinBtn.setAttribute("aria-pressed", String(open)); placeInsets(); },
+    onState: (open) => { document.body.classList.toggle("pip-open", open); renderStrip(); view.pinBtn.setAttribute("aria-pressed", String(open));
+      $("#desk-pip-title").textContent = open ? "收回置顶小窗" : "置顶小窗"; placeInsets(); },
   });
-  const pipAvailable = pipSupported() || DEV === "pip";
+  const pipAvailable = (pipSupported() && !isPhone()) || DEV === "pip";   // no 置顶小窗 on phones
   view.pinBtn.hidden = !pipAvailable;
   function togglePip() {
     if (pip.isOpen()) pip.close();
@@ -284,8 +364,45 @@ async function run(config) {
     else pip.open().catch((e) => { console.warn(e); toast("小窗没打开：要在 Chrome 116 以上点按钮打开"); });
   }
   view.pinBtn.onclick = togglePip;
+
+  // ---- 桌宠小窗 (a Chrome popup; js/ui/petpopup.js) ----
+  // In a normal tab (the panel layout) the landing shows two big buttons; opening the popup hands everything over.
+  const canPopup = !petMode && !isPhone() && popupSupported();
+  view.desk.hidden = !canPopup;
+  if (canPopup) {
+    onPetOpened(() => location.reload());   // the popup took the pet: this tab steps aside (parked page)
+    const again = () => store.get("petPopup", false) === true;   // Chrome was quit with the pet out
+    const renderDesk = () => {
+      $("#desk-again").hidden = !again();
+      $("#popup-title").textContent = again() ? "再打开桌宠小窗" : "打开桌宠小窗";
+      $("#desk-pip").hidden = !pipAvailable;
+      // Installing is the best pet (桌宠模式 in its own window); a suggestion, dismissable like any 待设置 item.
+      const dismissed = (store.get("setupTodoDismissed", []) || []).includes("install");
+      $("#desk-install").hidden = dismissed;
+      $("#install-btn").textContent = canInstall() ? "安装" : "怎么装？";
+    };
+    $("#install-btn").onclick = async () => {
+      if (!(await promptInstall())) openSheet({ icon: "🍊", title: "装成桌宠 App", subtitle: "装好后噜噜就有自己的小窗口",
+        body: [h("p", installHow()), h("p.muted.small", "不想装也没关系：「打开桌宠小窗」差不多，只是窗口上面多一条细细的地址栏。")] });
+      renderDesk();
+    };
+    onInstallable(() => renderDesk());
+    $("#popup-btn").onclick = () => {
+      if (!openPetPopup({ scale: prefs.get().petScale })) toast("Chrome 拦住了小窗：点地址栏右边的图标 →「始终允许」，再点一次", 6000);
+    };
+    $("#desk-pip").onclick = togglePip;
+    $("#desk-nope").onclick = () => { store.set("petPopup", false); renderDesk(); };
+    renderDesk();
+  }
+  /** In the popup: 「回到网页」 closes it; the tab that opened it (if still there) takes over. */
+  function backToTab() {
+    store.set("petPopup", false);
+    try { if (window.opener && !window.opener.closed) window.opener.focus(); } catch { /* ignore */ }
+    window.close();
+  }
   /** Bubbles keep clear of 📌 / 🍊 (top-right of the world); in the PiP window there are no corner buttons. */
   function placeInsets() {
+    if (petMode) return world.setInsets({});   // the hover buttons fade away; the small window needs all its room
     const tools = view.worldFrame.querySelector(".world-tools");
     const f = view.worldHost.getBoundingClientRect(), t = tools.getBoundingClientRect();
     if (pip.isOpen() || !t.width || !f.width) return world.setInsets({});
@@ -500,7 +617,8 @@ async function run(config) {
   // ---- look / mood / presence ----
   function applyLook() { if (!started) return;
     const x = store.get("petX", null);
-    world.setMe({ character: myCharacter(), outfit: outfits.current(), scale: prefs.get().petScale, seat: me, x: Number.isFinite(x) ? x : undefined });
+    // 桌宠模式: the pet stands in the middle (the window widens evenly for visits, so it doesn't jump)
+    world.setMe({ character: myCharacter(), outfit: outfits.current(), scale: prefs.get().petScale, seat: me, x: petMode ? 0.5 : Number.isFinite(x) ? x : undefined });
   }
   function renderMood() { if (!started) return;
     const d = dnd.status();
@@ -520,6 +638,7 @@ async function run(config) {
     const p = prefs.get();
     sound.setPrefs(p.sound);
     applyLook();
+    petMode?.fit();
     if (preview && p.sound.on) sound.play("click", { preview: true });
   }
 
@@ -565,7 +684,8 @@ async function run(config) {
         dndOn ? { note: dnd.statusLine() } : null,
         pomodoro.state().phase !== "idle" ? { note: `🍅 ${pomodoro.stateLine()}` } : null,
         { separator: true },
-        { label: "传话…", onClick: () => { selectTab("compose"); compose.focus(); } },
+        { label: "传话…", onClick: () => showPanel("compose", { compact: true }) },
+        petMode ? { label: "打开面板…", onClick: () => showPanel(tab) } : null,
         { label: "去找TA 🏃", onClick: () => act("visit"), disabled: !state.online },
         { label: "偷看 TA 👀", onClick: () => act("peek") },
         { separator: true },
@@ -586,7 +706,7 @@ async function run(config) {
         { label: "提醒", submenu: [
           { label: "喝水提醒 💧", checked: s.waterEnabled, keepOpen: true, onClick: () => reminders.update({ ...s, waterEnabled: !s.waterEnabled }) },
           { label: "站立提醒 🧍", checked: s.standEnabled, keepOpen: true, onClick: () => reminders.update({ ...s, standEnabled: !s.standEnabled }) },
-          { label: eyedrops.settings().enabled ? `眼药水 ${eyedrops.titleBit()}` : "眼药水 👁️", checked: eyedrops.settings().enabled, onClick: () => selectTab("tools") },
+          { label: eyedrops.settings().enabled ? `眼药水 ${eyedrops.titleBit()}` : "眼药水 👁️", checked: eyedrops.settings().enabled, onClick: () => showPanel("tools") },
           { note: `今天喝了 ${reminders.cups()} 杯` },
         ] },
         { separator: true },
@@ -607,10 +727,13 @@ async function run(config) {
         state.hiddenUntil ? { label: `显示${nameOf(myCharacter())}（${hhmm(state.hiddenUntil)} 自动出现）`, onClick: unhide }
           : { label: "隐藏", submenu: HIDE_FOR.map((x) => ({ label: x.label, onClick: () => hideFor(x.ms) })) },
         pipAvailable ? { label: pip.isOpen() ? "收回置顶小窗" : "置顶小窗 📌", onClick: togglePip } : null,
+        canPopup ? { label: "打开桌宠小窗 🪟", onClick: () => $("#popup-btn").click() } : null,
+        isPetPopup() ? { label: "收回到网页", onClick: backToTab } : null,
         { separator: true },
-        { label: "设置…", onClick: () => selectTab("settings") },
-        { label: todoCount ? `待设置（${todoCount}）` : "待设置", onClick: () => openTodos(todoCtx, setTodoCount) },
-        { label: "更新日志…", onClick: () => openChangelog(version) },
+        { label: "设置…", onClick: () => showPanel("settings") },
+        !isPhone() ? { label: "极简模式（适合上班）", onClick: () => switchMode(true) } : null,
+        { label: todoCount ? `待设置（${todoCount}）` : "待设置", onClick: () => { if (petMode) showPanel("settings"); openTodos(todoCtx, setTodoCount); } },
+        { label: "更新日志…", onClick: () => { if (petMode) showPanel("settings"); openChangelog(version); } },
       ];
     };
     const m = openMenu(items, { anchor, x, y, doc: doc || pip.doc() || document });
@@ -628,8 +751,9 @@ async function run(config) {
     view.conn.dataset.tone = line.tone;
     state.connected = s === "connected" || s === "polling";
     const elsewhere = s === "elsewhere";
-    view.blocked.hidden = !elsewhere;
-    view.main.hidden = elsewhere;
+    // The pet popup waits a moment for the tab that opened it to step aside; it keeps showing the pet meanwhile.
+    view.blocked.hidden = !elsewhere || isPetPopup();
+    view.main.hidden = elsewhere && !isPetPopup();
     refreshUi();
   });
   on("mySeat", ({ presence, yielding, identity }) => {
@@ -742,12 +866,19 @@ async function run(config) {
   });
   const pendingAction = await notify.takePending();
   if (pendingAction) handleAction(pendingAction);
-  whatsNew(version, (seen) => openChangelog(version, seen));
+  whatsNew(version, (seen) => {
+    if (!petMode) return openChangelog(version, seen);
+    // 桌宠模式: no room for a sheet here, and a new window needs a click — the pet says it instead
+    world.bubble({ header: "🆕 网页版更新了", line: "看看这次改了什么？", tag: "whats-new", sound: null,
+      buttons: [{ title: "看看", primary: true }, { title: "知道了" }] })
+      .then((i) => { if (i === 0) { showPanel("settings"); openChangelog(version, seen); } });
+  });
   const looks = () => [{ character: myCharacter(), outfit: outfits.current() }, partnerLook()];
   setTimeout(() => { if (navigator.serviceWorker?.controller) prefetch(prefetchList(looks()), { background: true }); }, 8000);
 
   if (DEV) {
-    window.__lulu = { world, compose, pip, away, reminders, channel, eyedrops, pomodoro, dnd, outfits, history, selectTab, orangeMenu, hideFor, state, closeMenu, menu: () => menuRefresh };
+    window.__lulu = { world, compose, pip, away, reminders, channel, eyedrops, pomodoro, dnd, outfits, history, selectTab, orangeMenu, hideFor, state, closeMenu, menu: () => menuRefresh,
+      backdrop, petMode, showPanel };
     if (DEV === "pip") {
       document.head.append(h("link", { rel: "stylesheet", href: "css/pip.css" }));
       pip.openSim($("#pip-sim-host"));

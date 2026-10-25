@@ -137,6 +137,8 @@ export function createReminders({ onFire }) {
       if (!states[kind]) return "";
       return toolsCopy.cycleLine(kind, reminderStatus(states[kind], nowS(), isActive(), isBlocked()));
     },
+    /** Raw status {phase, left?} (null when off) — the 极简模式 strip. */
+    status(kind) { return states[kind] ? reminderStatus(states[kind], nowS(), isActive(), isBlocked()) : null; },
     copy: (kind) => R.copy(kind),
   };
 }

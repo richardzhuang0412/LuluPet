@@ -7,6 +7,7 @@
 //   const {added, complete} = await h.backfill(messagesFetcher(config));          // first time / newer
 //   await h.backfill(fetcher, {older: true});                    // scrolled to the top: one older page
 //   const rows = await h.page({beforeTs, beforeId, limit});      // decoded Msgs, oldest first (newest page if no bound)
+//   const {page, complete} = await h.olderPage(fetcher, {beforeTs, beforeId, limit});   // 「更早的 ↑」, no gaps
 //
 // Backfill (Firebase REST, numbers unquoted):
 //   first time   orderBy="ts"&limitToLast=300
@@ -91,6 +92,26 @@ export async function openHistory({ pairCode, seat }, { backend, now = () => Dat
       const recs = await db.before(beforeTs, beforeId, limit);
       const t = now();
       return recs.map((r) => decodeChild(r.id, r.raw, t)).filter(Boolean).sort(byTsId);
+    },
+
+    /**
+     * 「更早的 ↑」: up to `limit` messages before (beforeTs, beforeId), oldest first, with no gaps. Messages put()
+     * from the stream (e.g. all of mine, delivered by the channel's first GET) can sit far below oldestFetched
+     * while TA's in between are still only on the server, so a full local page is trusted only down to
+     * oldestFetched; below it, older backfill pages are fetched first (onFetch() before the first request).
+     * Resolves {page, complete}. Fetch errors reject.
+     */
+    async olderPage(fetcher, { beforeTs, beforeId = null, limit = 100, onFetch } = {}) {
+      let fetching = false;
+      for (;;) {
+        const page = await api.page({ beforeTs, beforeId, limit });
+        if (meta.oldestComplete) return { page, complete: true };
+        if (meta.oldestFetched != null && page.length >= limit && page[0].ts >= meta.oldestFetched) return { page, complete: false };
+        const was = meta.oldestFetched;
+        if (!fetching) { fetching = true; onFetch?.(); }
+        await api.backfill(fetcher, { older: true });
+        if (!meta.oldestComplete && meta.oldestFetched === was) return { page: await api.page({ beforeTs, beforeId, limit }), complete: false };   // no progress (never synced)
+      }
     },
 
     /** Newest stored ts, 0 when empty. */
