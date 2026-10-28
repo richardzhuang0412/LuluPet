@@ -16,6 +16,10 @@
 <!-- recent-changes:start -->
 ## 最近更新
 
+**v0.20.1（2026-10-27）**
+
+- 新增 Pixoo-64 像素屏「实体分身」（给喜欢折腾的人）：放在 TA 家里，用树莓派把你发的消息、表情、爱心和提醒实时显示在 64×64 的屏上。只读，不影响 TA 的在线状态和通知。做法见 tools/pixoo-bridge/README.md
+
 **v0.20.0（2026-10-25）**
 
 - 新增网页版：装不了 App 的电脑（比如公司电脑）和 iPhone 也能用，和 Mac 版互通，TA 那边感觉不到区别
@@ -27,12 +31,6 @@
 **v0.19.0（2026-10-25）**
 
 - 通知更聪明：Mac 会告诉手机和网页版你现在有没有在用它。Mac 醒着但没人用时，TA 的消息和眼药水提醒会推到你正在用的手机上
-
-**v0.18.0（2026-10-13）**
-
-- 新增眼药水提醒：先选一天滴几次、再定每次几点，到点宠物来提醒，点「滴了」打卡；没理会 15 分钟后再提醒，最多 3 次
-- 眼药水的时间和打卡在 Mac 和网页版之间同步：在一边点了「滴了」，另一边就不会再催
-- 开着勿扰或专注时，喝水、站立、眼药水和番茄钟的提醒也照常弹出来、有声音
 
 完整的更新日志见 [CHANGELOG.md](CHANGELOG.md)。
 <!-- recent-changes:end -->
@@ -396,6 +394,10 @@ swift run LuluCoreTests       # 纯逻辑测试，必须全部通过
 **项目结构**：`Sources/LuluCore`（纯逻辑，全部有测试）、`Sources/LuluSync`（Firebase REST + 实时推送）、`Sources/LuluPet`
 （AppKit + SwiftUI 界面）、`assets/`（素材清单和源 GIF）、`Resources/`（生成的 App 素材）、`tools/`（素材管线、假数据库、演示）。
 
+**Pixoo-64 小屏幕**：`tools/pixoo-bridge/` 是一个可选的小程序，放在树莓派上一直开着，把一个座位发来的消息和在线状态实时画在
+Divoom Pixoo-64 像素屏上（待机 / 勿扰 / 睡觉、戳一下、文字、表情、串门、喝水提醒）。它只读 Firebase、从不写，安装和配置见
+[tools/pixoo-bridge/README.md](tools/pixoo-bridge/README.md)。
+
 **升级兼容**：用户的聊天记录在任何升级后都必须完整保留。改代码前请先读 [docs/upgrade-compat.md](docs/upgrade-compat.md)
 （bundle id、UserDefaults 键、Firebase 路径、消息字段只能新增，不能改名或删除）。
 
@@ -423,3 +425,5 @@ scripts/update_signing_key.sh verify F F.sig   # 用 UpdateKey.swift 里的公�
   再用 `gh release create` 同时上传 zip 和 `.sig`。私钥丢了的话没法这样过渡，已装用户得手动装一次新版。
 - 测试用临时密钥：`LULUPET_SIGNING_KEY_FILE=/tmp/k LULUPET_UPDATE_KEY_SWIFT=/tmp/K.swift scripts/update_signing_key.sh init`
   不会碰真实密钥或仓库文件。
+
+<!-- docs-synced: v0.20.1 -->

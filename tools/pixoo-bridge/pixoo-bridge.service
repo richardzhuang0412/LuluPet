@@ -1,0 +1,40 @@
+# systemd unit for the LuluPet → Pixoo-64 bridge (see README.md「开机自动运行」).
+# Install:
+#   sudo cp tools/pixoo-bridge/pixoo-bridge.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now pixoo-bridge
+# Paths assume the repo is at /opt/lulupet and the config at /etc/pixoo-bridge/config.json; change them if not.
+
+[Unit]
+Description=LuluPet Pixoo-64 bridge (read-only)
+Wants=network-online.target
+After=network-online.target time-sync.target
+
+[Service]
+Type=simple
+User=pixoo-bridge
+Group=pixoo-bridge
+WorkingDirectory=/opt/lulupet/tools/pixoo-bridge
+ExecStart=/usr/bin/node bin/pixoo-bridge.js --config /etc/pixoo-bridge/config.json
+# cursor + converted frames live in /var/lib/pixoo-bridge (created by systemd, owned by the service user)
+StateDirectory=pixoo-bridge
+Environment=PIXOO_BRIDGE_STATE_FILE=/var/lib/pixoo-bridge/cursor.json
+Environment=PIXOO_BRIDGE_CACHE_DIR=/var/lib/pixoo-bridge/cache
+Environment=NODE_ENV=production
+Restart=always
+RestartSec=10
+Nice=10
+
+# hardening: the bridge only reads the repo and its config, and writes its state directory
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

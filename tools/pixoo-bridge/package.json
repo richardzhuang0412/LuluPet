@@ -1,0 +1,27 @@
+{
+  "name": "lulupet-pixoo-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shows the lulu seat's LuluPet messages and presence on a Divoom Pixoo-64 (read-only Firebase client).",
+  "type": "module",
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "bin": {
+    "pixoo-bridge": "bin/pixoo-bridge.js"
+  },
+  "scripts": {
+    "start": "node bin/pixoo-bridge.js",
+    "preview": "node bin/pixoo-bridge.js --preview",
+    "fetch-font": "node scripts/fetch-font.js",
+    "mock-pixoo": "node bin/mock-pixoo.js",
+    "test": "node --test \"test/**/*.test.mjs\""
+  },
+  "dependencies": {
+    "eventsource": "4.1.1",
+    "fflate": "0.8.3",
+    "gifenc": "1.0.3",
+    "sharp": "0.35.5"
+  }
+}

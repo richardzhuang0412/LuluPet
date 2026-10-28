@@ -1,0 +1,34 @@
+{
+  "_comment": "复制成 config.json（或 /etc/pixoo-bridge/config.json）再改。这里都是占位符，真实的数据库地址和配对码不要提交进仓库。",
+  "databaseURL": "https://YOUR-PROJECT-default-rtdb.firebaseio.com",
+  "pairCode": "PASTE-YOUR-24-CHARACTER-PAIR-CODE",
+  "watchSeat": "lulu",
+  "pixoo": {
+    "ip": "192.168.1.50",
+    "url": "",
+    "deviceName": ""
+  },
+  "brightness": 60,
+  "timezone": "",
+  "quietHours": {
+    "enabled": true,
+    "start": "23:00",
+    "end": "08:00",
+    "mode": "off",
+    "dimBrightness": 5,
+    "messages": "morning"
+  },
+  "durations": {
+    "pokeMs": 20000,
+    "stickerMs": 25000,
+    "remindMs": 25000,
+    "visitMs": 25000,
+    "textMinMs": 20000,
+    "textPageMs": 5000,
+    "textMaxPages": 12
+  },
+  "stickerLabel": true,
+  "cacheDir": "./cache",
+  "stateFile": "./state/cursor.json",
+  "logLevel": "info"
+}

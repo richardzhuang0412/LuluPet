@@ -12,3 +12,12 @@ __pycache__/
 # Cloud Functions (web push)
 functions/node_modules/
 functions/.env*
+
+# Pixoo-64 bridge (tools/pixoo-bridge): dependencies, downloaded font, converted frames, previews, local state and
+# the real config never go into the repo
+tools/pixoo-bridge/node_modules/
+tools/pixoo-bridge/fonts/
+tools/pixoo-bridge/cache/
+tools/pixoo-bridge/out/
+tools/pixoo-bridge/state/
+tools/pixoo-bridge/config.json

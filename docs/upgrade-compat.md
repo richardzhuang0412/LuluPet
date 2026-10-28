@@ -264,3 +264,12 @@
 - **新路径 `/pairs/{code}/devices/{seat}/{deviceId}`**：`{"kind": "mac", "activeAt": 毫秒, "at": 毫秒}`，整条 PUT。`deviceId` = presence 里的 `device`（Mac 的 `deviceId`）；`activeAt` = 这台 Mac 最后一次真实键鼠输入（现在 − HID 空闲秒数，和喝水 / 站立 / 眼药水同一个读数，只进不退）；`at` = 写入时间。
 - 节奏：跟着 presence 心跳（没有新计时器）；`activeAt` 比上次写的前进 ≥ 60 秒，或上次写入已 ≥ 5 分钟，才顺带写（`DeviceActivity`）。睡眠 / 退出 / 换座位签退时再写最后一条（`at` = 现在，`activeAt` 不往前推）。写失败不管，下次心跳再试。只有配对模式写，一个人模式从不写。
 - 读的时候宽容：缺字段 / 不是数字 = 不知道。冻结：路径名 `devices`、字段名、`kind` 值 `"mac"`（别的设备以后用别的值）。
+
+## 20. Pixoo-64 小屏幕是只读客户端（tools/pixoo-bridge）
+
+纯加的可选工具，不改任何格式、规则或路径。它是**第三种读者**，以后改格式时要照顾到它：
+
+- 只读：`GET /pairs/{code}/messages?orderBy="ts"&startAt=…`（SSE 流 + 轮询，和网页版同一个 `MessageFeed`）、`GET /pairs/{code}/presence/{seat}`（每 15 秒）。**从不写** Firebase：不写 `presence`、`read`、`devices`、`push`，也不出现在撞座 / 推送路由里（它没有 `deviceId`）。它自己的已读游标是树莓派本地的 JSON 文件。
+- 它直接 import `web/js/core/message.js`（`decodeChildren`）、`presence.js`（`decodePresence` / `dndActive` / `focusActive` / `isOnline`）、`remind.js`（`decodeReply` / `replyLine` / `reminderKind`）、`visits.js`（`VISIT_GREETING`）、`paircode.js` 和 `web/js/net/firebase.js`（`createFirebase` / `MessageFeed`）。这些导出改名或改签名时，跑 `cd tools/pixoo-bridge && npm test`。
+- 读 `web/assets/manifest.json` v2 的 `clips`（`file` / `cells` / `cols` / `w` / `h` / `src` / `delays` / `seq`）、`characters.<c>.order` / `outfits.<o>.actions`（`idle` / `happy` / `react` / `sleep` / `quiet`）/ `named`、`toolClips`、`stickers`（`id` / `label` / `file`）。这些字段只能加，不能改名或改含义。
+- 新的消息 `kind`：它显示成「有新消息～」，不会出错；新的 presence 字段：忽略。
