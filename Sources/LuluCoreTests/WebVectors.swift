@@ -397,7 +397,8 @@ func runWebVectorsV2(_ v: [String: Any], now: Int64) {
         check(wvEqual(got, c["expect"]) && p.badge == c["badge"] as? String, "web vectors eyedrops progress: \(c["name"] ?? "") → \(got) \(p.badge)")
     }
     for c in list(ed, "bubble") {
-        let b = EyeDrops.bubbleCopy(slot: c["slot"] as? String ?? "", index: c["index"] as? Int ?? 0, total: c["total"] as? Int ?? 0)
+        let b = EyeDrops.bubbleCopy(slot: c["slot"] as? String ?? "", index: c["index"] as? Int ?? 0, total: c["total"] as? Int ?? 0,
+                                    lateMs: wvInt64(c["lateMs"]) ?? 0)
         check(wvEqual(["header": b.header, "line": b.line, "done": b.done, "later": b.later] as [String: Any], c["expect"]), "web vectors eyedrops bubble \(b.line)")
     }
 

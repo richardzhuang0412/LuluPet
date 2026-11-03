@@ -21,6 +21,8 @@ export const MAX_WAKE_MS = 86_400_000;
 export const HEADER = "👁️💧 眼药水";
 export const BUTTON_DONE = "滴了 ✓";
 export const BUTTON_LATER = "等会儿";
+/** A slot shown this long (ms) after its time or later says so: 「11 点那次还没滴哦（晚了 1 小时 17 分）」. */
+export const LATE_MS = 600_000;
 export const ERRORS = Object.freeze({
   format: "时间格式不对", empty: "至少要设一个时间", tooMany: "一天最多 8 次", gap: "相邻两次至少隔 30 分钟",
 });
@@ -258,8 +260,23 @@ export function badge(p) {
   return p.slots.some((s) => s.state === "showing") ? "👁️ 该滴了" : `👁️ ${p.done}/${p.total}`;
 }
 
-/** The pet bubble: header 「👁️💧 眼药水」, line 「该滴眼药水啦（14:00 · 今天第 3 次）」 (`index` 1-based of `total`). */
-export function bubbleCopy(slot, index, _total) {
+/**
+ * The pet bubble: header 「👁️💧 眼药水」, line 「该滴眼药水啦（14:00 · 今天第 3 次）」 (`index` 1-based of `total`).
+ * `lateMs` = now − the slot's instant; from LATE_MS on (a catch-up / later nag) the line says how late:
+ * 「11 点那次还没滴哦（晚了 1 小时 17 分）」 / 「11:30 那次还没滴哦（晚了 25 分钟）」.
+ */
+export function bubbleCopy(slot, index, _total, lateMs = 0) {
   const time = parseSlotId(slot)?.time ?? (parseTime(slot) != null ? slot : "");
-  return { header: HEADER, line: `该滴眼药水啦（${time} · 今天第 ${index} 次）`, done: BUTTON_DONE, later: BUTTON_LATER };
+  const m = parseTime(time);
+  const line = m != null && isNum(lateMs) && lateMs >= LATE_MS
+    ? `${m % 60 === 0 ? `${Math.floor(m / 60)} 点` : `${time} `}那次还没滴哦（晚了 ${lateText(lateMs)}）`
+    : `该滴眼药水啦（${time} · 今天第 ${index} 次）`;
+  return { header: HEADER, line, done: BUTTON_DONE, later: BUTTON_LATER };
+}
+
+/** 「25 分钟」 / 「1 小时」 / 「1 小时 17 分」 (whole minutes, rounded down). */
+function lateText(ms) {
+  const min = Math.floor(ms / 60_000), h = Math.floor(min / 60), r = min % 60;
+  if (h === 0) return `${min} 分钟`;
+  return r === 0 ? `${h} 小时` : `${h} 小时 ${r} 分`;
 }

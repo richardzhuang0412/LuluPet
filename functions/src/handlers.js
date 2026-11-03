@@ -7,7 +7,7 @@ import {
 } from "./rules.js";
 import { sendAll } from "./send.js";
 import {
-  afterShow, bubbleCopy, decodeDays, decodeNag, decodeSettings, dayKey, parseSlotId, plan,
+  afterShow, bubbleCopy, decodeDays, decodeNag, decodeSettings, dayKey, parseSlotId, plan, slotInstant,
 } from "../vendor/eyedrops.js";
 import { addDays } from "../vendor/tz.js";
 import { decodeDevices, staleDeviceIds } from "../vendor/devices.js";
@@ -95,7 +95,8 @@ export async function eyedropsForSeat({ db, webpush, vapid, code, seat, now }) {
   if (isObj(pushed)) for (const d of Object.keys(pushed)) if (d < yesterday) write[`${tool}/pushed/${d}`] = null;
   await db.update(write);
 
-  const copy = bubbleCopy(p.slot, settings.times.indexOf(at.time) + 1, settings.times.length);
+  // A catch-up / later nag (≥ 10 min after the slot) says how late it is.
+  const copy = bubbleCopy(p.slot, settings.times.indexOf(at.time) + 1, settings.times.length, now - slotInstant(at.day, at.time, tz));
   const payload = { v: 1, kind: "eyedrops", title: copy.header, body: copy.line, tag: "eyedrops", slot: p.slot };
   const r = await sendAll({ webpush, vapid, targets, payload, ttl: TTL.eyedrops, urgency: "high", topic: "eyedrops" });
   await dropGone(db, code, seat, r.gone);

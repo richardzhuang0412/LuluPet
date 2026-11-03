@@ -164,6 +164,8 @@ public enum EyeDrops {
     public static let maxShows = 3
     /// A slot never shown within this long after its time is missed.
     public static let catchUpMs: Int64 = 7_200_000
+    /// A slot shown this long after its time or later says so in the bubble (`bubbleCopy(lateMs:)`).
+    public static let lateMs: Int64 = 600_000
     /// Mac: idle this long = away (no show, poll each minute).
     public static let activeIdleS: TimeInterval = 300
     public static let inactivePollMs: Int64 = 60_000
@@ -404,9 +406,24 @@ public enum EyeDrops {
     }
 
     /// The pet bubble: 「该滴眼药水啦（14:00 · 今天第 3 次）」 (`slot` = slot id or "HH:mm"; `index` 1-based of `total`).
-    public static func bubbleCopy(slot: String, index: Int, total: Int) -> EyeDropsBubble {
+    /// `lateMs` = now − the slot's instant; from `EyeDrops.lateMs` on (a catch-up / later nag) the line says how late:
+    /// 「11 点那次还没滴哦（晚了 1 小时 17 分）」 / 「11:30 那次还没滴哦（晚了 25 分钟）」.
+    public static func bubbleCopy(slot: String, index: Int, total: Int, lateMs: Int64 = 0) -> EyeDropsBubble {
         let time = parseSlotId(slot)?.time ?? (parseTime(slot) != nil ? slot : "")
-        return EyeDropsBubble(header: header, line: "该滴眼药水啦（\(time) · 今天第 \(index) 次）", done: buttonDone, later: buttonLater)
+        let line: String
+        if let m = parseTime(time), lateMs >= EyeDrops.lateMs {
+            line = "\(m % 60 == 0 ? "\(m / 60) 点" : "\(time) ")那次还没滴哦（晚了 \(lateText(lateMs))）"
+        } else {
+            line = "该滴眼药水啦（\(time) · 今天第 \(index) 次）"
+        }
+        return EyeDropsBubble(header: header, line: line, done: buttonDone, later: buttonLater)
+    }
+
+    /// 「25 分钟」 / 「1 小时」 / 「1 小时 17 分」 (whole minutes, rounded down).
+    static func lateText(_ ms: Int64) -> String {
+        let min = ms / 60_000, h = min / 60, r = min % 60
+        if h == 0 { return "\(min) 分钟" }
+        return r == 0 ? "\(h) 小时" : "\(h) 小时 \(r) 分"
     }
 }
 

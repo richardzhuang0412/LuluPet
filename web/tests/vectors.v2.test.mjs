@@ -44,7 +44,7 @@ test("vectors v2: eye drops", () => {
     assert.deepEqual(p, c.expect, c.name);
     assert.equal(E.badge(p), c.badge, c.name);
   }
-  for (const c of ed.bubble) assert.deepEqual(E.bubbleCopy(c.slot, c.index, c.total), c.expect);
+  for (const c of ed.bubble) assert.deepEqual(E.bubbleCopy(c.slot, c.index, c.total, c.lateMs), c.expect, `${c.slot} late ${c.lateMs}`);
 });
 
 test("vectors v2: 勿扰", () => {

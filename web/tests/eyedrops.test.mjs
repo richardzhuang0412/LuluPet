@@ -75,6 +75,22 @@ test("changing the settings today does not catch up passed slots", () => {
 
 test("bubble copy", () => {
   assert.deepEqual(E.bubbleCopy(`${D}/1400`, 3, 4), { header: "👁️💧 眼药水", line: "该滴眼药水啦（14:00 · 今天第 3 次）", done: "滴了 ✓", later: "等会儿" });
+  // Shown late (catch-up after being away, or a later nag): says how late, so it doesn't read as a wrong-time reminder.
+  const late = (slot, ms) => E.bubbleCopy(slot, 1, 4, ms).line;
+  assert.equal(late("2026-11-03/1100", 77 * MIN), "11 点那次还没滴哦（晚了 1 小时 17 分）");
+  assert.equal(late("2026-11-03/1130", 25 * MIN), "11:30 那次还没滴哦（晚了 25 分钟）");
+  assert.equal(late("2026-11-03/1100", 10 * MIN - 1), "该滴眼药水啦（11:00 · 今天第 1 次）");
+});
+
+test("slotInstant: 11:00 across the DST changes (2026-03-08 spring forward, 2026-11-01 fall back)", () => {
+  const z = (d, h) => Date.UTC(...d.split("-").map((x, i) => i === 1 ? +x - 1 : +x), h);
+  const cases = {
+    [LA]: { "2026-03-07": 19, "2026-03-08": 18, "2026-03-09": 18, "2026-10-31": 18, "2026-11-01": 19, "2026-11-02": 19, "2026-11-03": 19 },
+    "America/New_York": { "2026-03-07": 16, "2026-03-08": 15, "2026-03-09": 15, "2026-10-31": 15, "2026-11-01": 16, "2026-11-02": 16, "2026-11-03": 16 },
+  };
+  for (const [tz, days] of Object.entries(cases)) {
+    for (const [day, utcHour] of Object.entries(days)) assert.equal(at(day, "11:00", tz), z(day, utcHour), `${tz} ${day}`);
+  }
 });
 
 test("presence.js: v2 arguments absent → v1 bodies byte for byte", () => {

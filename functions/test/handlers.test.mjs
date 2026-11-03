@@ -115,6 +115,8 @@ test("eye drops: pushed at 0 / 15 / 30 minutes, then never again for that slot",
   }
   assert.deepEqual(pushedAt, [0, 15, 30]);
   assert.deepEqual(wp.calls[0].payload, { v: 1, kind: "eyedrops", title: "👁️💧 眼药水", body: "该滴眼药水啦（12:00 · 今天第 2 次）", tag: "eyedrops", slot: "2026-10-12/1200" });
+  // later nags say how late they are (so they don't read as a wrong-time reminder)
+  assert.deepEqual(wp.calls.slice(1).map((c) => c.payload.body), ["12 点那次还没滴哦（晚了 15 分钟）", "12 点那次还没滴哦（晚了 30 分钟）"]);
   assert.equal(wp.calls[0].opts.topic, "eyedrops");
   assert.equal(wp.calls[0].opts.TTL, 900);
   assert.deepEqual(db.tree().pairs[CODE].tools.lulu.eyedrops.pushed[D]["1200"], { shown: 3, next: at("12:45"), at: at("12:30") });

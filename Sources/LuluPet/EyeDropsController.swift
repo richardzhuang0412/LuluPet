@@ -250,7 +250,7 @@ final class EyeDropsController: NSObject {
                 bubbleSerial += 1
                 let serial = bubbleSerial
                 liveBubble = (slot.id, serial)
-                let copy = EyeDrops.bubbleCopy(slot: slot.id, index: slot.index, total: slot.total)
+                let copy = bubbleCopy(slot)
                 let item = BubbleItem(
                     header: copy.header, content: .text(copy.line), message: nil,
                     buttons: [BubbleButton(title: copy.done, action: { [weak self] in
@@ -267,6 +267,12 @@ final class EyeDropsController: NSObject {
             }
         }
         if notificationsOn { postNotification(slot) }
+    }
+
+    /// Bubble / notification copy; a catch-up or later nag (≥ 10 min after the slot) says how late it is.
+    private func bubbleCopy(_ slot: Slot) -> EyeDropsBubble {
+        let late = EyeDrops.slotInstant(day: slot.day, time: slot.time, tz: tz).map { nowMs - $0 } ?? 0
+        return EyeDrops.bubbleCopy(slot: slot.id, index: slot.index, total: slot.total, lateMs: late)
     }
 
     private func claim(_ slot: String, _ serial: Int) -> Bool {
@@ -576,7 +582,7 @@ final class EyeDropsController: NSObject {
     }
 
     private func postNotification(_ slot: Slot) {
-        let copy = EyeDrops.bubbleCopy(slot: slot.id, index: slot.index, total: slot.total)
+        let copy = bubbleCopy(slot)
         let c = UNMutableNotificationContent()
         c.title = copy.header
         c.body = copy.line

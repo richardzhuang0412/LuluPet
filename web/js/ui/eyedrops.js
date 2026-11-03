@@ -142,7 +142,9 @@ export function createEyedrops({ sync, deviceId, scheduler, show, hide, onChange
         persist();
         const index = settings.times.indexOf(at.time) + 1;
         showingSlot = p.slot;
-        show({ slot: p.slot, copy: E.bubbleCopy(p.slot, index, settings.times.length), shown: nag.shown, notify: settings.notify });
+        // A catch-up / later nag (≥ 10 min after the slot) says how late it is.
+        const copy = E.bubbleCopy(p.slot, index, settings.times.length, now() - E.slotInstant(at.day, at.time, TZ));
+        show({ slot: p.slot, copy, shown: nag.shown, notify: settings.notify });
         log(`eyedrops: shown ${at.key} #${nag.shown}`);
         p = planNow();
       }

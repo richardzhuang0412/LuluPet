@@ -3863,6 +3863,25 @@ do {
     check(away.action == .wait && away.nextWakeMs == t("2026-10-12", "16:11"), "eyedrops: away → wait 60 s")
     check(EyeDrops.plan(settings: s, today: [:], nag: nil, now: t("2026-10-12", "18:00"), active: true, tz: la).action == .none, "eyedrops: 2 h later → missed, no show")
     check(EyeDrops.bubbleCopy(slot: "2026-10-12/1400", index: 3, total: 4).line == "该滴眼药水啦（14:00 · 今天第 3 次）", "eyedrops: bubble copy")
+    // Shown late (catch-up after being away, or a later nag): says how late, so it doesn't read as a wrong-time reminder.
+    check(EyeDrops.bubbleCopy(slot: "2026-11-03/1100", index: 1, total: 4, lateMs: 77 * 60_000).line == "11 点那次还没滴哦（晚了 1 小时 17 分）"
+          && EyeDrops.bubbleCopy(slot: "2026-11-03/1130", index: 2, total: 4, lateMs: 25 * 60_000).line == "11:30 那次还没滴哦（晚了 25 分钟）"
+          && EyeDrops.bubbleCopy(slot: "2026-11-03/1100", index: 1, total: 4, lateMs: 10 * 60_000 - 1).line == "该滴眼药水啦（11:00 · 今天第 1 次）",
+          "eyedrops: late bubble copy")
+    // DST regression: 11:00 local across 2026-03-08 (spring forward) and 2026-11-01 (fall back) → the right UTC instant.
+    let ny = TimeZone(identifier: "America/New_York")!
+    let dstCases: [(TimeZone, [String: Int])] = [
+        (la, ["2026-03-07": 19, "2026-03-08": 18, "2026-03-09": 18, "2026-10-31": 18, "2026-11-01": 19, "2026-11-02": 19, "2026-11-03": 19]),
+        (ny, ["2026-03-07": 16, "2026-03-08": 15, "2026-03-09": 15, "2026-10-31": 15, "2026-11-01": 16, "2026-11-02": 16, "2026-11-03": 16]),
+    ]
+    var utc = Calendar(identifier: .gregorian); utc.timeZone = TimeZone(identifier: "UTC")!
+    for (tz, days) in dstCases {
+        for (day, hour) in days.sorted(by: { $0.key < $1.key }) {
+            let p = day.split(separator: "-").map { Int($0)! }
+            let want = Int64(utc.date(from: DateComponents(year: p[0], month: p[1], day: p[2], hour: hour))!.timeIntervalSince1970 * 1000)
+            check(t(day, "11:00", tz) == want, "eyedrops: DST \(tz.identifier) \(day) 11:00 → \(hour):00Z")
+        }
+    }
 }
 
 // MARK: v0.19 device activity record (devices/<seat>/<deviceId> = {kind, activeAt, at}, for the push function)

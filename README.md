@@ -35,6 +35,10 @@
 <!-- recent-changes:start -->
 ## 最近更新
 
+**v0.20.3（2026-11-03）**
+
+- 眼药水提醒晚了会说清楚：比如你 12 点多才回到电脑前，宠物会说「11 点那次还没滴哦（晚了 1 小时 17 分）」，不会再像是把时间弄错了
+
 **v0.20.2（2026-11-01）**
 
 - 说明文档整理了一遍：README 开头告诉你从哪里开始（Mac、公司电脑的网页版、iPhone、Pixoo 像素屏），补了网页版和手机的截图和常见问题
@@ -42,14 +46,6 @@
 **v0.20.1（2026-10-27）**
 
 - 新增 Pixoo-64 像素屏「实体分身」（给喜欢折腾的人）：放在 TA 家里，用树莓派把你发的消息、表情、爱心和提醒实时显示在 64×64 的屏上。只读，不影响 TA 的在线状态和通知。做法见 tools/pixoo-bridge/README.md
-
-**v0.20.0（2026-10-25）**
-
-- 新增网页版：装不了 App 的电脑（比如公司电脑）和 iPhone 也能用，和 Mac 版互通，TA 那边感觉不到区别
-- 网页版有「极简模式」，适合上班：没有宠物和动画，只留聊天、叫 TA 喝水和各种提醒，提醒都走电脑的系统通知
-- iPhone 把网页版「添加到主屏幕」后，App 关着也能收到 TA 的消息、叫你喝水和眼药水提醒
-- 哪台设备正在用就由哪台提醒：家里的 Mac 醒着没人用时，通知会推到你的手机
-- 怎么用见 README「网页版：工作电脑和手机」
 
 完整的更新日志见 [CHANGELOG.md](CHANGELOG.md)。
 <!-- recent-changes:end -->
@@ -511,4 +507,4 @@ scripts/update_signing_key.sh verify F F.sig   # 用 UpdateKey.swift 里的公�
 - 测试用临时密钥：`LULUPET_SIGNING_KEY_FILE=/tmp/k LULUPET_UPDATE_KEY_SWIFT=/tmp/K.swift scripts/update_signing_key.sh init`
   不会碰真实密钥或仓库文件。
 
-<!-- docs-synced: v0.20.1 -->
+<!-- docs-synced: v0.20.3 -->
