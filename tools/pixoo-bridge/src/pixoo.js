@@ -139,7 +139,7 @@ export class PixooClient {
   }
 
   /** One command with timeout + retries. → reply JSON. Not queued: callers inside the queue use it. */
-  async rawCommand(body) {
+  async rawCommand(body, label = null) {
     let lastErr;
     for (let attempt = 0; attempt <= this.retries; attempt++) {
       if (attempt) await sleep(300 * 2 ** (attempt - 1));
@@ -149,7 +149,9 @@ export class PixooClient {
         this.stats.requests++;
         const res = await this.fetch(url, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          // X-Pixoo-Label: what this animation is ("idle:…", "poke", …). A real Pixoo ignores it; Pixoo Hub uses it to
+          // tell the idle picture from messages (so messages can interrupt its clock / weather screens).
+          headers: { "Content-Type": "application/json", ...(label ? { "X-Pixoo-Label": encodeURIComponent(label) } : {}) },
           body: JSON.stringify(body),
           signal: AbortSignal.timeout(this.timeoutMs),
         });
@@ -200,7 +202,7 @@ export class PixooClient {
         await this.rawCommand({ Command: "Draw/ResetHttpGifId" });
         for (const p of payloads) {
           if (gen !== this.gen) { this.log?.info(`pixoo: "${label}" superseded after ${p.PicOffset}/${p.PicNum} frames`); return false; }
-          await this.rawCommand(p);
+          await this.rawCommand(p, label);
           if (this.requestGapMs) await sleep(this.requestGapMs);
         }
         this.stats.animations++;
