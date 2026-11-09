@@ -97,3 +97,19 @@ test("timeouts become PixooError", async () => {
     await assert.rejects(c.ping(), /timeout/);
   } finally { await dev.close(); }
 });
+
+test("each frame request says what the animation is (X-Pixoo-Label), other commands do not", async () => {
+  const seen = [];
+  const fetch = async (url, init) => {
+    seen.push({ cmd: JSON.parse(init.body).Command, label: init.headers["X-Pixoo-Label"] });
+    return new Response(JSON.stringify({ error_code: 0 }));
+  };
+  const c = new PixooClient({ endpoint: "http://192.0.2.9/post", fetch, requestGapMs: 0, minAnimationGapMs: 0, log: silentLogger });
+  await c.playAnimation([frame(1), frame(2)], 100, "sticker:抱抱");
+  await c.setBrightness(50);
+  assert.deepEqual(seen.map((s) => s.cmd), ["Draw/ResetHttpGifId", "Draw/SendHttpGif", "Draw/SendHttpGif", "Channel/SetBrightness"]);
+  assert.equal(seen[0].label, undefined);
+  assert.equal(decodeURIComponent(seen[1].label), "sticker:抱抱");
+  assert.equal(decodeURIComponent(seen[2].label), "sticker:抱抱");
+  assert.equal(seen[3].label, undefined);
+});

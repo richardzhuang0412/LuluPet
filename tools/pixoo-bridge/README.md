@@ -152,6 +152,15 @@ journalctl -u pixoo-bridge -f          # 看日志
 
 代码不在 `/opt/lulupet` 或配置不在 `/etc/pixoo-bridge/config.json` 的话，先改服务文件里的 `WorkingDirectory` / `ExecStart`。
 
+## 和 Pixoo Hub 一起用
+
+想让同一块 Pixoo 也能显示别的东西（时钟、天气、倒计时、手机发的照片、Claude……），可以装
+[Pixoo Hub](https://github.com/richardzhuang0412/pixoo-hub)：它的安装脚本会顺手装好这个桥接，并把它指向 Hub
+（`"pixoo": {"url": "http://127.0.0.1:8787/divoom/post"}`），由 Hub 决定屏幕上显示什么。
+
+桥接发的每个画面请求都带一个 `X-Pixoo-Label` 请求头（URL 编码的画面名，比如 `idle:online:…`、`poke`、`sticker:hug`）。
+真的 Pixoo 会忽略它；Hub 靠它分清「待机画面」和「消息」，所以常驻画面是时钟的时候，噜噜的消息也能插播进来。
+
 ## 更新
 
 ```bash
