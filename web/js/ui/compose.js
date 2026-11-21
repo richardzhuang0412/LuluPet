@@ -39,6 +39,35 @@ export function quickBar() {
   };
 }
 
+/**
+ * 搜表情: a search box for the sticker lists (全部表情 here, the 极简 name picker). Filters on every input (also
+ * while an IME is composing: pinyin letters match too); Enter (not mid-IME) = `onEnter`; Esc clears, or calls
+ * `onEscape` when already empty. `results(visible)` = the matching stickers of the catalog, best first.
+ */
+export function stickerSearch({ onInput, onEnter, onEscape, cls = "sticker-search" }) {
+  const bar = quickBar();
+  const input = h("input", { type: "search", placeholder: "搜表情：名字或拼音，如 bb", "aria-label": "搜表情（名字或拼音）",
+    enterkeyhint: "send", autocomplete: "off", autocapitalize: "off", spellcheck: "false" });
+  input.addEventListener("input", () => onInput());
+  input.addEventListener("keydown", (e) => {
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === "Enter") { e.preventDefault(); onEnter(); }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      if (input.value) { input.value = ""; onInput(); } else onEscape?.();
+    }
+  });
+  const el = h("label." + cls, h("span.search-icon", { "aria-hidden": "true" }, "🔍"), input);
+  return {
+    el, input,
+    query: () => input.value,
+    active: () => stickerRules.normalizeQuery(input.value) !== "",
+    clear() { input.value = ""; },
+    results: (visible) => stickerRules.searchResults(input.value, stickerList(), visible, bar.counts(), bar.recent()),
+  };
+}
+
 /** send({kind, …}); act("heart" | "visit" | "peek" | "water" | "stand"). */
 export function createCompose({ send, act, onExpand }) {
   let allowIntimate = true;
@@ -50,7 +79,13 @@ export function createCompose({ send, act, onExpand }) {
   const hint = h("div.compose-hint", { hidden: true, role: "status" });
   const quick = h("div.quickbar", { role: "list", "aria-label": "快捷栏" });
   const moreBtn = h("button.link.more", { type: "button", "aria-expanded": "false", onclick: () => toggleMore() }, "全部表情 ›");
-  const all = h("div.all-stickers", { hidden: true });
+  const search = stickerSearch({
+    onInput: () => renderAll(),
+    onEnter: () => { const first = search.active() && search.results(visibleIds())[0]; if (first) sendSticker(first); },
+    onEscape: () => { toggleMore(false); text.focus({ preventScroll: true }); },
+  });
+  const allList = h("div.all-list");
+  const all = h("div.all-stickers", { hidden: true }, search.el, allList);
   const text = h("textarea.compose-text", { rows: "2", placeholder: "想对TA说点什么…", "aria-label": "想对TA说点什么", maxlength: "2000" });
   const counter = h("span.counter", "0/500");
   const sendBtn = h("button.btn.primary.send", { type: "button", disabled: true, onclick: () => sendText() }, "发送");
@@ -102,6 +137,7 @@ export function createCompose({ send, act, onExpand }) {
     store.set("stickerSendCounts", c);
     store.set("stickerRecent", stickerRules.recorded(s.id, Date.now(), bar.recent()));
     send({ kind: "sticker", stickerId: s.id, label: s.label });
+    if (search.query()) { search.clear(); if (expanded) renderAll(); }
   }
 
   function stickerButton(s, onBar) {
@@ -120,20 +156,31 @@ export function createCompose({ send, act, onExpand }) {
     moreBtn.textContent = expanded ? "收起 ‹" : "全部表情 ›";
     moreBtn.setAttribute("aria-expanded", String(expanded));
     if (expanded) renderAll();
+    else if (search.query()) search.clear();
     onExpand?.(expanded);
+    // Desktop: type right away. Phones: no focus (the keyboard would cover the grid).
+    if (expanded && !coarse) search.input.focus({ preventScroll: true });
   }
 
   function renderAll() {
-    const visible = new Set(visibleIds());
+    const ids = visibleIds();
+    const visible = new Set(ids);
     const on = new Set(bar.stored());
+    const tile = (s) => {
+      const b = stickerButton(s, false);
+      if (on.has(s.id)) b.classList.add("on-bar");
+      return b;
+    };
+    if (search.active()) {   // 搜表情: one flat grid, best match first; Enter sends the first
+      const hits = search.results(ids);
+      setChildren(allList, hits.length
+        ? [h("div.group-title", `找到 ${hits.length} 个` + (coarse ? "" : " · 回车发送第一个")), h("div.sticker-grid", hits.map(tile))]
+        : h("div.search-empty", "没找到，换个词试试"));
+      return;
+    }
     const list = stickerList().filter((s) => visible.has(s.id));
-    setChildren(all, stickerRules.grouped(list).map(({ title, stickers }) =>
-      h("div.sticker-group", h("div.group-title", title),
-        h("div.sticker-grid", stickers.map((s) => {
-          const b = stickerButton(s, false);
-          if (on.has(s.id)) b.classList.add("on-bar");
-          return b;
-        })))));
+    setChildren(allList, stickerRules.grouped(list).map(({ title, stickers }) =>
+      h("div.sticker-group", h("div.group-title", title), h("div.sticker-grid", stickers.map(tile)))));
   }
 
   function render() {

@@ -96,6 +96,36 @@ test("vectors: stickers", () => {
   for (const c of s.removed) assert.deepEqual(ST.removed(c.id, c.stored), c.expect);
 });
 
+test("vectors: sticker search (搜表情)", () => {
+  const s = V.stickerSearch;
+  for (const c of s.normalize) assert.equal(ST.normalizeQuery(c.raw), c.expect, JSON.stringify(c.raw));
+  assert.ok(s.cases.length >= 20);
+  for (const c of s.cases) {
+    const visible = ST.visibleIds(s.catalog, c.allowsIntimate);
+    const byId = new Map(s.catalog.map((x) => [x.id, x]));
+    const pool = ST.ranked(s.counts, {}, visible).map((id) => byId.get(id));
+    const got = ST.searchStickers(c.query, pool);
+    assert.deepEqual(got, c.expect, `${JSON.stringify(c.query)} ${c.allowsIntimate ? "couple" : "friend"}`);
+    assert.deepEqual(ST.searchResults(c.query, s.catalog, visible, s.counts, {}).map((x) => x.id), c.expect);
+    for (const id of got) assert.ok(ST.matchesSticker(c.query, byId.get(id)));
+    if (!c.allowsIntimate) for (const id of got) assert.ok(!byId.get(id).intimate, "friend mode: no intimate results");
+  }
+});
+
+test("manifest: every sticker carries pinyin / initials, same reading as the Mac (pinyin vectors)", () => {
+  const man = JSON.parse(readFileSync(new URL("../assets/manifest.json", import.meta.url), "utf8"));
+  const byLabel = new Map(man.stickers.map((x) => [x.label, x]));
+  for (const x of man.stickers) {
+    assert.match(x.pinyin, /^[a-z0-9]+( [a-z0-9]+)*$/, x.id);
+    assert.equal(x.initials, x.pinyin.split(" ").map((w) => w[0]).join(""), x.id);
+    assert.ok(Array.isArray(x.keywords), x.id);
+  }
+  for (const c of V.stickerSearch.pinyin) {
+    const x = byLabel.get(c.label);
+    if (x) assert.deepEqual([x.pinyin, x.initials], [c.pinyin, c.initials], c.label);
+  }
+});
+
 test("vectors: weather", () => {
   for (const c of V.weather.wmo) assert.equal(WE.conditionFromWMO(c.code, c.cloudCover), c.expect, JSON.stringify(c));
   for (const c of V.weather.emoji) {

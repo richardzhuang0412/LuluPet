@@ -5,7 +5,7 @@
 import { h, setChildren, toast } from "../dom.js";
 import { stickerList } from "../assets.js";
 import { stickerRules, clampText } from "../deps.js";
-import { quickBar } from "../compose.js";
+import { quickBar, stickerSearch } from "../compose.js";
 import { store } from "../store.js";
 import { icon } from "./icons.js";
 
@@ -21,7 +21,16 @@ export function createMiniCompose({ send, act }) {
   const note = h("div.mi-note", { role: "status", hidden: true });
   const text = h("textarea.mi-text", { rows: "1", placeholder: "说点什么… Enter 发送", "aria-label": "想对TA说的话", maxlength: "2000" });
   const sendBtn = h("button.mi-send", { type: "button", "aria-label": "发送", title: "发送（Enter）", disabled: true, onclick: () => sendText() }, icon("send", 17));
-  const picker = h("div.mi-picker", { hidden: true, role: "dialog", "aria-label": "表情" });
+  const coarse = matchMedia("(pointer: coarse)").matches;
+  // 搜表情: name or pinyin; Enter sends the first match, Esc clears (then closes the list).
+  const search = stickerSearch({
+    cls: "mi-search",
+    onInput: () => renderPicker(),
+    onEnter: () => { const first = search.active() && search.results(visibleIds())[0]; if (first) sendSticker(first); },
+    onEscape: () => { togglePicker(false); text.focus({ preventScroll: true }); },
+  });
+  const pickerList = h("div.mi-picker-list");
+  const picker = h("div.mi-picker", { hidden: true, role: "dialog", "aria-label": "表情" }, search.el, pickerList);
   const stickerBtn = h("button.mi-chip", { type: "button", "aria-expanded": "false", "aria-haspopup": "dialog", onclick: () => togglePicker() }, "表情");
   const chip = (label, title, kind) => h("button.mi-chip", { type: "button", title, onclick: () => act(kind) }, label);
   const actions = h("div.mi-actions",
@@ -76,8 +85,16 @@ export function createMiniCompose({ send, act }) {
     const byId = new Map(stickerList().map((x) => [x.id, x]));
     const onBar = bar.shown([...visible]).map((id) => byId.get(id)).filter(Boolean);
     const onSet = new Set(onBar.map((s) => s.id));
+    if (search.active()) {   // 搜表情: one list, best match first
+      const hits = search.results([...visible]);
+      setChildren(pickerList, hits.length
+        ? h("div.mi-picker-group", h("div.mi-picker-title", `找到 ${hits.length} 个` + (coarse ? "" : " · 回车发送第一个")),
+          h("div.mi-names", hits.map((s) => nameChip(s, onSet.has(s.id)))))
+        : h("div.mi-picker-hint", "没找到，换个词试试"));
+      return;
+    }
     const groups = stickerRules.grouped(stickerList().filter((s) => visible.has(s.id) && !onSet.has(s.id)));
-    setChildren(picker,
+    setChildren(pickerList,
       h("div.mi-picker-group", h("div.mi-picker-title", "快捷栏"), h("div.mi-names", onBar.map((s) => nameChip(s, true)))),
       groups.map(({ title, stickers }) => h("div.mi-picker-group", h("div.mi-picker-title", title), h("div.mi-names", stickers.map((s) => nameChip(s, false))))),
       h("div.mi-picker-hint", "TA 收到的是真表情 · 右键名字：放进 / 拿下快捷栏"));
@@ -88,7 +105,12 @@ export function createMiniCompose({ send, act }) {
     picker.hidden = !pickerOpen;
     stickerBtn.setAttribute("aria-expanded", String(pickerOpen));
     stickerBtn.classList.toggle("on", pickerOpen);
-    if (pickerOpen) { renderPicker(); picker.scrollTop = 0; }
+    if (!pickerOpen) search.clear();
+    if (pickerOpen) {
+      renderPicker();
+      picker.scrollTop = 0;
+      if (!coarse) search.input.focus({ preventScroll: true });   // phones: no keyboard popping up over the list
+    }
   }
   document.addEventListener("pointerdown", (e) => { if (pickerOpen && !picker.contains(e.target) && e.target !== stickerBtn) togglePicker(false); }, true);
 

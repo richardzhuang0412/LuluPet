@@ -152,3 +152,68 @@ export function grouped(stickers) {
   if (rest.length) out.push({ group: null, title: OTHER_GROUP_TITLE, stickers: rest });
   return out;
 }
+
+// ---------------------------------------------------------------- 搜表情
+// Twin of StickerSearch (Sources/LuluCore/StickerSearch.swift); shared vectors `stickerSearch`. A sticker is
+// {id, label, group, pinyin: "bao bao", initials: "bb", keywords?: [...]}; pinyin / initials come precomputed in
+// web/assets/manifest.json (tools/build_web_assets.py), never transliterated here.
+
+/** Width / case folded (NFKC, lowercase), only letters and digits kept: 「 Bao～抱！」 → "bao抱". */
+export function normalizeQuery(s) {
+  return String(s ?? "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+function groupTitle(group) {
+  return STICKER_GROUPS.find((g) => g.id === group)?.title ?? OTHER_GROUP_TITLE;
+}
+
+/**
+ * How well a normalized, non-empty `q` matches `s` (lower = better), null = no match:
+ * 0 exact name · 1 name prefix · 2 name contains · 3 initials prefix · 4 full pinyin prefix ·
+ * 5 pinyin / initials from a later syllable (「kuaile」/「kl」 → 圣诞快乐) · 6 group title or keyword.
+ */
+export function searchTier(q, s) {
+  const label = normalizeQuery(s.label);
+  if (label === q) return 0;
+  if (label.startsWith(q)) return 1;
+  if (label.includes(q)) return 2;
+  const syllables = String(s.pinyin ?? "").split(" ").filter(Boolean);
+  const initials = typeof s.initials === "string" ? s.initials : syllables.map((w) => w[0]).join("");
+  if (initials.startsWith(q)) return 3;
+  if (syllables.join("").startsWith(q)) return 4;
+  for (let i = 1; i < syllables.length; i++) {
+    if (syllables.slice(i).join("").startsWith(q) || initials.slice(i).startsWith(q)) return 5;
+  }
+  const keywords = Array.isArray(s.keywords) ? s.keywords : [];
+  if (normalizeQuery(groupTitle(s.group)).includes(q) || keywords.some((k) => normalizeQuery(k).includes(q))) return 6;
+  return null;
+}
+
+/** True when `query` finds sticker `s` (an empty query finds everything). */
+export function matchesSticker(query, s) {
+  const q = normalizeQuery(query);
+  return q === "" || searchTier(q, s) !== null;
+}
+
+/**
+ * The ids of `stickers` that `query` finds, best first; equal matches keep the input order (pass them in usage order,
+ * `ranked`). Pass only what the current mode shows (friend mode: no intimate ones). Empty query = every id, unchanged.
+ */
+export function searchStickers(query, stickers) {
+  const q = normalizeQuery(query);
+  if (q === "") return stickers.map((s) => s.id);
+  const hits = [];
+  stickers.forEach((s, i) => { const t = searchTier(q, s); if (t !== null) hits.push({ t, i, id: s.id }); });
+  return hits.sort((a, b) => a.t - b.t || a.i - b.i).map((x) => x.id);
+}
+
+/**
+ * What the search boxes show: the `visible` stickers of `catalog` in usage order (`ranked`), filtered and sorted by
+ * `query` → sticker objects. Intimate stickers the mode hides are never in `visible`, so never in the results.
+ */
+export function searchResults(query, catalog, visible, counts, recent) {
+  const byId = new Map(catalog.map((s) => [s.id, s]));
+  const pool = ranked(counts, recent, visible).map((id) => byId.get(id)).filter(Boolean);
+  const order = searchStickers(query, pool);
+  return order.map((id) => byId.get(id));
+}

@@ -12993,5 +12993,573 @@
     }
    }
   }
- ]
+ ],
+ "stickerSearch": {
+  "_about": "搜表情: visible = catalog minus intimate unless allowsIntimate; pool = ranked(counts, {}, visible); expect = filter(query, pool). pinyin: Swift StickerSearch.pinyin(of:) and the manifest (tools/build_web_assets.py) must give these.",
+  "normalize": [
+   {
+    "raw": " Bao～抱！",
+    "expect": "bao抱"
+   },
+   {
+    "raw": "ＡＢＣ１２",
+    "expect": "abc12"
+   },
+   {
+    "raw": "啊？",
+    "expect": "啊"
+   },
+   {
+    "raw": "想 你 了",
+    "expect": "想你了"
+   },
+   {
+    "raw": "",
+    "expect": ""
+   },
+   {
+    "raw": "～！？。， ·",
+    "expect": ""
+   }
+  ],
+  "pinyin": [
+   {
+    "label": "想你了",
+    "pinyin": "xiang ni le",
+    "initials": "xnl"
+   },
+   {
+    "label": "抱抱",
+    "pinyin": "bao bao",
+    "initials": "bb"
+   },
+   {
+    "label": "啊？",
+    "pinyin": "a",
+    "initials": "a"
+   },
+   {
+    "label": "圣诞快乐",
+    "pinyin": "sheng dan kuai le",
+    "initials": "sdkl"
+   },
+   {
+    "label": "略略略",
+    "pinyin": "lue lue lue",
+    "initials": "lll"
+   },
+   {
+    "label": "么么哒",
+    "pinyin": "me me da",
+    "initials": "mmd"
+   },
+   {
+    "label": "吓死",
+    "pinyin": "xia si",
+    "initials": "xs"
+   },
+   {
+    "label": "干饭",
+    "pinyin": "gan fan",
+    "initials": "gf"
+   }
+  ],
+  "counts": {
+   "baibai": 2,
+   "wanan": 3,
+   "heihei": 1
+  },
+  "catalog": [
+   {
+    "id": "hug",
+    "label": "抱抱",
+    "group": "love",
+    "intimate": true,
+    "pinyin": "bao bao",
+    "initials": "bb",
+    "keywords": [
+     "拥抱"
+    ]
+   },
+   {
+    "id": "kiss",
+    "label": "亲亲",
+    "group": "love",
+    "intimate": true,
+    "pinyin": "qin qin",
+    "initials": "qq"
+   },
+   {
+    "id": "missyou",
+    "label": "想你了",
+    "group": "love",
+    "intimate": false,
+    "pinyin": "xiang ni le",
+    "initials": "xnl"
+   },
+   {
+    "id": "heart",
+    "label": "比心",
+    "group": "love",
+    "intimate": false,
+    "pinyin": "bi xin",
+    "initials": "bx",
+    "keywords": [
+     "爱心"
+    ]
+   },
+   {
+    "id": "xindong",
+    "label": "心动",
+    "group": "love",
+    "intimate": false,
+    "pinyin": "xin dong",
+    "initials": "xd"
+   },
+   {
+    "id": "happy",
+    "label": "开心",
+    "group": "happy",
+    "intimate": false,
+    "pinyin": "kai xin",
+    "initials": "kx"
+   },
+   {
+    "id": "haha",
+    "label": "哈哈哈",
+    "group": "happy",
+    "intimate": false,
+    "pinyin": "ha ha ha",
+    "initials": "hhh"
+   },
+   {
+    "id": "xiaosi",
+    "label": "笑死",
+    "group": "happy",
+    "intimate": false,
+    "pinyin": "xiao si",
+    "initials": "xs"
+   },
+   {
+    "id": "heihei",
+    "label": "嘿嘿",
+    "group": "happy",
+    "intimate": false,
+    "pinyin": "hei hei",
+    "initials": "hh"
+   },
+   {
+    "id": "bleh",
+    "label": "略略略",
+    "group": "happy",
+    "intimate": false,
+    "pinyin": "lue lue lue",
+    "initials": "lll",
+    "keywords": [
+     "lvelvelve"
+    ]
+   },
+   {
+    "id": "ah",
+    "label": "啊？",
+    "group": "wow",
+    "intimate": false,
+    "pinyin": "a",
+    "initials": "a"
+   },
+   {
+    "id": "night",
+    "label": "晚安",
+    "group": "daily",
+    "intimate": false,
+    "pinyin": "wan an",
+    "initials": "wa",
+    "keywords": [
+     "睡觉"
+    ]
+   },
+   {
+    "id": "wanan",
+    "label": "晚安",
+    "group": "daily",
+    "intimate": false,
+    "pinyin": "wan an",
+    "initials": "wa",
+    "keywords": [
+     "睡觉"
+    ]
+   },
+   {
+    "id": "kunle",
+    "label": "困了",
+    "group": "daily",
+    "intimate": false,
+    "pinyin": "kun le",
+    "initials": "kl",
+    "keywords": [
+     "睡觉"
+    ]
+   },
+   {
+    "id": "haode",
+    "label": "好的",
+    "group": "reply",
+    "intimate": false,
+    "pinyin": "hao de",
+    "initials": "hd",
+    "keywords": [
+     "ok"
+    ]
+   },
+   {
+    "id": "shoudao",
+    "label": "收到",
+    "group": "reply",
+    "intimate": false,
+    "pinyin": "shou dao",
+    "initials": "sd",
+    "keywords": [
+     "ok"
+    ]
+   },
+   {
+    "id": "baibai",
+    "label": "拜拜",
+    "group": "reply",
+    "intimate": false,
+    "pinyin": "bai bai",
+    "initials": "bb"
+   },
+   {
+    "id": "baituo",
+    "label": "拜托啦",
+    "group": "love",
+    "intimate": false,
+    "pinyin": "bai tuo la",
+    "initials": "btl"
+   },
+   {
+    "id": "buma",
+    "label": "不嘛",
+    "group": "reply",
+    "intimate": false,
+    "pinyin": "bu ma",
+    "initials": "bm"
+   },
+   {
+    "id": "shengdan",
+    "label": "圣诞快乐",
+    "group": "season",
+    "intimate": false,
+    "pinyin": "sheng dan kuai le",
+    "initials": "sdkl",
+    "keywords": [
+     "christmas"
+    ]
+   },
+   {
+    "id": "facai",
+    "label": "发财",
+    "group": "season",
+    "intimate": false,
+    "pinyin": "fa cai",
+    "initials": "fc",
+    "keywords": [
+     "新年",
+     "过年"
+    ]
+   },
+   {
+    "id": "xiayu",
+    "label": "下雨了",
+    "group": "season",
+    "intimate": false,
+    "pinyin": "xia yu le",
+    "initials": "xyl"
+   },
+   {
+    "id": "future",
+    "label": "新的",
+    "group": "future",
+    "intimate": false,
+    "pinyin": "xin de",
+    "initials": "xd"
+   }
+  ],
+  "cases": [
+   {
+    "query": "",
+    "allowsIntimate": true,
+    "expect": [
+     "wanan",
+     "baibai",
+     "heihei",
+     "missyou",
+     "hug",
+     "kiss",
+     "night",
+     "heart",
+     "happy",
+     "bleh",
+     "xindong",
+     "haha",
+     "xiaosi",
+     "ah",
+     "kunle",
+     "haode",
+     "shoudao",
+     "baituo",
+     "buma",
+     "shengdan",
+     "facai",
+     "xiayu",
+     "future"
+    ]
+   },
+   {
+    "query": "～！ ",
+    "allowsIntimate": true,
+    "expect": [
+     "wanan",
+     "baibai",
+     "heihei",
+     "missyou",
+     "hug",
+     "kiss",
+     "night",
+     "heart",
+     "happy",
+     "bleh",
+     "xindong",
+     "haha",
+     "xiaosi",
+     "ah",
+     "kunle",
+     "haode",
+     "shoudao",
+     "baituo",
+     "buma",
+     "shengdan",
+     "facai",
+     "xiayu",
+     "future"
+    ]
+   },
+   {
+    "query": "bb",
+    "allowsIntimate": true,
+    "expect": [
+     "baibai",
+     "hug"
+    ]
+   },
+   {
+    "query": "bb",
+    "allowsIntimate": false,
+    "expect": [
+     "baibai"
+    ]
+   },
+   {
+    "query": "baobao",
+    "allowsIntimate": true,
+    "expect": [
+     "hug"
+    ]
+   },
+   {
+    "query": "baobao",
+    "allowsIntimate": false,
+    "expect": []
+   },
+   {
+    "query": "bao bao",
+    "allowsIntimate": true,
+    "expect": [
+     "hug"
+    ]
+   },
+   {
+    "query": "xn",
+    "allowsIntimate": true,
+    "expect": [
+     "missyou"
+    ]
+   },
+   {
+    "query": "ＸＮ",
+    "allowsIntimate": true,
+    "expect": [
+     "missyou"
+    ]
+   },
+   {
+    "query": "xin",
+    "allowsIntimate": true,
+    "expect": [
+     "xindong",
+     "future",
+     "heart",
+     "happy"
+    ]
+   },
+   {
+    "query": "心",
+    "allowsIntimate": true,
+    "expect": [
+     "xindong",
+     "heart",
+     "happy",
+     "heihei",
+     "bleh",
+     "haha",
+     "xiaosi"
+    ]
+   },
+   {
+    "query": "哈哈",
+    "allowsIntimate": true,
+    "expect": [
+     "haha"
+    ]
+   },
+   {
+    "query": "睡觉",
+    "allowsIntimate": true,
+    "expect": [
+     "wanan",
+     "night",
+     "kunle"
+    ]
+   },
+   {
+    "query": "OK",
+    "allowsIntimate": true,
+    "expect": [
+     "haode",
+     "shoudao"
+    ]
+   },
+   {
+    "query": "ｏｋ",
+    "allowsIntimate": true,
+    "expect": [
+     "haode",
+     "shoudao"
+    ]
+   },
+   {
+    "query": "lve",
+    "allowsIntimate": true,
+    "expect": [
+     "bleh"
+    ]
+   },
+   {
+    "query": "kl",
+    "allowsIntimate": true,
+    "expect": [
+     "kunle",
+     "shengdan"
+    ]
+   },
+   {
+    "query": "kuaile",
+    "allowsIntimate": true,
+    "expect": [
+     "shengdan"
+    ]
+   },
+   {
+    "query": "节日",
+    "allowsIntimate": true,
+    "expect": [
+     "shengdan",
+     "facai",
+     "xiayu"
+    ]
+   },
+   {
+    "query": "christmas",
+    "allowsIntimate": true,
+    "expect": [
+     "shengdan"
+    ]
+   },
+   {
+    "query": "啊?",
+    "allowsIntimate": true,
+    "expect": [
+     "ah"
+    ]
+   },
+   {
+    "query": "新的",
+    "allowsIntimate": true,
+    "expect": [
+     "future"
+    ]
+   },
+   {
+    "query": "其他",
+    "allowsIntimate": true,
+    "expect": [
+     "future"
+    ]
+   },
+   {
+    "query": "h",
+    "allowsIntimate": true,
+    "expect": [
+     "heihei",
+     "haha",
+     "haode",
+     "shengdan"
+    ]
+   },
+   {
+    "query": "b",
+    "allowsIntimate": false,
+    "expect": [
+     "baibai",
+     "heart",
+     "baituo",
+     "buma"
+    ]
+   },
+   {
+    "query": "晚安",
+    "allowsIntimate": true,
+    "expect": [
+     "wanan",
+     "night"
+    ]
+   },
+   {
+    "query": "安",
+    "allowsIntimate": true,
+    "expect": [
+     "wanan",
+     "night"
+    ]
+   },
+   {
+    "query": "亲",
+    "allowsIntimate": false,
+    "expect": []
+   },
+   {
+    "query": "亲",
+    "allowsIntimate": true,
+    "expect": [
+     "kiss"
+    ]
+   },
+   {
+    "query": "zzz",
+    "allowsIntimate": true,
+    "expect": []
+   }
+  ]
+ }
 }

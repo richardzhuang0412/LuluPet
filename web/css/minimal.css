@@ -242,6 +242,9 @@ body.minimal .mi-text:focus-visible { outline: none; }
   position: absolute; left: 12px; right: 12px; bottom: calc(100% - 2px); z-index: 10; max-height: min(300px, 55vh); overflow-y: auto;
   padding: 8px 10px 10px; background: var(--m-surface); border: 1px solid var(--m-line-2); border-radius: 10px; box-shadow: var(--m-shadow);
 }
+.mi-picker .mi-search { margin: 0 0 8px; border-radius: 6px; border-color: var(--m-line-2); background: var(--m-surface); top: -8px; }
+.mi-picker .mi-search:focus-within { border-color: var(--m-accent); }
+body.minimal .mi-search input:focus-visible { outline: none; }
 .mi-picker-group + .mi-picker-group { margin-top: 8px; }
 .mi-picker-title { font-size: 11.5px; color: var(--m-ink-3); margin-bottom: 4px; }
 .mi-names { display: flex; flex-wrap: wrap; gap: 5px; }

@@ -10,7 +10,10 @@
   "label": "抱抱",
   "file": "hug.gif",
   "intimate": true,
-  "group": "love"
+  "group": "love",
+  "keywords": [
+   "拥抱"
+  ]
  },
  {
   "id": "kiss",
@@ -36,13 +39,19 @@
   "id": "night",
   "label": "晚安",
   "file": "night.gif",
-  "group": "daily"
+  "group": "daily",
+  "keywords": [
+   "睡觉"
+  ]
  },
  {
   "id": "morning",
   "label": "早安",
   "file": "morning.gif",
-  "group": "daily"
+  "group": "daily",
+  "keywords": [
+   "起床"
+  ]
  },
  {
   "id": "run",
@@ -54,7 +63,10 @@
   "id": "heart",
   "label": "比心",
   "file": "heart.gif",
-  "group": "love"
+  "group": "love",
+  "keywords": [
+   "爱心"
+  ]
  },
  {
   "id": "shy",
@@ -90,7 +102,10 @@
   "id": "eat",
   "label": "吃饭啦",
   "file": "eat.gif",
-  "group": "daily"
+  "group": "daily",
+  "keywords": [
+   "干饭"
+  ]
  },
  {
   "id": "milktea",
@@ -134,7 +149,10 @@
   "id": "bleh",
   "label": "略略略",
   "file": "bleh.gif",
-  "group": "happy"
+  "group": "happy",
+  "keywords": [
+   "lvelvelve"
+  ]
  },
  {
   "id": "hi",
@@ -336,7 +354,10 @@
   "id": "kunle",
   "label": "困了",
   "file": "kunle.gif",
-  "group": "daily"
+  "group": "daily",
+  "keywords": [
+   "睡觉"
+  ]
  },
  {
   "id": "kunkun",
@@ -348,13 +369,19 @@
   "id": "wanan",
   "label": "晚安",
   "file": "wanan.gif",
-  "group": "daily"
+  "group": "daily",
+  "keywords": [
+   "睡觉"
+  ]
  },
  {
   "id": "ganfan",
   "label": "干饭",
   "file": "ganfan.gif",
-  "group": "daily"
+  "group": "daily",
+  "keywords": [
+   "吃饭"
+  ]
  },
  {
   "id": "e",
@@ -396,19 +423,29 @@
   "id": "haode",
   "label": "好的",
   "file": "haode.gif",
-  "group": "reply"
+  "group": "reply",
+  "keywords": [
+   "ok"
+  ]
  },
  {
   "id": "shoudao",
   "label": "收到",
   "file": "shoudao.gif",
-  "group": "reply"
+  "group": "reply",
+  "keywords": [
+   "ok"
+  ]
  },
  {
   "id": "duibuqi",
   "label": "对不起",
   "file": "duibuqi.gif",
-  "group": "reply"
+  "group": "reply",
+  "keywords": [
+   "抱歉",
+   "道歉"
+  ]
  },
  {
   "id": "buma",
@@ -420,7 +457,10 @@
   "id": "xiexie",
   "label": "谢谢",
   "file": "xiexie.gif",
-  "group": "reply"
+  "group": "reply",
+  "keywords": [
+   "感谢"
+  ]
  },
  {
   "id": "dengni",
@@ -462,12 +502,19 @@
   "id": "facai",
   "label": "发财",
   "file": "facai.gif",
-  "group": "season"
+  "group": "season",
+  "keywords": [
+   "新年",
+   "过年"
+  ]
  },
  {
   "id": "shengdan",
   "label": "圣诞快乐",
   "file": "shengdan.gif",
-  "group": "season"
+  "group": "season",
+  "keywords": [
+   "christmas"
+  ]
  }
 ]

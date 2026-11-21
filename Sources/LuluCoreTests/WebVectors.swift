@@ -189,6 +189,40 @@ func runWebVectors() {
         check(false, "web vectors: stickers section")
     }
 
+    // 搜表情
+    if let ss = v["stickerSearch"] as? [String: Any] {
+        for c in (ss["normalize"] as? [[String: Any]]) ?? [] {
+            let got = StickerSearch.normalize(c["raw"] as? String ?? "")
+            check(got == c["expect"] as? String, "web vectors sticker search normalize \(c["raw"] ?? ""): \(got)")
+        }
+        for c in (ss["pinyin"] as? [[String: Any]]) ?? [] {
+            let py = StickerSearch.pinyin(of: c["label"] as? String ?? "")
+            check(py == c["pinyin"] as? String && StickerSearch.initials(ofPinyin: py) == c["initials"] as? String,
+                  "web vectors sticker search pinyin \(c["label"] ?? ""): \(py)")
+        }
+        let catalog = ((ss["catalog"] as? [[String: Any]]) ?? []).map { c in
+            (entry: StickerSearch.Entry(id: c["id"] as? String ?? "", label: c["label"] as? String ?? "", group: c["group"] as? String,
+                                        pinyin: c["pinyin"] as? String ?? "", initials: c["initials"] as? String,
+                                        keywords: c["keywords"] as? [String] ?? []),
+             intimate: c["intimate"] as? Bool ?? false)
+        }
+        let counts = wvCounts(ss["counts"])
+        let byID = Dictionary(catalog.map { ($0.entry.id, $0.entry) }, uniquingKeysWith: { a, _ in a })
+        let cases = (ss["cases"] as? [[String: Any]]) ?? []
+        check(cases.count >= 20, "web vectors sticker search: cases present")
+        for c in cases {
+            let allows = c["allowsIntimate"] as? Bool ?? false
+            let visible = catalog.filter { allows || !$0.intimate }.map(\.entry.id)
+            let pool = StickerPanel.ranked(counts: counts, recent: [:], visible: visible).compactMap { byID[$0] }
+            let got = StickerSearch.filter(query: c["query"] as? String ?? "", stickers: pool)
+            check(wvEqual(got, c["expect"]), "web vectors sticker search \(c["query"] ?? "") (\(allows ? "couple" : "friend")): \(got)")
+            check(got.allSatisfy { id in StickerSearch.matches(query: c["query"] as? String ?? "", sticker: byID[id]!) },
+                  "web vectors sticker search matches agrees with filter: \(c["query"] ?? "")")
+        }
+    } else {
+        check(false, "web vectors: stickerSearch section")
+    }
+
     // Weather
     if let w = v["weather"] as? [String: Any] {
         for c in (w["wmo"] as? [[String: Any]]) ?? [] {

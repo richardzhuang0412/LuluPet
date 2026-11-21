@@ -103,6 +103,20 @@ preflight() {
     git remote get-url github >/dev/null 2>&1 || die "没有 github 远程 / no 'github' remote"
     command -v gh >/dev/null && gh auth status >/dev/null 2>&1 || die "gh 没登录 / gh not authenticated"
     if gh release view "v$VER" --repo "$REPO" >/dev/null 2>&1; then die "GitHub 上已经有 v$VER 了 / release v$VER already exists"; fi
+    # GitHub's main may have moved without us (a PR merged on github.com). The public commit is made on top of the
+    # local `release` branch, so it must be exactly what GitHub has — otherwise the push is rejected after the whole
+    # build, or (worse) those changes would be missing from the next public tree. Fail early with what to do.
+    git fetch -q github main || die "git fetch github main 失败 / could not fetch github main"
+    local remote_main local_release
+    remote_main="$(git rev-parse github/main)"; local_release="$(git rev-parse release)"
+    if [[ "$remote_main" != "$local_release" ]]; then
+      if git merge-base --is-ancestor "$local_release" "$remote_main"; then
+        echo "    GitHub main 比本地 release 多这些提交 / commits on GitHub main that are not in local 'release':" >&2
+        git log --format='      %h %an %s' "$local_release..$remote_main" >&2
+        die "先把它们并进 master（git cherry-pick <非 merge 的提交>，跑测试），再 git branch -f release github/main，然后重跑 / bring them into master first, then: git branch -f release github/main"
+      fi
+      die "本地 release (${local_release:0:7}) 和 GitHub main (${remote_main:0:7}) 分叉了 / local 'release' and GitHub main have diverged — inspect before publishing"
+    fi
     ok "release 分支 / github 远程 / gh 都就绪 / release branch, remote and gh ready"
   fi
 }

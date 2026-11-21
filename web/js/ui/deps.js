@@ -92,6 +92,9 @@ export const stickerRules = {
   recorded: (id, ts, recent) => stickers.recorded(id, ts, recent),
   visibleIds: (catalog, intimate) => stickers.visibleIds(catalog, intimate),
   grouped: (list) => stickers.grouped(list),                                    // → [{group, title, stickers}]
+  // 搜表情: "" when only spaces / punctuation; results = visible stickers matching `query`, best first
+  normalizeQuery: (q) => stickers.normalizeQuery(q),
+  searchResults: (query, catalog, visible, counts, recent) => stickers.searchResults(query, catalog, visible, counts, recent),
   defaultFavorites: stickers.DEFAULT_FAVORITES,
 };
 

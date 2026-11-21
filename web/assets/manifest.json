@@ -4202,7 +4202,10 @@
    "w": 200,
    "h": 200,
    "frames": 15,
-   "thumb": 0
+   "thumb": 0,
+   "pinyin": "xiang ni le",
+   "initials": "xnl",
+   "keywords": []
   },
   {
    "id": "hug",
@@ -4213,7 +4216,12 @@
    "w": 200,
    "h": 157,
    "frames": 26,
-   "thumb": 1
+   "thumb": 1,
+   "pinyin": "bao bao",
+   "initials": "bb",
+   "keywords": [
+    "拥抱"
+   ]
   },
   {
    "id": "kiss",
@@ -4224,7 +4232,10 @@
    "w": 200,
    "h": 140,
    "frames": 48,
-   "thumb": 2
+   "thumb": 2,
+   "pinyin": "qin qin",
+   "initials": "qq",
+   "keywords": []
   },
   {
    "id": "nuzzle",
@@ -4235,7 +4246,10 @@
    "w": 200,
    "h": 118,
    "frames": 42,
-   "thumb": 3
+   "thumb": 3,
+   "pinyin": "tie tie",
+   "initials": "tt",
+   "keywords": []
   },
   {
    "id": "flower",
@@ -4246,7 +4260,10 @@
    "w": 200,
    "h": 112,
    "frames": 22,
-   "thumb": 4
+   "thumb": 4,
+   "pinyin": "song ni hua",
+   "initials": "snh",
+   "keywords": []
   },
   {
    "id": "night",
@@ -4257,7 +4274,12 @@
    "w": 200,
    "h": 112,
    "frames": 40,
-   "thumb": 5
+   "thumb": 5,
+   "pinyin": "wan an",
+   "initials": "wa",
+   "keywords": [
+    "睡觉"
+   ]
   },
   {
    "id": "morning",
@@ -4268,7 +4290,12 @@
    "w": 200,
    "h": 200,
    "frames": 34,
-   "thumb": 6
+   "thumb": 6,
+   "pinyin": "zao an",
+   "initials": "za",
+   "keywords": [
+    "起床"
+   ]
   },
   {
    "id": "run",
@@ -4279,7 +4306,10 @@
    "w": 200,
    "h": 200,
    "frames": 21,
-   "thumb": 7
+   "thumb": 7,
+   "pinyin": "ben xiang ni",
+   "initials": "bxn",
+   "keywords": []
   },
   {
    "id": "heart",
@@ -4290,7 +4320,12 @@
    "w": 157,
    "h": 200,
    "frames": 24,
-   "thumb": 8
+   "thumb": 8,
+   "pinyin": "bi xin",
+   "initials": "bx",
+   "keywords": [
+    "爱心"
+   ]
   },
   {
    "id": "shy",
@@ -4301,7 +4336,10 @@
    "w": 200,
    "h": 182,
    "frames": 31,
-   "thumb": 9
+   "thumb": 9,
+   "pinyin": "hai xiu",
+   "initials": "hx",
+   "keywords": []
   },
   {
    "id": "angry",
@@ -4312,7 +4350,10 @@
    "w": 200,
    "h": 154,
    "frames": 32,
-   "thumb": 10
+   "thumb": 10,
+   "pinyin": "sheng qi",
+   "initials": "sq",
+   "keywords": []
   },
   {
    "id": "cry",
@@ -4323,7 +4364,10 @@
    "w": 200,
    "h": 162,
    "frames": 39,
-   "thumb": 11
+   "thumb": 11,
+   "pinyin": "ku ku",
+   "initials": "kk",
+   "keywords": []
   },
   {
    "id": "happy",
@@ -4334,7 +4378,10 @@
    "w": 188,
    "h": 200,
    "frames": 27,
-   "thumb": 12
+   "thumb": 12,
+   "pinyin": "kai xin",
+   "initials": "kx",
+   "keywords": []
   },
   {
    "id": "dance",
@@ -4345,7 +4392,10 @@
    "w": 200,
    "h": 122,
    "frames": 47,
-   "thumb": 13
+   "thumb": 13,
+   "pinyin": "tiao wu",
+   "initials": "tw",
+   "keywords": []
   },
   {
    "id": "eat",
@@ -4356,7 +4406,12 @@
    "w": 200,
    "h": 122,
    "frames": 36,
-   "thumb": 14
+   "thumb": 14,
+   "pinyin": "chi fan la",
+   "initials": "cfl",
+   "keywords": [
+    "干饭"
+   ]
   },
   {
    "id": "milktea",
@@ -4367,7 +4422,10 @@
    "w": 200,
    "h": 113,
    "frames": 47,
-   "thumb": 15
+   "thumb": 15,
+   "pinyin": "he nai cha",
+   "initials": "hnc",
+   "keywords": []
   },
   {
    "id": "holdhands",
@@ -4378,7 +4436,10 @@
    "w": 200,
    "h": 157,
    "frames": 30,
-   "thumb": 16
+   "thumb": 16,
+   "pinyin": "qian shou",
+   "initials": "qs",
+   "keywords": []
   },
   {
    "id": "sleeptogether",
@@ -4389,7 +4450,10 @@
    "w": 118,
    "h": 200,
    "frames": 48,
-   "thumb": 17
+   "thumb": 17,
+   "pinyin": "yi qi shui",
+   "initials": "yqs",
+   "keywords": []
   },
   {
    "id": "whatsup",
@@ -4400,7 +4464,10 @@
    "w": 125,
    "h": 200,
    "frames": 48,
-   "thumb": 18
+   "thumb": 18,
+   "pinyin": "zai gan ma",
+   "initials": "zgm",
+   "keywords": []
   },
   {
    "id": "goodgirl",
@@ -4411,7 +4478,10 @@
    "w": 148,
    "h": 200,
    "frames": 56,
-   "thumb": 19
+   "thumb": 19,
+   "pinyin": "guai guai",
+   "initials": "gg",
+   "keywords": []
   },
   {
    "id": "celebrate",
@@ -4422,7 +4492,10 @@
    "w": 200,
    "h": 122,
    "frames": 24,
-   "thumb": 20
+   "thumb": 20,
+   "pinyin": "sa hua",
+   "initials": "sh",
+   "keywords": []
   },
   {
    "id": "bleh",
@@ -4433,7 +4506,12 @@
    "w": 200,
    "h": 200,
    "frames": 27,
-   "thumb": 21
+   "thumb": 21,
+   "pinyin": "lue lue lue",
+   "initials": "lll",
+   "keywords": [
+    "lvelvelve"
+   ]
   },
   {
    "id": "hi",
@@ -4444,7 +4522,10 @@
    "w": 185,
    "h": 200,
    "frames": 37,
-   "thumb": 22
+   "thumb": 22,
+   "pinyin": "ni hao ya",
+   "initials": "nhy",
+   "keywords": []
   },
   {
    "id": "wink",
@@ -4455,7 +4536,10 @@
    "w": 200,
    "h": 197,
    "frames": 47,
-   "thumb": 23
+   "thumb": 23,
+   "pinyin": "fang dian",
+   "initials": "fd",
+   "keywords": []
   },
   {
    "id": "mwah",
@@ -4466,7 +4550,10 @@
    "w": 200,
    "h": 160,
    "frames": 40,
-   "thumb": 24
+   "thumb": 24,
+   "pinyin": "me me da",
+   "initials": "mmd",
+   "keywords": []
   },
   {
    "id": "mwah2",
@@ -4477,7 +4564,10 @@
    "w": 200,
    "h": 184,
    "frames": 26,
-   "thumb": 25
+   "thumb": 25,
+   "pinyin": "me me da",
+   "initials": "mmd",
+   "keywords": []
   },
   {
    "id": "sajiao",
@@ -4488,7 +4578,10 @@
    "w": 200,
    "h": 200,
    "frames": 15,
-   "thumb": 26
+   "thumb": 26,
+   "pinyin": "sa jiao",
+   "initials": "sj",
+   "keywords": []
   },
   {
    "id": "sajiao2",
@@ -4499,7 +4592,10 @@
    "w": 174,
    "h": 200,
    "frames": 30,
-   "thumb": 27
+   "thumb": 27,
+   "pinyin": "sa jiao",
+   "initials": "sj",
+   "keywords": []
   },
   {
    "id": "baituo",
@@ -4510,7 +4606,10 @@
    "w": 200,
    "h": 200,
    "frames": 18,
-   "thumb": 28
+   "thumb": 28,
+   "pinyin": "bai tuo la",
+   "initials": "btl",
+   "keywords": []
   },
   {
    "id": "xindong",
@@ -4521,7 +4620,10 @@
    "w": 200,
    "h": 200,
    "frames": 31,
-   "thumb": 29
+   "thumb": 29,
+   "pinyin": "xin dong",
+   "initials": "xd",
+   "keywords": []
   },
   {
    "id": "aini",
@@ -4532,7 +4634,10 @@
    "w": 200,
    "h": 200,
    "frames": 24,
-   "thumb": 30
+   "thumb": 30,
+   "pinyin": "ai ni",
+   "initials": "an",
+   "keywords": []
   },
   {
    "id": "xingfu",
@@ -4543,7 +4648,10 @@
    "w": 200,
    "h": 200,
    "frames": 29,
-   "thumb": 31
+   "thumb": 31,
+   "pinyin": "hao xing fu",
+   "initials": "hxf",
+   "keywords": []
   },
   {
    "id": "anwei",
@@ -4554,7 +4662,10 @@
    "w": 200,
    "h": 160,
    "frames": 23,
-   "thumb": 32
+   "thumb": 32,
+   "pinyin": "an wei",
+   "initials": "aw",
+   "keywords": []
   },
   {
    "id": "haha",
@@ -4565,7 +4676,10 @@
    "w": 200,
    "h": 200,
    "frames": 20,
-   "thumb": 33
+   "thumb": 33,
+   "pinyin": "ha ha ha",
+   "initials": "hhh",
+   "keywords": []
   },
   {
    "id": "haha2",
@@ -4576,7 +4690,10 @@
    "w": 174,
    "h": 200,
    "frames": 26,
-   "thumb": 34
+   "thumb": 34,
+   "pinyin": "ha ha ha",
+   "initials": "hhh",
+   "keywords": []
   },
   {
    "id": "xiaosi",
@@ -4587,7 +4704,10 @@
    "w": 200,
    "h": 160,
    "frames": 24,
-   "thumb": 35
+   "thumb": 35,
+   "pinyin": "xiao si",
+   "initials": "xs",
+   "keywords": []
   },
   {
    "id": "heihei",
@@ -4598,7 +4718,10 @@
    "w": 200,
    "h": 200,
    "frames": 17,
-   "thumb": 36
+   "thumb": 36,
+   "pinyin": "hei hei",
+   "initials": "hh",
+   "keywords": []
   },
   {
    "id": "heihei2",
@@ -4609,7 +4732,10 @@
    "w": 174,
    "h": 200,
    "frames": 36,
-   "thumb": 37
+   "thumb": 37,
+   "pinyin": "hei hei",
+   "initials": "hh",
+   "keywords": []
   },
   {
    "id": "biye",
@@ -4620,7 +4746,10 @@
    "w": 200,
    "h": 184,
    "frames": 28,
-   "thumb": 38
+   "thumb": 38,
+   "pinyin": "bi ye",
+   "initials": "by",
+   "keywords": []
   },
   {
    "id": "ye",
@@ -4631,7 +4760,10 @@
    "w": 200,
    "h": 200,
    "frames": 21,
-   "thumb": 39
+   "thumb": 39,
+   "pinyin": "ye",
+   "initials": "y",
+   "keywords": []
   },
   {
    "id": "deyi",
@@ -4642,7 +4774,10 @@
    "w": 200,
    "h": 200,
    "frames": 10,
-   "thumb": 40
+   "thumb": 40,
+   "pinyin": "de yi",
+   "initials": "dy",
+   "keywords": []
   },
   {
    "id": "jiayou",
@@ -4653,7 +4788,10 @@
    "w": 174,
    "h": 200,
    "frames": 38,
-   "thumb": 41
+   "thumb": 41,
+   "pinyin": "jia you",
+   "initials": "jy",
+   "keywords": []
   },
   {
    "id": "chongya",
@@ -4664,7 +4802,10 @@
    "w": 200,
    "h": 200,
    "frames": 13,
-   "thumb": 42
+   "thumb": 42,
+   "pinyin": "chong ya",
+   "initials": "cy",
+   "keywords": []
   },
   {
    "id": "weiqu",
@@ -4675,7 +4816,10 @@
    "w": 200,
    "h": 200,
    "frames": 16,
-   "thumb": 43
+   "thumb": 43,
+   "pinyin": "wei qu",
+   "initials": "wq",
+   "keywords": []
   },
   {
    "id": "heng",
@@ -4686,7 +4830,10 @@
    "w": 200,
    "h": 200,
    "frames": 26,
-   "thumb": 44
+   "thumb": 44,
+   "pinyin": "heng",
+   "initials": "h",
+   "keywords": []
   },
   {
    "id": "heng2",
@@ -4697,7 +4844,10 @@
    "w": 174,
    "h": 200,
    "frames": 48,
-   "thumb": 45
+   "thumb": 45,
+   "pinyin": "heng",
+   "initials": "h",
+   "keywords": []
   },
   {
    "id": "lengzhan",
@@ -4708,7 +4858,10 @@
    "w": 200,
    "h": 105,
    "frames": 17,
-   "thumb": 46
+   "thumb": 46,
+   "pinyin": "leng zhan",
+   "initials": "lz",
+   "keywords": []
   },
   {
    "id": "xinsui",
@@ -4719,7 +4872,10 @@
    "w": 200,
    "h": 200,
    "frames": 26,
-   "thumb": 47
+   "thumb": 47,
+   "pinyin": "xin sui",
+   "initials": "xs",
+   "keywords": []
   },
   {
    "id": "xiongni",
@@ -4730,7 +4886,10 @@
    "w": 200,
    "h": 118,
    "frames": 31,
-   "thumb": 48
+   "thumb": 48,
+   "pinyin": "xiong ni o",
+   "initials": "xno",
+   "keywords": []
   },
   {
    "id": "wuyu",
@@ -4741,7 +4900,10 @@
    "w": 200,
    "h": 200,
    "frames": 42,
-   "thumb": 49
+   "thumb": 49,
+   "pinyin": "wu yu",
+   "initials": "wy",
+   "keywords": []
   },
   {
    "id": "wow",
@@ -4752,7 +4914,10 @@
    "w": 200,
    "h": 200,
    "frames": 14,
-   "thumb": 50
+   "thumb": 50,
+   "pinyin": "wa",
+   "initials": "w",
+   "keywords": []
   },
   {
    "id": "xiasi",
@@ -4763,7 +4928,10 @@
    "w": 200,
    "h": 200,
    "frames": 20,
-   "thumb": 51
+   "thumb": 51,
+   "pinyin": "xia si",
+   "initials": "xs",
+   "keywords": []
   },
   {
    "id": "ah",
@@ -4774,7 +4942,10 @@
    "w": 200,
    "h": 200,
    "frames": 10,
-   "thumb": 52
+   "thumb": 52,
+   "pinyin": "a",
+   "initials": "a",
+   "keywords": []
   },
   {
    "id": "chigua",
@@ -4785,7 +4956,10 @@
    "w": 200,
    "h": 200,
    "frames": 50,
-   "thumb": 53
+   "thumb": 53,
+   "pinyin": "chi gua",
+   "initials": "cg",
+   "keywords": []
   },
   {
    "id": "kunle",
@@ -4796,7 +4970,12 @@
    "w": 200,
    "h": 200,
    "frames": 26,
-   "thumb": 54
+   "thumb": 54,
+   "pinyin": "kun le",
+   "initials": "kl",
+   "keywords": [
+    "睡觉"
+   ]
   },
   {
    "id": "kunkun",
@@ -4807,7 +4986,10 @@
    "w": 200,
    "h": 160,
    "frames": 30,
-   "thumb": 55
+   "thumb": 55,
+   "pinyin": "kun kun",
+   "initials": "kk",
+   "keywords": []
   },
   {
    "id": "wanan",
@@ -4818,7 +5000,12 @@
    "w": 200,
    "h": 200,
    "frames": 42,
-   "thumb": 56
+   "thumb": 56,
+   "pinyin": "wan an",
+   "initials": "wa",
+   "keywords": [
+    "睡觉"
+   ]
   },
   {
    "id": "ganfan",
@@ -4829,7 +5016,12 @@
    "w": 200,
    "h": 169,
    "frames": 41,
-   "thumb": 57
+   "thumb": 57,
+   "pinyin": "gan fan",
+   "initials": "gf",
+   "keywords": [
+    "吃饭"
+   ]
   },
   {
    "id": "e",
@@ -4840,7 +5032,10 @@
    "w": 200,
    "h": 200,
    "frames": 36,
-   "thumb": 58
+   "thumb": 58,
+   "pinyin": "e le",
+   "initials": "el",
+   "keywords": []
   },
   {
    "id": "shangban",
@@ -4851,7 +5046,10 @@
    "w": 200,
    "h": 200,
    "frames": 19,
-   "thumb": 59
+   "thumb": 59,
+   "pinyin": "shang ban zhong",
+   "initials": "sbz",
+   "keywords": []
   },
   {
    "id": "xiaban",
@@ -4862,7 +5060,10 @@
    "w": 200,
    "h": 200,
    "frames": 39,
-   "thumb": 60
+   "thumb": 60,
+   "pinyin": "xia ban la",
+   "initials": "xbl",
+   "keywords": []
   },
   {
    "id": "daojia",
@@ -4873,7 +5074,10 @@
    "w": 200,
    "h": 200,
    "frames": 17,
-   "thumb": 61
+   "thumb": 61,
+   "pinyin": "dao jia la",
+   "initials": "djl",
+   "keywords": []
   },
   {
    "id": "leitan",
@@ -4884,7 +5088,10 @@
    "w": 200,
    "h": 200,
    "frames": 16,
-   "thumb": 62
+   "thumb": 62,
+   "pinyin": "lei tan",
+   "initials": "lt",
+   "keywords": []
   },
   {
    "id": "aqi",
@@ -4895,7 +5102,10 @@
    "w": 200,
    "h": 200,
    "frames": 38,
-   "thumb": 63
+   "thumb": 63,
+   "pinyin": "a ti",
+   "initials": "at",
+   "keywords": []
   },
   {
    "id": "haode",
@@ -4906,7 +5116,12 @@
    "w": 200,
    "h": 200,
    "frames": 18,
-   "thumb": 64
+   "thumb": 64,
+   "pinyin": "hao de",
+   "initials": "hd",
+   "keywords": [
+    "ok"
+   ]
   },
   {
    "id": "shoudao",
@@ -4917,7 +5132,12 @@
    "w": 200,
    "h": 200,
    "frames": 19,
-   "thumb": 65
+   "thumb": 65,
+   "pinyin": "shou dao",
+   "initials": "sd",
+   "keywords": [
+    "ok"
+   ]
   },
   {
    "id": "duibuqi",
@@ -4928,7 +5148,13 @@
    "w": 200,
    "h": 200,
    "frames": 25,
-   "thumb": 66
+   "thumb": 66,
+   "pinyin": "dui bu qi",
+   "initials": "dbq",
+   "keywords": [
+    "抱歉",
+    "道歉"
+   ]
   },
   {
    "id": "buma",
@@ -4939,7 +5165,10 @@
    "w": 200,
    "h": 200,
    "frames": 20,
-   "thumb": 67
+   "thumb": 67,
+   "pinyin": "bu ma",
+   "initials": "bm",
+   "keywords": []
   },
   {
    "id": "xiexie",
@@ -4950,7 +5179,12 @@
    "w": 199,
    "h": 200,
    "frames": 18,
-   "thumb": 68
+   "thumb": 68,
+   "pinyin": "xie xie",
+   "initials": "xx",
+   "keywords": [
+    "感谢"
+   ]
   },
   {
    "id": "dengni",
@@ -4961,7 +5195,10 @@
    "w": 200,
    "h": 200,
    "frames": 27,
-   "thumb": 69
+   "thumb": 69,
+   "pinyin": "deng ni",
+   "initials": "dn",
+   "keywords": []
   },
   {
    "id": "baibai",
@@ -4972,7 +5209,10 @@
    "w": 200,
    "h": 200,
    "frames": 39,
-   "thumb": 70
+   "thumb": 70,
+   "pinyin": "bai bai",
+   "initials": "bb",
+   "keywords": []
   },
   {
    "id": "huilai",
@@ -4983,7 +5223,10 @@
    "w": 200,
    "h": 160,
    "frames": 23,
-   "thumb": 71
+   "thumb": 71,
+   "pinyin": "wo hui lai la",
+   "initials": "whll",
+   "keywords": []
   },
   {
    "id": "wowowo",
@@ -4994,7 +5237,10 @@
    "w": 200,
    "h": 200,
    "frames": 17,
-   "thumb": 72
+   "thumb": 72,
+   "pinyin": "wo wo wo",
+   "initials": "www",
+   "keywords": []
   },
   {
    "id": "xiayu",
@@ -5005,7 +5251,10 @@
    "w": 200,
    "h": 200,
    "frames": 30,
-   "thumb": 73
+   "thumb": 73,
+   "pinyin": "xia yu le",
+   "initials": "xyl",
+   "keywords": []
   },
   {
    "id": "haore",
@@ -5016,7 +5265,10 @@
    "w": 200,
    "h": 200,
    "frames": 30,
-   "thumb": 74
+   "thumb": 74,
+   "pinyin": "hao re",
+   "initials": "hr",
+   "keywords": []
   },
   {
    "id": "facai",
@@ -5027,7 +5279,13 @@
    "w": 200,
    "h": 188,
    "frames": 29,
-   "thumb": 75
+   "thumb": 75,
+   "pinyin": "fa cai",
+   "initials": "fc",
+   "keywords": [
+    "新年",
+    "过年"
+   ]
   },
   {
    "id": "shengdan",
@@ -5038,7 +5296,12 @@
    "w": 200,
    "h": 200,
    "frames": 13,
-   "thumb": 76
+   "thumb": 76,
+   "pinyin": "sheng dan kuai le",
+   "initials": "sdkl",
+   "keywords": [
+    "christmas"
+   ]
   }
  ],
  "stickerGroups": [
@@ -5104,6 +5367,63 @@
   "wink"
  ],
  "changelog": [
+  {
+   "version": "0.21.0",
+   "date": "2026-11-21",
+   "items": [
+    "新增「搜表情」：快捷栏下面多了一个 🔍 搜索框，输入名字就能找到表情，回车直接发第一个",
+    "不切输入法也能搜：打拼音或首字母都行，比如「bb」或「baobao」找到「抱抱」，「xn」找到「想你了」",
+    "网页版和极简模式里也能搜；设置 →「表情」里往快捷栏放表情时同样可以搜"
+   ]
+  },
+  {
+   "version": "0.20.3",
+   "date": "2026-11-03",
+   "items": [
+    "眼药水提醒晚了会说清楚：比如你 12 点多才回到电脑前，宠物会说「11 点那次还没滴哦（晚了 1 小时 17 分）」，不会再像是把时间弄错了"
+   ]
+  },
+  {
+   "version": "0.20.2",
+   "date": "2026-11-01",
+   "items": [
+    "说明文档整理了一遍：README 开头告诉你从哪里开始（Mac、公司电脑的网页版、iPhone、Pixoo 像素屏），补了网页版和手机的截图和常见问题"
+   ]
+  },
+  {
+   "version": "0.20.1",
+   "date": "2026-10-27",
+   "items": [
+    "新增 Pixoo-64 像素屏「实体分身」（给喜欢折腾的人）：放在 TA 家里，用树莓派把你发的消息、表情、爱心和提醒实时显示在 64×64 的屏上。只读，不影响 TA 的在线状态和通知。做法见 tools/pixoo-bridge/README.md"
+   ]
+  },
+  {
+   "version": "0.20.0",
+   "date": "2026-10-25",
+   "items": [
+    "新增网页版：装不了 App 的电脑（比如公司电脑）和 iPhone 也能用，和 Mac 版互通，TA 那边感觉不到区别",
+    "网页版有「极简模式」，适合上班：没有宠物和动画，只留聊天、叫 TA 喝水和各种提醒，提醒都走电脑的系统通知",
+    "iPhone 把网页版「添加到主屏幕」后，App 关着也能收到 TA 的消息、叫你喝水和眼药水提醒",
+    "哪台设备正在用就由哪台提醒：家里的 Mac 醒着没人用时，通知会推到你的手机",
+    "怎么用见 README「网页版：工作电脑和手机」"
+   ]
+  },
+  {
+   "version": "0.19.0",
+   "date": "2026-10-25",
+   "items": [
+    "通知更聪明：Mac 会告诉手机和网页版你现在有没有在用它。Mac 醒着但没人用时，TA 的消息和眼药水提醒会推到你正在用的手机上"
+   ]
+  },
+  {
+   "version": "0.18.0",
+   "date": "2026-10-13",
+   "items": [
+    "新增眼药水提醒：先选一天滴几次、再定每次几点，到点宠物来提醒，点「滴了」打卡；没理会 15 分钟后再提醒，最多 3 次",
+    "眼药水的时间和打卡在 Mac 和网页版之间同步：在一边点了「滴了」，另一边就不会再催",
+    "开着勿扰或专注时，喝水、站立、眼药水和番茄钟的提醒也照常弹出来、有声音"
+   ]
+  },
   {
    "version": "0.17.0",
    "date": "2026-10-07",

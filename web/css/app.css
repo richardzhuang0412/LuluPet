@@ -296,6 +296,28 @@ body.first-run .titlebar .ta-line { visibility: hidden; }
 .all-stickers { border-top: 1px solid var(--line); padding-top: 4px; }
 .group-title { font-size: 11px; font-weight: 800; color: var(--ink-2); margin: 8px 0 2px; }
 .sticker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(54px, 1fr)); gap: 2px; }
+/* 搜表情 (全部表情 and the 极简 name picker) */
+.sticker-search, .mi-search {
+  display: flex; align-items: center; gap: 6px; margin: 4px 0 2px; padding: 4px 10px; border-radius: 999px;
+  border: 1px solid var(--line-2); background: var(--card); cursor: text;
+  position: sticky; top: 0; z-index: 1;
+}
+/* Stays reachable while the groups scroll. Pulled up by the scroller's padding-top so it sits flush with the scroller's
+   top edge (nothing peeks out above it): .pane 10 px, the small 传话 window's pane 8 px, the PiP list 0. */
+.sticker-search { top: -10px; }
+body.compact-window .sticker-search { top: -8px; }
+.pip .sticker-search { top: 0; }
+.sticker-search:focus-within, .mi-search:focus-within { border-color: var(--accent); }
+.sticker-search .search-icon, .mi-search .search-icon { font-size: 11px; opacity: 0.7; }
+.sticker-search input, .mi-search input {
+  flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--ink); font: inherit; font-size: 12.5px; padding: 2px 0;
+}
+.sticker-search input:focus, .sticker-search input:focus-visible, .mi-search input:focus, .mi-search input:focus-visible { outline: none; box-shadow: none; }   /* the pill shows focus */
+.sticker-search input::-webkit-search-decoration, .mi-search input::-webkit-search-decoration { -webkit-appearance: none; }
+@media (pointer: coarse) {   /* ≥ 16 px: iOS does not zoom the page when the field is tapped */
+  .sticker-search input, .mi-search input { font-size: 16px; padding: 4px 0; }
+}
+.search-empty { padding: 14px 0 10px; text-align: center; font-size: 12px; color: var(--ink-3); }
 
 /* ---- 记录 ------------------------------------------------------------------------------------------------------ */
 .pane-history { display: flex; flex-direction: column; padding-bottom: 8px; }

@@ -3979,6 +3979,43 @@ do {
     StubProtocol.replies = [:]
 }
 
+// 搜表情: the real catalog, keyword / override decoding, the web manifest reads every label the same way.
+do {
+    let built = StickerCatalog(root: URL(fileURLWithPath: "Resources/Stickers"))
+    let t0 = Date()
+    let entries = built.stickers.map(StickerSearch.entry(for:))
+    let ms = Date().timeIntervalSince(t0) * 1000
+    check(ms < 200, "搜表情: pinyin for the whole catalog is cheap (\(Int(ms)) ms)")
+    check(entries.count == 77 && entries.allSatisfy { !$0.pinyin.isEmpty && $0.initials.count == $0.pinyin.split(separator: " ").count },
+          "搜表情: every sticker has pinyin + initials")
+    let manifest = (try? JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: "web/assets/manifest.json")))) as? [String: Any]
+    let web = Dictionary(((manifest?["stickers"] as? [[String: Any]]) ?? []).map { ($0["id"] as? String ?? "", $0) }, uniquingKeysWith: { a, _ in a })
+    let mismatched = entries.filter { e in
+        web[e.id]?["pinyin"] as? String != e.pinyin || web[e.id]?["initials"] as? String != e.initials
+            || (web[e.id]?["keywords"] as? [String] ?? []) != e.keywords
+    }.map(\.id)
+    check(mismatched.isEmpty, "搜表情: web manifest pinyin / initials / keywords = the Mac's (rerun tools/build_web_assets.py): \(mismatched)")
+    let all = StickerPanel.ranked(counts: [:], recent: [:], visible: built.stickers.map(\.id))
+    let byID = Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    let pool = all.compactMap { byID[$0] }
+    check(StickerSearch.filter(query: "bb", stickers: pool).first == "hug", "搜表情: bb → 抱抱 first")
+    check(StickerSearch.filter(query: "baobao", stickers: pool) == ["hug"], "搜表情: baobao → 抱抱")
+    check(StickerSearch.filter(query: "xn", stickers: pool).first == "missyou", "搜表情: xn → 想你了")
+    check(StickerSearch.filter(query: "  想你！", stickers: pool).first == "missyou", "搜表情: punctuation / spaces ignored")
+    check(StickerSearch.filter(query: "", stickers: pool) == all && StickerSearch.filter(query: "？！", stickers: pool) == all, "搜表情: empty query = no filtering")
+    check(StickerSearch.filter(query: "睡觉", stickers: pool).contains("night"), "搜表情: keywords from stickers.json")
+    check(StickerSearch.filter(query: "zzzq", stickers: pool).isEmpty, "搜表情: no match → empty")
+    let friend = ContentPolicy(myMode: .friend, partnerMode: .friend, me: .lulu, partner: .lumei)
+    let friendPool = pool.filter { e in built.stickers.first { $0.id == e.id }.map { friend.allowsSticker(intimate: $0.intimate) } ?? false }
+    let intimate = Set(built.stickers.filter(\.intimate).map(\.id))
+    check(["bb", "qq", "亲", "抱", "么么", "爱意", "tt"].allSatisfy { q in StickerSearch.filter(query: q, stickers: friendPool).allSatisfy { !intimate.contains($0) } },
+          "搜表情: friend mode never shows intimate stickers")
+    let decoded = try? JSONDecoder().decode([Sticker].self, from: Data(#"[{"id":"a","label":"长大","file":"a.gif","pinyin":"zhang da","keywords":["成长"]}]"#.utf8))
+    check(decoded?.first.map { StickerSearch.entry(for: $0) } == StickerSearch.Entry(id: "a", label: "长大", pinyin: "zhang da", initials: "zd", keywords: ["成长"]),
+          "搜表情: stickers.json pinyin override + keywords decode")
+    check(StickerSearch.pinyin(of: "OK啦") == "ok la", "搜表情: latin letters pass through")
+}
+
 runWebVectors()   // web/tests/vectors/wire.json (WebVectors.swift)
 try? FileManager.default.removeItem(at: tmp)
 // UserDefaults suites leave their plist behind even after removePersistentDomain; delete test ones.

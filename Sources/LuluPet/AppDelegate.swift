@@ -50,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var demoOpenHistory = false       // --demo-open-history: open the compose panel on the「记录」tab
         var demoOpenHistoryAt: TimeInterval?  // --demo-open-history-at S: (re)open the panel on the「记录」tab at S s (demo GIFs)
         var demoMoreStickersAt: TimeInterval?  // --demo-more-stickers S: open 「更多表情…」 in the compose panel at S s (demo GIFs, snapshots)
+        var demoStickerQuery: String?          // --demo-sticker-query bb: type that into the compose panel's 「搜表情」 at 1.2 s (snapshots)
         var demoHotkeys: [(HotkeyCenter.Action, TimeInterval)] = []   // --demo-hotkey toggle@2,compose@4
         var demoMenu: TimeInterval?       // --demo-menu S: pop up the status menu at S s (snapshots)
         var demoPressCard: TimeInterval?  // --demo-press-card S: press the card's「看看」at S s
@@ -173,6 +174,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case "--demo-open-history": demoOpenHistory = true
                 case "--demo-open-history-at": demoOpenHistoryAt = it.next().flatMap(TimeInterval.init)
                 case "--demo-more-stickers": demoMoreStickersAt = it.next().flatMap(TimeInterval.init)
+                case "--demo-sticker-query": demoStickerQuery = it.next(); StickersPage.demoQuery = demoStickerQuery ?? ""
                 case "--demo-history-day": demoOpenHistory = true; HistoryModel.demoScrollToDaysAgo = it.next().flatMap(Int.init)
                 case "--demo-hotkey":
                     demoHotkeys = (it.next() ?? "").split(separator: ",").compactMap { part in
@@ -2980,6 +2982,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if let t = options.demoMoreStickersAt {
             DispatchQueue.main.asyncAfter(deadline: .now() + t) { [weak self] in self?.compose?.setMoreStickers(expanded: true) }
+        }
+        if let q = options.demoStickerQuery {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.compose?.setStickerQuery(q) }
         }
         if let t = options.demoOpenHistoryAt {
             DispatchQueue.main.asyncAfter(deadline: .now() + t) { [weak self] in self?.openCompose(tab: .history) }

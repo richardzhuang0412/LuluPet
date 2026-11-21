@@ -39,7 +39,7 @@ v1 的字段全部保留、形状不变（读 v1 的代码照常能跑）；v2 �
 | `reactions` | 新：`Resources/reactions.json` **原样**。`couple` 池里是 `couples` 的名字（`"none"` = 不放合体）；`visitor.<c>` 里是**片段名**，用访客当前造型的 `outfits.<o>.named[name]` 查 clip key，查不到 = 这套造型没有，跳过（同 Mac）。没有换成 clip key，因为同一个名字在不同造型里可能有也可能没有。 |
 | `toolClips` | 新：`{water, stand, focus, breakTime, eyedrops}` → `{lulu: [片段名], lumei: [片段名]}`，来自 `ToolClips.swift`；同样按当前造型的 `named` 查，查不到跳过。空池：focus = 安静静止帧，eyedrops = 先播 `happy`（spec §2.5，Mac 加了 `.eyedrops` 池后重跑即可） |
 | `sounds` | 新，恒为 `{}`（网页不用声音文件） |
-| `stickers` / `stickerGroups` / `thumbs` / `defaultFavorites` | 同 v1 |
+| `stickers` / `stickerGroups` / `thumbs` / `defaultFavorites` | 同 v1；`stickers[]` 新增搜表情用的 `pinyin`（名字的拼音，音节用空格隔开、只含 a–z 0–9，如 `"bao bao"`；构建时用 macOS 的 CFStringTransform 算，和 Mac 的 `StickerSearch.pinyin(of:)` 一样，`assets/stickers.json` 里的 `pinyin` 可以覆盖读错的多音字）、`initials`（首字母，如 `"bb"`）、`keywords`（额外搜索词，可为空数组） |
 | `changelog` | 新：`Resources/changelog.json` 原样（`[{version, date, items}]`，新的在前） |
 | `totalBytes` | 新：清单引用的全部文件（不含 manifest 本身）字节数之和，给「下载全部素材」显示总大小 |
 

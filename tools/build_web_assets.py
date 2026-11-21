@@ -7,7 +7,7 @@ Reads only committed inputs (never assets/library, which is private):
   Resources/Couples/<name>/meta.json                (two-character clips; facing / sound / heightFactor / intimate)
   Resources/Clips/<id>/{meta.json, NNN.webp}        (content-addressed frames, tools/build_sprites.py)
   Resources/reactions.json, Resources/changelog.json (copied into the manifest as they are)
-  Resources/Stickers/{stickers.json, <id>.gif}
+  Resources/Stickers/{stickers.json, <id>.gif}     (label pinyin via macOS CFStringTransform, like StickerSearch.swift)
   Sources/LuluCore/StickerPanel.swift               (defaultFavorites, StickerGroup order + titles)
   Sources/LuluCore/ToolClips.swift                  (named clip pools of the personal tools)
 and writes web/assets/:
@@ -33,7 +33,7 @@ idle + largest default-outfit idle + thumbs) <= 1.5 MB; sticker <= 400 KB; web/a
 
 usage: nice -n 10 python3 tools/build_web_assets.py
 """
-import collections, glob, hashlib, io, json, math, os, re, sys
+import collections, ctypes, ctypes.util, glob, hashlib, io, json, math, os, re, sys
 from PIL import Image
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -361,6 +361,49 @@ def tool_clips():
 
 # ---------------------------------------------------------------- stickers
 
+_cf = None
+
+
+def _transform(text):
+    """CFStringTransform(ToLatin) then (StripDiacritics): the same ICU steps as Swift's applyingTransform in
+    StickerSearch.pinyin(of:), so the web and the Mac read a label the same way (macOS only; no extra deps)."""
+    global _cf
+    if _cf is None:
+        lib = ctypes.util.find_library('CoreFoundation')
+        if not lib:
+            fail('sticker pinyin needs macOS CoreFoundation (CFStringTransform)')
+        _cf = ctypes.CDLL(lib)
+        _cf.CFStringCreateWithBytes.restype = ctypes.c_void_p
+        _cf.CFStringCreateWithBytes.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_long, ctypes.c_uint32, ctypes.c_bool]
+        _cf.CFStringCreateMutableCopy.restype = ctypes.c_void_p
+        _cf.CFStringCreateMutableCopy.argtypes = [ctypes.c_void_p, ctypes.c_long, ctypes.c_void_p]
+        _cf.CFStringTransform.restype = ctypes.c_bool
+        _cf.CFStringTransform.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_bool]
+        _cf.CFStringGetCString.restype = ctypes.c_bool
+        _cf.CFStringGetCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_long, ctypes.c_uint32]
+        _cf.CFRelease.argtypes = [ctypes.c_void_p]
+    utf8 = 0x08000100
+    data = text.encode('utf-8')
+    src = _cf.CFStringCreateWithBytes(None, data, len(data), utf8, False)
+    m = _cf.CFStringCreateMutableCopy(None, 0, src)
+    for name in ('kCFStringTransformToLatin', 'kCFStringTransformStripDiacritics'):
+        if not _cf.CFStringTransform(m, None, ctypes.c_void_p.in_dll(_cf, name), False):
+            fail(f'CFStringTransform {name} failed for {text!r}')
+    buf = ctypes.create_string_buffer(8 * len(data) + 64)
+    ok = _cf.CFStringGetCString(m, buf, len(buf), utf8)
+    _cf.CFRelease(m)
+    _cf.CFRelease(src)
+    if not ok:
+        fail(f'CFStringGetCString failed for {text!r}')
+    return buf.value.decode('utf-8')
+
+
+def sticker_pinyin(label):
+    """想你了 -> 'xiang ni le' (StickerSearch.pinyin(of:): lowercase, whitespace-split, each syllable kept to [a-z0-9])."""
+    syllables = (re.sub(r'[^a-z0-9]', '', w) for w in _transform(label).lower().split())
+    return ' '.join(w for w in syllables if w)
+
+
 def swift_string_list(src, name):
     m = re.search(name + r'\s*=\s*\[(.*?)\]', src, re.S)
     if not m:
@@ -431,8 +474,11 @@ def build_stickers():
         name = f'stickers/{sid}.{sha10(data)}.webp'
         write(name, data)
         thumbs.append(frames[0])
+        # 搜表情: pinyin (stickers.json override, else the label's reading), its initials, extra keywords
+        py = e.get('pinyin') or sticker_pinyin(e['label'])
         out.append({'id': sid, 'label': e['label'], 'group': e['group'], 'intimate': bool(e.get('intimate', False)),
-                    'file': name, 'w': size[0], 'h': size[1], 'frames': len(frames), 'thumb': i})
+                    'file': name, 'w': size[0], 'h': size[1], 'frames': len(frames), 'thumb': i,
+                    'pinyin': py, 'initials': ''.join(w[0] for w in py.split()), 'keywords': list(e.get('keywords') or [])})
         report.append((sid, len(data)))
     rows = math.ceil(len(thumbs) / THUMB_COLS)
     atlas = Image.new('RGBA', (THUMB_COLS * THUMB, rows * THUMB), (0, 0, 0, 0))

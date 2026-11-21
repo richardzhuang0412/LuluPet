@@ -28,6 +28,14 @@ final class ComposeWindow: NSPanel {
         DispatchQueue.main.async { [weak self] in self?.refit() }
     }
 
+    /// 「搜表情」: what is typed in the search field under the 快捷栏 (one per panel).
+    private let stickerSearch = StickerSearchModel()
+    /// Type into 「搜表情」 (demo and snapshot flag `--demo-sticker-query`).
+    func setStickerQuery(_ query: String) {
+        stickerSearch.query = query
+        DispatchQueue.main.async { [weak self] in self?.refit() }
+    }
+
     private var outsideClickMonitor: Any?
     private var isDismissing = false
 
@@ -49,6 +57,8 @@ final class ComposeWindow: NSPanel {
         let thumbnail: NSImage?
         /// `StickerGroup` raw value (nil = 其他).
         var group: String? = nil
+        /// What 「搜表情」 matches (name, pinyin, initials, keywords).
+        var search: StickerSearch.Entry? = nil
 
         /// A very wide strip (≥ 1.85 : 1, e.g. 冷战 with the pets far apart): letterboxed, not cropped to an empty middle.
         /// Ordinary 16:9 stickers (贴贴, 送你花, 晚安…) still fill their tile as before.
@@ -58,7 +68,8 @@ final class ComposeWindow: NSPanel {
     /// Sticker tiles for the library, minus what `policy` hides (kiss / hug and the like in friend mode).
     static func choices(_ stickers: StickerCatalog, policy: ContentPolicy) -> [StickerChoice] {
         stickers.stickers.filter { policy.allowsSticker(intimate: $0.intimate) }.map { s in
-            StickerChoice(id: s.id, label: s.label, thumbnail: stickers.url(for: s.id).flatMap(Self.firstFrame), group: s.group)
+            StickerChoice(id: s.id, label: s.label, thumbnail: stickers.url(for: s.id).flatMap(Self.firstFrame), group: s.group,
+                          search: StickerSearch.entry(for: s))
         }
     }
 
@@ -112,6 +123,7 @@ final class ComposeWindow: NSPanel {
             partnerApp: partnerApp,
             stickers: choices,
             prefs: sprefs,
+            search: stickerSearch,
             history: model,
             tools: tools,
             initialTab: (tab == .history && model == nil) || (tab == .tools && tools == nil) ? .compose : tab,
@@ -152,8 +164,12 @@ final class ComposeWindow: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
-    /// Esc (routed through the field editor / responder chain).
-    override func cancelOperation(_ sender: Any?) { dismiss() }
+    /// Esc (routed through the field editor / responder chain): clears 「搜表情」 first, closes the panel when there is
+    /// nothing to clear.
+    override func cancelOperation(_ sender: Any?) {
+        if stickerSearch.escape() { DispatchQueue.main.async { [weak self] in self?.refit() }; return }
+        dismiss()
+    }
 
     override func resignKey() {
         super.resignKey()
@@ -217,6 +233,7 @@ private struct ComposeView: View {
     let partnerApp: String?
     let stickers: [ComposeWindow.StickerChoice]
     @ObservedObject var prefs: StickerPrefsModel
+    @ObservedObject var search: StickerSearchModel
     let history: HistoryModel?
     let tools: ToolsPanelModel?
     let initialTab: ComposeWindow.Tab
@@ -292,7 +309,9 @@ private struct ComposeView: View {
         .padding(14)
         .environment(\.colorScheme, .light)
         .onAppear { if currentTab == .compose { focused = true } }
-        .onExitCommand(perform: onClose)
+        .onExitCommand {   // Esc: clear 「搜表情」 first, then close
+            if search.escape() { DispatchQueue.main.async { onTabChanged(.compose) } } else { onClose() }
+        }
     }
 
     /// "v0.11.0 (123)" from the app bundle; "开发版" when run outside a bundle (swift run).
@@ -467,7 +486,10 @@ private struct ComposeView: View {
                 }
             }
             quickBarRow(barIDs.compactMap { byID[$0] })
-            if !freq.isEmpty {
+            searchField(byID: byID, visibleIDs: visibleIDs)
+            if !searchQueryIsEmpty {
+                searchResults(byID: byID, visibleIDs: visibleIDs, barIDs: Set(barIDs))
+            } else if !freq.isEmpty {
                 Text("常用")
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
                     .foregroundStyle(Self.accent.opacity(0.85))
@@ -475,12 +497,72 @@ private struct ComposeView: View {
                     .padding(.top, 2)
                 gridBlock(freq, visibleRows: prefs.moreExpanded && hasMore ? 2 : Self.visibleRows, barIDs: Set(barIDs))
             }
-            if hasMore {
+            if hasMore && searchQueryIsEmpty {
                 moreToggle
                 if prefs.moreExpanded { moreSection(barIDs: Set(barIDs)) }
             }
         }
         .animation(.easeOut(duration: 0.15), value: prefs.toast)
+    }
+
+    // MARK: 搜表情
+
+    /// Only spaces / punctuation typed counts as empty (no filtering, the normal grids).
+    private var searchQueryIsEmpty: Bool { StickerSearch.normalize(search.query).isEmpty }
+
+    /// Visible stickers matching the query: best match first, ties by how often I sent them (`StickerPanel.ranked`).
+    private func searchHits(byID: [String: ComposeWindow.StickerChoice], visibleIDs: [String]) -> [ComposeWindow.StickerChoice] {
+        let pool = StickerPanel.ranked(counts: prefs.counts, recent: prefs.recent, visible: visibleIDs).compactMap { byID[$0]?.search }
+        return StickerSearch.filter(query: search.query, stickers: pool).compactMap { byID[$0] }
+    }
+
+    /// 🔍 搜表情: filters live (name, pinyin, initials: 「bb」 = 抱抱); ↩ sends the first result; Esc / ✕ clears.
+    private func searchField(byID: [String: ComposeWindow.StickerChoice], visibleIDs: [String]) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Self.accent.opacity(0.8))
+            TextField("搜表情：名字或拼音，如 bb", text: $search.query)
+                .textFieldStyle(.plain)
+                .font(.system(size: 11, design: .rounded))
+                .onSubmit {
+                    guard let first = searchHits(byID: byID, visibleIDs: visibleIDs).first, !searchQueryIsEmpty else { return }
+                    prefs.use(first.id)
+                    onSendSticker(first.id)
+                }
+                .onChange(of: search.query) { _, _ in DispatchQueue.main.async { onTabChanged(.compose) } }   // refit
+            if !search.query.isEmpty {
+                Button { search.query = "" } label: {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 10)).foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("清空（Esc）")
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.white))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Self.accent.opacity(0.3), lineWidth: 1))
+        .help("输入名字或拼音找表情（「bb」=抱抱，「xn」=想你了）；回车发送第一个，Esc 清空")
+    }
+
+    /// The flat ranked result grid (no group headers); a ★ marks what is on the 快捷栏.
+    @ViewBuilder
+    private func searchResults(byID: [String: ComposeWindow.StickerChoice], visibleIDs: [String], barIDs: Set<String>) -> some View {
+        let hits = searchHits(byID: byID, visibleIDs: visibleIDs)
+        if hits.isEmpty {
+            Text("没找到，换个词试试")
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundStyle(Color(white: 0.5))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+        } else {
+            Text("找到 \(hits.count) 个 · " + (solo ? "回车让它演第一个" : "回车发送第一个"))
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundStyle(Self.accent.opacity(0.85))
+                .padding(.top, 2)
+            gridBlock(hits, visibleRows: Self.visibleRows, barIDs: barIDs, markQuickBar: true)
+        }
     }
 
     /// One row of `StickerPanel.maxQuickBar` slots; empty ones are dashed outlines.
@@ -677,5 +759,22 @@ private struct ComposeView: View {
         guard !trimmed.isEmpty else { return }
         onSendText(trimmed)
         text = ""
+    }
+}
+
+/// The 「搜表情」 text of one compose panel (the panel's Esc clears it before closing).
+final class StickerSearchModel: ObservableObject {
+    @Published var query = ""
+    private var clearedAt = Date.distantPast
+
+    /// Esc: true when it was used to clear the query (the panel then stays open). One key press can reach both the
+    /// SwiftUI exit command and the panel's cancelOperation; the second call right after a clear is swallowed too.
+    func escape() -> Bool {
+        if !query.isEmpty {
+            query = ""
+            clearedAt = Date()
+            return true
+        }
+        return Date().timeIntervalSince(clearedAt) < 0.3
     }
 }

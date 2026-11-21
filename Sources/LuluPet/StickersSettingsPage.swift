@@ -15,6 +15,9 @@ struct StickersPage: View {
     let choices: [ComposeWindow.StickerChoice]
     @State private var message: String?
     @State private var dropTarget: Int?   // v0.15.3 the quick-bar slot a drag hovers over
+    @State private var query = StickersPage.demoQuery   // 搜表情
+    /// `--demo-sticker-query` also pre-fills this page's search (snapshots).
+    nonisolated(unsafe) static var demoQuery = ""
 
     private static let accent = Color(red: 0.91, green: 0.54, blue: 0.29)
     private var visible: [String] { choices.map(\.id) }
@@ -91,15 +94,51 @@ struct StickersPage: View {
 
             Divider()
 
+            // 搜表情: name or pinyin (「bb」 = 抱抱); a flat ranked grid while something is typed.
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").font(.system(size: 11, weight: .semibold)).foregroundStyle(Self.accent.opacity(0.8))
+                TextField("搜表情：名字或拼音，如 bb", text: $query)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12, design: .rounded))
+                    .onExitCommand { query = "" }
+                if !query.isEmpty {
+                    Button { query = "" } label: {
+                        Image(systemName: "xmark.circle.fill").font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("清空")
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.white))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Self.accent.opacity(0.3), lineWidth: 1))
+            .frame(maxWidth: 260)
+
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 10) {
-                    ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(section.title)
-                                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                                .foregroundStyle(Color(white: 0.45))
+                    if !StickerSearch.normalize(query).isEmpty {
+                        let hits = searchHits
+                        if hits.isEmpty {
+                            Text("没找到，换个词试试")
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 20)
+                        } else {
                             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 5), count: 6), spacing: 5) {
-                                ForEach(section.items) { s in pickCell(s, onBar: onBar.contains(s.id)) }
+                                ForEach(hits) { s in pickCell(s, onBar: onBar.contains(s.id)) }
+                            }
+                        }
+                    } else {
+                        ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(section.title)
+                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(Color(white: 0.45))
+                                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 5), count: 6), spacing: 5) {
+                                    ForEach(section.items) { s in pickCell(s, onBar: onBar.contains(s.id)) }
+                                }
                             }
                         }
                     }
@@ -109,6 +148,12 @@ struct StickersPage: View {
             .frame(height: 280)
         }
         .padding(22)
+    }
+
+    /// 搜表情 results: best match first, ties by how often I sent them.
+    private var searchHits: [ComposeWindow.StickerChoice] {
+        let pool = StickerPanel.ranked(counts: model.counts, recent: model.recent, visible: visible).compactMap { byID[$0]?.search }
+        return StickerSearch.filter(query: query, stickers: pool).compactMap { byID[$0] }
     }
 
     private var sections: [(title: String, items: [ComposeWindow.StickerChoice])] {

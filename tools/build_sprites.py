@@ -493,7 +493,9 @@ index = []
 for s in json.load(open('assets/stickers.json')):
     build_sticker(s['gif'], f"Resources/Stickers/{s['id']}.gif")
     index.append({'id': s['id'], 'label': s['label'], 'file': f"{s['id']}.gif", **({'intimate': True} if s.get('intimate') else {}),
-                  **({'group': s['group']} if s.get('group') else {})})   # v0.15: group = the panel's 「更多表情」 section
+                  **({'group': s['group']} if s.get('group') else {}),   # v0.15: group = the panel's 「更多表情」 section
+                  # 搜表情: a pinyin override (polyphone read wrong) and extra search words
+                  **({'pinyin': s['pinyin']} if s.get('pinyin') else {}), **({'keywords': s['keywords']} if s.get('keywords') else {})})
     print(f"sticker {s['id']} <- {s['gif']}")
 json.dump(index, open('Resources/Stickers/stickers.json', 'w'), ensure_ascii=False, indent=1)
 
